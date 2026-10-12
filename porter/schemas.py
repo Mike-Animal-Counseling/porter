@@ -124,6 +124,10 @@ class MemoryOut(BaseModel):
     # key. The server never attempts decryption.
     encrypted: bool = False
     key_id: str | None = None
+    # Automation layer: user-pinned memories never decay; triage_reasons
+    # records why a memory was queued/auto-approved at write time.
+    pinned: bool = False
+    triage_reasons: list[str] = Field(default_factory=list)
     # PRD principle 5: retrieved memory is untrusted input — the sync
     # channel delivers content to downstream agents exactly like search,
     # so the marking rides along (T3: prompt-injection via sync).
@@ -137,8 +141,12 @@ class DuplicateCandidate(BaseModel):
 
 class MemoryCreateOut(BaseModel):
     id: UUID
-    status: Literal["pending_review"]
+    # pending_review: queued for a human (classic path). active: triage
+    # auto-approved. merged: folded into merged_into (>= 0.97 similar).
+    status: Literal["pending_review", "active", "merged"]
     duplicate_candidates: list[DuplicateCandidate] = Field(default_factory=list)
+    triage_reasons: list[str] = Field(default_factory=list)
+    merged_into: UUID | None = None
 
 
 class SearchResult(BaseModel):
@@ -251,6 +259,12 @@ class MemoryReviseOut(BaseModel):
     memory: MemoryOut
     conflict: bool = False
     loser_pending_id: UUID | None = None
+
+
+class MemoryPin(BaseModel):
+    """Pin/unpin a memory. Pinned memories never decay (automation layer)."""
+
+    pinned: bool
 
 
 class CustomTagCreate(BaseModel):

@@ -10,8 +10,9 @@ Both enforce the same domain rules (duplicate threshold, append-only audit).
 from __future__ import annotations
 
 import asyncio
+import json
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Sequence
 from uuid import UUID, uuid4
@@ -45,6 +46,14 @@ class MemoryRecord:
     # the server must never attempt decryption (it has no key).
     encrypted: bool = False
     key_id: str | None = None
+    # Automation layer (migration 007):
+    # - last_retrieved_at: idle clock for confidence decay (porter/decay.py).
+    # - pinned: user-pinned memories never decay.
+    # - triage_reasons: JSON-serializable list recorded at write time
+    #   (drives inbox reason chips + digest grouping).
+    last_retrieved_at: datetime = field(default_factory=_now)
+    pinned: bool = False
+    triage_reasons: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -80,6 +89,7 @@ class MemoryRepository(ABC):
         actor_client_id: UUID | None = None,
         encrypted: bool = False,
         key_id: str | None = None,
+        triage_reasons: Sequence[str] = (),
     ) -> tuple[MemoryRecord, list[ScoredMemory]]:
         """Insert as pending; returns (record, duplicate candidates > threshold).
         Logs a 'create' change (actor_client_id is the caller's clients.id,
@@ -149,6 +159,70 @@ class MemoryRepository(ABC):
         """Hard delete: row AND vector gone (PRD US5). Logs a 'delete'
         change (a tombstone: the row no longer exists, so sync consumers
         only get the id + op)."""
+
+    @abstractmethod
+    async def find_similar_active(
+        self, vec: Sequence[float], *, threshold: float = 0.70, limit: int = 5
+    ) -> list[ScoredMemory]:
+        """Similarity probe for triage: active, non-encrypted memories with
+        score >= threshold, descending. Does NOT touch last_retrieved_at
+        and never triggers decay (it is a probe, not a user retrieval)."""
+
+    @abstractmethod
+    async def create_active(
+        self,
+        *,
+        content: str,
+        type: str,
+        scope_tags: Sequence[str],
+        confidence: float,
+        source: dict[str, Any],
+        actor_client_id: UUID | None = None,
+        triage_reasons: Sequence[str] = (),
+    ) -> tuple[MemoryRecord, list[ScoredMemory]]:
+        """Triage auto-approve path: like create_pending but status='active'
+        immediately. Still returns duplicate candidates for the response.
+        Logs a 'create' change; the caller audits 'auto_approve'."""
+
+    @abstractmethod
+    async def auto_merge(
+        self,
+        target_id: UUID,
+        *,
+        content: str,
+        confidence: float,
+        actor_client_id: UUID | None = None,
+    ) -> MemoryRecord | None:
+        """Fold a near-identical memory (>= 0.97) into an active target:
+        confidence = max, updated_at bumped. Tags are deliberately NOT
+        unioned (T1: tags drive scoped reads; silently expanding tag
+        coverage on an automated path is an unneeded risk surface).
+        Logs a 'revise' change; the caller audits 'auto_merge' with the
+        incoming content hash. Returns the target, or None if missing."""
+
+    @abstractmethod
+    async def archive(
+        self, memory_id: UUID, *, actor_client_id: UUID | None = None
+    ) -> MemoryRecord | None:
+        """Soft-archive: status -> 'archived' (restorable, never deleted).
+        Logs an 'archive' change; the caller audits the reason
+        (e.g. 'auto_archive' from decay)."""
+
+    @abstractmethod
+    async def touch_retrieved(
+        self, memory_ids: Sequence[UUID], *, at: datetime | None = None
+    ) -> None:
+        """Reset the decay idle clock for retrieved memories. Metadata-only
+        (no content/provenance change) — the narrow, documented exception
+        to the no-in-place-update rule below."""
+
+    @abstractmethod
+    async def set_pinned(
+        self, memory_id: UUID, pinned: bool, *, actor_client_id: UUID | None = None
+    ) -> MemoryRecord | None:
+        """Pin/unpin a memory. Pinned memories never decay. Metadata-only
+        (same exception as touch_retrieved); logs a 'revise' change so sync
+        consumers refresh, and the caller audits the action."""
 
     # NOTE: there is intentionally NO in-place update() on this interface.
     # All edits go through revise(), which archives the old record and links
@@ -299,7 +373,8 @@ class InMemoryMemoryRepository(MemoryRepository):
 
     async def create_pending(self, *, content, type, scope_tags, confidence,
                              source, actor_client_id=None,
-                             encrypted=False, key_id=None):
+                             encrypted=False, key_id=None,
+                             triage_reasons=()):
         # E2EE (P2): ciphertext is stored as-is, embedding=None (the server
         # must not see plaintext, so there is nothing to embed), and
         # duplicate detection is skipped (ciphertext is not comparable —
@@ -317,6 +392,7 @@ class InMemoryMemoryRepository(MemoryRepository):
             confidence=confidence, status="pending", embedding=vec,
             created_at=_now(), updated_at=_now(),
             encrypted=bool(encrypted), key_id=key_id,
+            triage_reasons=list(triage_reasons),
         )
         self._memories[rec.id] = rec
         await self.log_change(
@@ -324,8 +400,86 @@ class InMemoryMemoryRepository(MemoryRepository):
         )
         return rec, dups
 
+    async def find_similar_active(self, vec, *, threshold=0.70, limit=5):
+        cands = [
+            m for m in self._memories.values()
+            if m.status == "active" and not m.encrypted and m.embedding
+        ]
+        return [
+            s for s in self._similar(vec, cands, limit) if s.score >= threshold
+        ]
+
+    async def create_active(self, *, content, type, scope_tags, confidence,
+                            source, actor_client_id=None, triage_reasons=()):
+        vec = self.embedder.embed_one(content)
+        dups: list[ScoredMemory] = [
+            s for s in self._similar(vec, list(self._memories.values()), 5)
+            if s.score > DUPLICATE_THRESHOLD
+        ]
+        rec = MemoryRecord(
+            id=uuid4(), content=content, type=type,
+            scope_tags=list(scope_tags), source=dict(source),
+            confidence=confidence, status="active", embedding=vec,
+            created_at=_now(), updated_at=_now(),
+            triage_reasons=list(triage_reasons),
+        )
+        self._memories[rec.id] = rec
+        await self.log_change(
+            memory_id=rec.id, op="create", actor_client_id=actor_client_id
+        )
+        return rec, dups
+
+    async def auto_merge(self, target_id, *, content, confidence,
+                         actor_client_id=None):
+        # See the abstract docstring: tags are deliberately NOT unioned (T1).
+        rec = self._memories.get(target_id)
+        if rec is None or rec.status != "active" or rec.encrypted:
+            return None
+        rec.confidence = max(rec.confidence, confidence)
+        rec.updated_at = _now()
+        rec.last_retrieved_at = rec.updated_at
+        await self.log_change(
+            memory_id=rec.id, op="revise", actor_client_id=actor_client_id
+        )
+        return rec
+
+    async def archive(self, memory_id, *, actor_client_id=None):
+        rec = self._memories.get(memory_id)
+        if rec is None or rec.status == "archived":
+            return rec
+        rec.status = "archived"
+        rec.updated_at = _now()
+        await self.log_change(
+            memory_id=rec.id, op="archive", actor_client_id=actor_client_id
+        )
+        return rec
+
+    async def touch_retrieved(self, memory_ids, *, at=None):
+        stamp = at or _now()
+        for mid in memory_ids:
+            rec = self._memories.get(mid)
+            if rec is not None:
+                rec.last_retrieved_at = stamp
+
+    async def set_pinned(self, memory_id, pinned, *, actor_client_id=None):
+        rec = self._memories.get(memory_id)
+        if rec is None:
+            return None
+        rec.pinned = bool(pinned)
+        rec.updated_at = _now()
+        await self.log_change(
+            memory_id=rec.id, op="revise", actor_client_id=actor_client_id
+        )
+        return rec
+
     async def get(self, memory_id):
-        return self._memories.get(memory_id)
+        from .decay import apply_on_read
+
+        rec = self._memories.get(memory_id)
+        if rec is None:
+            return None
+        alive = await apply_on_read(self, [rec])
+        return alive[0] if alive else rec
 
     async def list(self, *, status=None, tags=(), type=None, limit=50, offset=0,
                  query=None, source_client=None):
@@ -358,7 +512,15 @@ class InMemoryMemoryRepository(MemoryRepository):
             )
             if not m.encrypted
         ]
-        return self._similar(vec, cands, top_k)
+        scored = self._similar(vec, cands, top_k)
+        # Decay (automation layer): idle memories lose confidence; those
+        # below the archive threshold are archived here, audited, and
+        # excluded from results. Touches last_retrieved_at for survivors.
+        from .decay import apply_on_read
+
+        alive = await apply_on_read(self, [s.record for s in scored])
+        alive_ids = {m.id for m in alive}
+        return [s for s in scored if s.record.id in alive_ids]
 
     async def approve(self, memory_id, *, actor_client_id=None):
         rec = self._memories.get(memory_id)
@@ -525,7 +687,7 @@ class InMemoryMemoryRepository(MemoryRepository):
 _PG_COLS = (
     "id, content, type, scope_tags, source, confidence, status,"
     " embedding::text, created_at, updated_at, superseded_by, version,"
-    " encrypted, key_id"
+    " encrypted, key_id, last_retrieved_at, pinned, triage_reasons"
 )
 _PG_LIST_SQL = f"""
 SELECT {_PG_COLS}
@@ -548,6 +710,9 @@ def _row_to_record(row: Any) -> MemoryRecord:
         version=int(row["version"]) if row["version"] is not None else 1,
         encrypted=bool(row["encrypted"]) if row["encrypted"] is not None else False,
         key_id=row["key_id"],
+        last_retrieved_at=row["last_retrieved_at"] or row["updated_at"],
+        pinned=bool(row["pinned"]) if row["pinned"] is not None else False,
+        triage_reasons=list(json.loads(row["triage_reasons"] or "[]")),
     )
 
 
@@ -573,7 +738,8 @@ class PostgresMemoryRepository(MemoryRepository):
 
     async def create_pending(self, *, content, type, scope_tags, confidence,
                              source, actor_client_id=None,
-                             encrypted=False, key_id=None):
+                             encrypted=False, key_id=None,
+                             triage_reasons=()):
         # E2EE (P2): ciphertext stored as-is, embedding NULL (the server must
         # not see plaintext), duplicate detection skipped (ciphertext is not
         # comparable — identical plaintexts differ under random nonces).
@@ -583,13 +749,13 @@ class PostgresMemoryRepository(MemoryRepository):
                 row = await con.fetchrow(
                     f"""
                     INSERT INTO memories (content, type, scope_tags, confidence, source, embedding,
-                                          encrypted, key_id)
-                    VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8)
+                                          encrypted, key_id, triage_reasons)
+                    VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9)
                     {_PG_RETURNING}
                     """,
                     content, type, list(scope_tags), confidence, _json(source),
                     self._vec_literal(vec) if vec is not None else None,
-                    bool(encrypted), key_id,
+                    bool(encrypted), key_id, json.dumps(list(triage_reasons)),
                 )
                 await con.execute(
                     "INSERT INTO change_log (memory_id, op, actor_client_id)"
@@ -623,10 +789,176 @@ class PostgresMemoryRepository(MemoryRepository):
         ]
         return rec, dups
 
+    async def find_similar_active(self, vec, *, threshold=0.70, limit=5):
+        # Probe for triage: no last_retrieved_at touch, no decay (see
+        # abstract docstring).
+        async with self.pool.acquire() as con:
+            rows = await con.fetch(
+                """
+                SELECT id, 1 - (embedding <=> $1::vector) AS score
+                FROM memories
+                WHERE status = 'active' AND encrypted = FALSE
+                  AND embedding IS NOT NULL
+                  AND 1 - (embedding <=> $1::vector) >= $2
+                ORDER BY embedding <=> $1::vector
+                LIMIT $3
+                """,
+                self._vec_literal(vec), threshold, limit,
+            )
+        return [
+            ScoredMemory(
+                MemoryRecord(
+                    id=r["id"], content="", type="", scope_tags=[], source={},
+                    confidence=0.0, status="active", embedding=None,
+                    created_at=_now(), updated_at=_now(),
+                ),
+                float(r["score"]),
+            )
+            for r in rows
+        ]
+
+    async def create_active(self, *, content, type, scope_tags, confidence,
+                            source, actor_client_id=None, triage_reasons=()):
+        vec = self.embedder.embed_one(content)
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    f"""
+                    INSERT INTO memories (content, type, scope_tags, confidence, source,
+                                          embedding, status, triage_reasons)
+                    VALUES ($1, $2, $3, $4, $5, $6::vector, 'active', $7)
+                    {_PG_RETURNING}
+                    """,
+                    content, type, list(scope_tags), confidence, _json(source),
+                    self._vec_literal(vec), json.dumps(list(triage_reasons)),
+                )
+                await con.execute(
+                    "INSERT INTO change_log (memory_id, op, actor_client_id)"
+                    " VALUES ($1, 'create', $2)",
+                    row["id"], actor_client_id,
+                )
+            dup_rows = await con.fetch(
+                """
+                SELECT id, 1 - (embedding <=> $1::vector) AS score
+                FROM memories
+                WHERE id != $2 AND embedding IS NOT NULL
+                  AND 1 - (embedding <=> $1::vector) > $3
+                ORDER BY embedding <=> $1::vector
+                LIMIT 5
+                """,
+                self._vec_literal(vec), row["id"], DUPLICATE_THRESHOLD,
+            )
+        rec = _row_to_record(row)
+        dups = [
+            ScoredMemory(
+                MemoryRecord(
+                    id=r["id"], content="", type="", scope_tags=[], source={},
+                    confidence=0.0, status="", embedding=None,
+                    created_at=_now(), updated_at=_now(),
+                ),
+                float(r["score"]),
+            )
+            for r in dup_rows
+        ]
+        return rec, dups
+
+    async def auto_merge(self, target_id, *, content, confidence,
+                         actor_client_id=None):
+        # Tags deliberately NOT unioned (T1) — see abstract docstring.
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    f"""
+                    UPDATE memories
+                    SET confidence = GREATEST(confidence, $2),
+                        updated_at = now(), last_retrieved_at = now()
+                    WHERE id = $1 AND status = 'active' AND encrypted = FALSE
+                    {_PG_RETURNING}
+                    """,
+                    target_id, confidence,
+                )
+                if row is None:
+                    return None
+                await con.execute(
+                    "INSERT INTO change_log (memory_id, op, actor_client_id)"
+                    " VALUES ($1, 'revise', $2)",
+                    row["id"], actor_client_id,
+                )
+        return _row_to_record(row)
+
+    async def archive(self, memory_id, *, actor_client_id=None):
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    f"""
+                    UPDATE memories
+                    SET status = 'archived', updated_at = now()
+                    WHERE id = $1 AND status != 'archived'
+                    {_PG_RETURNING}
+                    """,
+                    memory_id,
+                )
+                if row is None:
+                    # Already archived or missing: return current state.
+                    row = await con.fetchrow(
+                        _PG_LIST_SQL + "WHERE id = $1", memory_id
+                    )
+                    return _row_to_record(row) if row else None
+                await con.execute(
+                    "INSERT INTO change_log (memory_id, op, actor_client_id)"
+                    " VALUES ($1, 'archive', $2)",
+                    row["id"], actor_client_id,
+                )
+        return _row_to_record(row)
+
+    async def touch_retrieved(self, memory_ids, *, at=None):
+        ids = list(memory_ids)
+        if not ids:
+            return
+        stamp = at or _now()
+        async with self.pool.acquire() as con:
+            await con.execute(
+                "UPDATE memories SET last_retrieved_at = $1 WHERE id = ANY($2)",
+                stamp, ids,
+            )
+
+    async def set_pinned(self, memory_id, pinned, *, actor_client_id=None):
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    f"""
+                    UPDATE memories SET pinned = $2, updated_at = now()
+                    WHERE id = $1
+                    {_PG_RETURNING}
+                    """,
+                    memory_id, bool(pinned),
+                )
+                if row is None:
+                    return None
+                await con.execute(
+                    "INSERT INTO change_log (memory_id, op, actor_client_id)"
+                    " VALUES ($1, 'revise', $2)",
+                    row["id"], actor_client_id,
+                )
+        return _row_to_record(row)
+
     async def get(self, memory_id):
+        from .decay import apply_on_read
+
         async with self.pool.acquire() as con:
             row = await con.fetchrow(_PG_LIST_SQL + "WHERE id = $1", memory_id)
-        return _row_to_record(row) if row else None
+        if not row:
+            return None
+        rec = _row_to_record(row)
+        alive = await apply_on_read(self, [rec])
+        if not alive:
+            # apply_on_read archived it (decay) — re-fetch so the caller
+            # sees the current status, not the pre-archive snapshot.
+            async with self.pool.acquire() as con:
+                row = await con.fetchrow(
+                    _PG_LIST_SQL + "WHERE id = $1", memory_id)
+            return _row_to_record(row) if row else None
+        return alive[0]
 
     async def list(self, *, status=None, tags=(), type=None, limit=50, offset=0,
                  query=None, source_client=None):
@@ -680,7 +1012,15 @@ class PostgresMemoryRepository(MemoryRepository):
                 + f"{where} ORDER BY embedding <=> $1::vector LIMIT ${len(args)+1}",
                 *args, top_k,
             )
-        return [ScoredMemory(_row_to_record(r), float(r["score"])) for r in rows]
+        scored = [
+            ScoredMemory(_row_to_record(r), float(r["score"])) for r in rows
+        ]
+        # Decay (automation layer): see InMemoryMemoryRepository.search.
+        from .decay import apply_on_read
+
+        alive = await apply_on_read(self, [s.record for s in scored])
+        alive_ids = {m.id for m in alive}
+        return [s for s in scored if s.record.id in alive_ids]
 
     async def approve(self, memory_id, *, actor_client_id=None):
         # Single UPDATE...RETURNING: no TOCTOU window between check and write.
