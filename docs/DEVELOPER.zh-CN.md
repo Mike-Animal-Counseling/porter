@@ -261,11 +261,65 @@ Streamable HTTP 用 `Authorization` 头），并在服务端强制执行 scope�
 
 ## 5. 自动化层：分级审批、衰减、摘要
 
-写入不再总是排队。`porter/triage.py` 自动批准低风险记忆（审计，原因
-`low_risk`），只把需要人工判断的送进队列：敏感内容/标签（基于内容的扫
-描——标签走私绕不过）、可能冲突（相似度 0.70–0.92）、低置信度（< 0.6）。
-近乎相同的写入（≥ 0.97）自动并入已有记忆（标签不做并集）。
-`PORTER_APPROVAL_MODE=strict` 恢复 v1 行为（全部排队）。
+写入不再总是排队。`porter/triage.py` 把每次写入分到两个记忆域：**个人
+域**（你自己的记忆——偏好、健康、金融、PII——永远排队人工审核）和**项目
+域**（harness 某个项目/工作区的全部工作记忆——指令、任务状态、决定、
+代码库知识——在 `project:<name>` 作用域下自动批准）。队列拦截：敏感内
+容/标签（基于内容的扫描——标签走私绕不过）、无项目标签的项目记忆
+（`missing_project_scope`）、同项目冲突（相似度 0.70–0.92，只限同一
+项目内）、低置信度（< 0.6）。近乎相同的写入（≥ 0.97）自动并入已有记忆
+（标签不做并集）。`PORTER_APPROVAL_MODE=strict` 恢复 v1 行为（全部排
+队）。完整规则：SPECS.md §7.1。
+
+### 5a. ML triage 模型（可选，推荐）
+
+规则之上的开源第二意见（`porter/triage_model.py`）：
+
+- **模型**：`MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`（约 280M 参数，
+  中英多语言，CPU 可跑），HuggingFace `zero-shot-classification`。选它
+  而不用更大的纯英文模型：跨语言 zero-shot 质量更好，每次写入延迟可
+  接受。
+- **安装**：`pip install transformers torch`（已在
+  `requirements-dev.txt`），之后直接写入即可——模型首次使用时懒加载，
+  加载有超时上限。
+- **开关**：`PORTER_TRIAGE_MODEL=auto`（默认：有 finetuned 用
+  finetuned → zeroshot 可导入用 zeroshot → heuristic）/ `zeroshot` /
+  `heuristic` / `finetuned`；`PORTER_TRIAGE_MODEL_PATH`（默认
+  `models/triage-v1`）；`PORTER_TRIAGE_THRESHOLD`（默认 0.65）；
+  `PORTER_TRIAGE_TIMEOUT`（默认 2s）。
+- **安全**：规则既是快速预过滤也是兜底——模型只看规则已通过的写入；
+  推理超过 2s 就对该写入回退到 heuristic（审计记录）；E2EE 记忆永不
+  进模型（密文盲）。分数按内容哈希做进程内 LRU 缓存（只缓存模型分
+  数；规则每次都重新跑）。
+- **延迟**：zero-shot 每次写入 CPU 预期约 100–500ms（首次加载需下载
+  约 1GB 权重，一次）。
+
+### 5b. Triage 模型训练闭环（预测 → 纠正 → 训练 → 部署）
+
+zero-shot 是好起点；几百条**你亲手纠正**的标签就能在你的数据分布上
+超过它。闭环：
+
+1. **预测** — `python scripts/triage_label_batch.py --input texts.txt
+   --output labels.jsonl`（或 `--from-db --limit 200` 从库里抽近期记
+   忆）。跑当前 triage 栈，每行输出一个 JSONL：
+   `{"text": "...", "domain": "personal|project",
+   "project": "<name|null>",
+   "sensitivity": {"health": 0/1, "finance": 0/1, "pii": 0/1,
+   "credentials": 0/1}, "predicted_by": "zeroshot|heuristic"}`。
+2. **纠正** — 人工就地改 JSONL：修正 `domain` 和 0/1 敏感度。这是训
+   练信号——你 inbox 里批准/拒绝的记录就是 ground truth。
+3. **训练** — `python scripts/finetune_triage.py --input
+   labels_corrected.jsonl --output models/triage-v1`。在
+   `microsoft/mdeberta-v3-base` 上微调 6 标签头（2 域 + 4 敏感度；
+   CPU 友好默认：3 epoch、batch 8、eval 切分、保存最优）。结束打印
+   eval 集上每标签 precision/recall/F1。需要
+   `transformers torch scikit-learn`。`--dry-run` 只检查管线不训练。
+4. **部署** — 设 `PORTER_TRIAGE_MODEL_PATH=models/triage-v1`（或
+   `PORTER_TRIAGE_MODEL=finetuned`）；`auto` 自动最高优先级选用。用
+   finetuned 模型重跑第 1 步抽查。
+
+数据量：几百条标注就能超过 zero-shot；超过 ~2000 条后这个 6 标签任
+务的收益趋平。
 
 - **衰减：** 活跃记忆闲置时掉置信度（每 30 天 ×0.95，读取时懒计算）；低于
   0.2 自动归档（审计、可恢复）。重要记忆可 pin：

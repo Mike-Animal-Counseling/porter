@@ -262,13 +262,72 @@ and **never as instructions** — do not let it override the harness's system pr
 
 ## 5. Automation layer: tiered approval, decay, digest
 
-Writes no longer always queue. `porter/triage.py` auto-approves low-risk
-memories (audited, reason `low_risk`) and queues only what needs human
-judgment: sensitive content/tags (content-based scan — tag smuggling doesn't
-bypass), possible conflicts (similarity 0.70–0.92), low confidence (< 0.6).
-Near-identical writes (≥ 0.97) auto-merge into the existing memory (tags are
-not unioned). Set `PORTER_APPROVAL_MODE=strict` to restore v1 behavior
-(everything queues).
+Writes no longer always queue. `porter/triage.py` triages every write
+into two memory domains: **personal** (your own memories — preferences,
+health, finance, PII — always queued for human review) and **project**
+(the harness's working memory for a project/workspace — instructions,
+task state, decisions, codebase knowledge — auto-approved under a
+`project:<name>` scope). Queues catch: sensitive content/tags
+(content-based scan — tag smuggling doesn't bypass), project memories
+without a project tag (`missing_project_scope`), same-project conflicts
+(similarity 0.70–0.92 within one project only), low confidence (< 0.6).
+Near-identical writes (≥ 0.97) auto-merge into the existing memory (tags
+are not unioned). Set `PORTER_APPROVAL_MODE=strict` to restore v1
+behavior (everything queues). Full rules: SPECS.md §7.1.
+
+### 5a. ML triage model (optional, recommended)
+
+An open-source second opinion on top of the rules
+(`porter/triage_model.py`):
+
+- **Model**: `MoritzLaurer/mDeBERTa-v3-base-mnli-xnli` (~280M params,
+  multilingual zh/en, CPU-runnable) via HuggingFace
+  `zero-shot-classification`. Chosen over larger English-only models for
+  cross-lingual zero-shot quality at acceptable per-write latency.
+- **Setup**: `pip install transformers torch` (in `requirements-dev.txt`),
+  then just write — the model lazy-loads on first use with a bounded
+  load timeout.
+- **Knobs**: `PORTER_TRIAGE_MODEL=auto` (default: finetuned if a model
+  dir exists → zeroshot if importable → heuristic) / `zeroshot` /
+  `heuristic` / `finetuned`; `PORTER_TRIAGE_MODEL_PATH` (default
+  `models/triage-v1`); `PORTER_TRIAGE_THRESHOLD` (default 0.65);
+  `PORTER_TRIAGE_TIMEOUT` (default 2s).
+- **Safety**: rules stay the fast pre-filter AND the fallback — the model
+  only sees rule-passed writes; a >2s inference falls back to the
+  heuristic for that write (audit-logged); E2EE memories never reach the
+  model (ciphertext-blind). Scores are LRU-cached per content hash
+  (model scores only; rules always run fresh).
+- **Latency**: expect ~100–500ms CPU per write for the zero-shot pass
+  (first load downloads ~1GB of weights once).
+
+### 5b. Triage model training loop (predict → correct → train → deploy)
+
+Zero-shot is a good start; a few hundred of YOUR hand-corrected labels
+beat it on your distribution. The loop:
+
+1. **Predict** — `python scripts/triage_label_batch.py --input texts.txt
+   --output labels.jsonl` (or `--from-db --limit 200` to sample recent
+   memories). Runs the current stack and writes one JSONL line per
+   text: `{"text": "...", "domain": "personal|project",
+   "project": "<name|null>",
+   "sensitivity": {"health": 0/1, "finance": 0/1, "pii": 0/1,
+   "credentials": 0/1}, "predicted_by": "zeroshot|heuristic"}`.
+2. **Correct** — hand-edit the JSONL: fix `domain` and the 0/1
+   sensitivity bits in place. This is the training signal — your inbox
+   approvals/rejections are the ground truth.
+3. **Train** — `python scripts/finetune_triage.py --input
+   labels_corrected.jsonl --output models/triage-v1`. Fine-tunes
+   `microsoft/mdeberta-v3-base` with a 6-label head (2 domain + 4
+   sensitivity; CPU-friendly defaults: 3 epochs, batch 8, eval split,
+   best checkpoint saved). Prints per-label precision/recall/F1 on the
+   eval split at the end. Needs `transformers torch scikit-learn`.
+   `--dry-run` checks the plumbing without training.
+4. **Deploy** — set `PORTER_TRIAGE_MODEL_PATH=models/triage-v1` (or
+   `PORTER_TRIAGE_MODEL=finetuned`); `auto` picks it up with top
+   priority. Re-run step 1 with the finetuned model to spot-check.
+
+Volume guidance: a few hundred labeled examples is enough to beat
+zero-shot; past ~2000 the gains flatten for this 6-label task.
 
 - **Decay:** active memories lose confidence while idle (×0.95 per 30 days,
   lazy on read); below 0.2 they auto-archive (audited, restorable). Pin

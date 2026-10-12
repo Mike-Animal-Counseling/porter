@@ -485,13 +485,59 @@ A memory's `content` field is replaced by a JSON envelope:
 
 | 条件 | 处置 |
 |---|---|
+| 个人域（`personal_domain`） | 排队（见 §7.1.1） |
 | 敏感 scope 标签（归一化后） | 排队（`sensitive_tag`） |
 | 敏感内容（NFKC 归一化 pattern 扫描，中英；基于内容而非标签） | 排队（`sensitive_content`） |
-| 与活跃记忆最大相似度在 [0.70, 0.92) | 排队（`possible_conflict`） |
+| ML 模型命中敏感类别 | 排队（`ml_sensitive:<类别>`） |
+| 项目域但缺少 `project:<name>` 标签 | 排队（`missing_project_scope`） |
+| 与同 project 标签的活跃记忆相似度在 [0.70, 0.92)（项目域） | 排队（`possible_conflict`） |
+| 与活跃记忆最大相似度在 [0.70, 0.92)（个人/未知域） | 排队（`possible_conflict`） |
 | 置信度 < 0.6 | 排队（`low_confidence`） |
 | 与活跃记忆相似度在 [0.92, 0.97) | 排队（`duplicate_candidate`）——既有去重路径 |
 | 与活跃记忆相似度 ≥ 0.97 | **自动合并**进目标 |
 | 其他 | **自动批准**（`low_risk`），审计记录 |
+
+#### 7.1.1 两个记忆域（normative）
+
+Porter 存两类记忆，triage 区别对待。这是核心产品定位，不是分类器
+的子功能。
+
+- **个人域（personal）**：用户自己的记忆——偏好、健康、金融、PII、
+  关系。敏感度标签（health / finance / pii / credentials）和人工审核
+  队列用在这里。个人记忆永远排队人工审核（`personal_domain`），任何
+  域的敏感度命中也一样。
+- **项目域（project）**：agent harness 某个项目/工作区的**全部工作记
+  忆**——"你从 Claude Code 切到 Codex/Cursor 继续做同一个项目时跟着你
+  走的行李"。包括指令文件（AGENTS.md / CLAUDE.md / `.cursorrules` /
+  WARP.md / GEMINI.md 只是例子——是项目域的来源之一，不是它的定义）、
+  任务状态、做过的决定、代码库理解、踩过的坑、约定和正在进行的工作上
+  下文。项目记忆默认自动批准（审计记录），两条护栏：
+  - 必须带 `project:<name>` 标签（入库时从 repo 名或工作目录名派生）。
+    无标签的项目记忆以 `missing_project_scope` 排队，等人工打标签；
+  - 冲突检测**按项目限定**：新指令与**同一 project 标签**的已有记忆
+    矛盾才并排排队；跨项目的相似不算冲突。
+- 域按写入解析：显式 `type`（`personal` / `project`；v1 的
+  `preference` 映射到 `personal`）优先，规则通过的写入再由 ML 给第二
+  意见（见 §7.1.2）。解析不出（`unknown`）时按域模型之前默认处理：
+  可自动批准，敏感/冲突/置信度门照常。
+
+#### 7.1.2 ML triage 模型（informative）
+
+`porter/triage_model.py` 在规则之上加了学来的第二意见。后端：
+`heuristic`（包装既有规则 pattern，行为不变）、`zeroshot`
+（HuggingFace `zero-shot-classification` +
+`MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`，约 280M 参数，中英多语言，
+CPU 可跑；先判域再判 4 个敏感度假设，`multi_label=True`，阈值 0.65）、
+`finetuned`（本地 `microsoft/mdeberta-v3-base` + 6 标签头，由
+`scripts/finetune_triage.py` 训练）。`PORTER_TRIAGE_MODEL` 选择
+（默认 `auto`：有 finetuned 用 finetuned → zeroshot → heuristic），
+`PORTER_TRIAGE_MODEL_PATH`（默认 `models/triage-v1`）。
+
+规则既是快速预过滤也是兜底：模型只跑在规则已通过的写入上；分数按内
+容哈希做进程内 LRU 缓存；推理超过 `PORTER_TRIAGE_TIMEOUT`
+（默认 2s）就回退到 heuristic（审计记录）；E2EE 记忆永不进模型
+（密文盲，和规则一样）。zero-shot 模型 CPU 预期延迟：每次写入约
+100–500ms（首次加载需下载约 1GB 权重）。
 
 Normative 规则：
 - 队列是 fail-closed：攻击者控制的 confidence 值无法强制绕过相似度/冲突门

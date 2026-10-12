@@ -16,8 +16,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from .triage import ARCHIVE_CONFIDENCE, DECAY_FACTOR, DECAY_PERIOD_DAYS
-
+from .triage import (
+    ARCHIVE_CONFIDENCE,
+    DECAY_FACTOR,
+    DECAY_PERIOD_DAYS,
+)
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -28,10 +31,11 @@ def effective_confidence(record, at: datetime | None = None) -> float:
     at = at or _now()
     if getattr(record, "encrypted", False) or getattr(record, "pinned", False):
         return float(record.confidence)
+    factor, period = DECAY_FACTOR, DECAY_PERIOD_DAYS
     last = getattr(record, "last_retrieved_at", None) or record.updated_at
     idle_days = max(0.0, (at - last).total_seconds() / 86400.0)
-    periods = idle_days / DECAY_PERIOD_DAYS
-    return float(record.confidence) * (DECAY_FACTOR**periods)
+    periods = idle_days / period
+    return float(record.confidence) * (factor**periods)
 
 
 async def apply_on_read(repo, records: list, *, actor: str = "decay") -> list:

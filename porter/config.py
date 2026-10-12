@@ -78,6 +78,30 @@ class Settings:
     approval_mode: str = field(
         default_factory=lambda: os.getenv("PORTER_APPROVAL_MODE", "tiered")
     )
+    # ML triage model (porter/triage_model.py): second opinion over
+    # rule-passed writes. "auto" (default): finetuned when the model
+    # directory exists, then zero-shot when transformers is importable,
+    # else heuristic. "zeroshot" forces the model (needs transformers +
+    # torch). "heuristic" is pure rules, no extra latency.
+    triage_model: str = field(
+        default_factory=lambda: os.getenv("PORTER_TRIAGE_MODEL", "auto")
+    )
+    # Per-category zero-shot threshold (0..1). A write queues when any
+    # category scores >= this. Default 0.65.
+    triage_model_threshold: float = field(
+        default_factory=lambda: float(os.getenv("PORTER_TRIAGE_THRESHOLD", "0.65"))
+    )
+    # Inference timeout per write (seconds). On timeout the rule decision
+    # stands and the fallback is audit-logged.
+    triage_model_timeout: float = field(
+        default_factory=lambda: float(os.getenv("PORTER_TRIAGE_TIMEOUT", "2.0"))
+    )
+    # Local directory with a fine-tuned triage classifier
+    # (scripts/finetune_triage.py output). Top of the `auto` priority when
+    # the directory exists.
+    triage_model_path: str = field(
+        default_factory=lambda: os.getenv("PORTER_TRIAGE_MODEL_PATH", "models/triage-v1")
+    )
 
 
 settings = Settings()
