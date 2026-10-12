@@ -10,6 +10,31 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+**Project-scoped sync ("luggage follows you")** — `GET /api/v1/sync/delta`
+and the MCP `sync_delta` tool accept `project=<name>`: the delta then
+carries only that project's working memory (records tagged
+`project:<name>`, normalized match) PLUS untagged/global records (the
+personal domain follows the user everywhere). A harness in project X
+never sees project Y's working memory. Convenience filter, NOT a
+security boundary — OAuth tag scopes gate visibility first, synced
+content stays `untrusted_data`. (SPECS.md §5.1)
+
+**`project` convenience parameter** — `POST /api/v1/memories` and MCP
+`memory_add` accept `project="<name>"`, mapped to a normalized
+`project:<name>` scope tag (`porter/triage.py::project_tag`; empty names
+rejected, overlong names fail tag validation loudly). Harnesses no
+longer hand-roll the tag format.
+
+**Panel domain views** — the Memories page gains a Personal / Project /
+All segmented toggle (declared-domain filter; the ML-resolved domain is
+a triage-time signal, not a stored field) plus `personal`/`project`
+type labels in both languages.
+
+**Aider importer** — `<project>/.aider.chat.history.md` chat history is
+imported as per-session project-domain `episode` seeds (conversation
+context is project working memory, SPECS §7.1.1). Best-effort; absence
+is normal.
+
 **Two memory domains (core product framing)** — triage now classifies
 every write into the **personal** domain (your own memories —
 preferences, health, finance, PII; sensitivity-gated, human-reviewed)
@@ -253,6 +278,17 @@ v0.1.0 stays untouched below). Choice rationale: v0.1.0 is already
 tagged in git; the harness extension is additive (new importers +
 config templates, no breaking changes), so it accumulates here until
 the next version cut.
+
+### Fixed
+
+- **Auto-merge is now project-scoped**: a project-domain write no longer
+  auto-merges into a near-identical memory from a DIFFERENT project
+  (the project scope would have been silently lost). Cross-project
+  near-duplicates queue as `duplicate_candidate` for human review
+  instead; same-project auto-merge behavior is unchanged.
+- MCP `memory_add` and `memory_capture` now accept `type="personal"` /
+  `type="project"` (previously 422'd despite the schema allowing them);
+  panel type labels cover both domains in English and Chinese.
 
 ### Added
 

@@ -10,6 +10,26 @@ Porter 的所有重要变更都记录在此。格式遵循
 
 ### 新增
 
+**项目级同步（"行李跟人走"）**——`GET /api/v1/sync/delta` 和 MCP
+`sync_delta` 工具接受 `project=<name>`：此时 delta 只携带该项目的
+工作记忆（带 `project:<name>` 标签的记录，归一化匹配）加上无标签/
+全局记录（个人域跟随用户到处走）。项目 X 的 harness 看不到项目 Y
+的工作记忆。只是便利过滤，**不是**安全边界——OAuth 标签 scope 先做
+可见性门控，同步内容保持 `untrusted_data`。（SPECS.md §5.1）
+
+**`project` 快捷参数**——`POST /api/v1/memories` 和 MCP `memory_add`
+接受 `project="<name>"`，映射为归一化的 `project:<name>` scope 标签
+（`porter/triage.py::project_tag`；空名拒绝、超长名在标签校验处大声
+失败）。harness 不用再手拼标签格式。
+
+**面板域视图**——Memories 页新增 个人 / 项目 / 全部 分段切换（按声
+明的域过滤；ML 解析出的域是 triage 时信号，不是存储字段），中英文
+类型标签补齐 `personal`/`project`。
+
+**Aider 导入器**——`<project>/.aider.chat.history.md` 聊天记录按会话
+导入为项目域 `episode` 种子（对话上下文就是项目工作记忆，
+SPECS §7.1.1）。best-effort；没有也正常。
+
 **两个记忆域（核心产品定位）**——triage 把每次写入分到**个人域**
 （你自己的记忆——偏好、健康、金融、PII；敏感度把关、人工审核）或
 **项目域**（某个项目的**全部**工作记忆——指令、任务状态、决定、代
@@ -244,6 +264,15 @@ QWEN.md 种子，成为 `project` 域的 inbox 种子并带 `project:<目录>`
 v0.1.0 在下方保持不动）。取舍理由：v0.1.0 已在 git 打 tag；
 harness 扩展是加法（新增导入器 + 配置模板，无破坏性变更），
 故在此累积到下一次版本切割。
+
+### 修复
+
+- **自动合并现已按项目隔离**：项目域写入不再自动合并进**不同项目**
+  的近似重复记忆（否则项目作用域会被静默丢失）。跨项目近似重复改
+  为以 `duplicate_candidate` 排队人工确认；同项目自动合并行为不变。
+- MCP `memory_add` 和 `memory_capture` 现接受 `type="personal"` /
+  `type="project"`（之前报 422，尽管 schema 允许）；面板类型标签中
+  英文补齐两个域。
 
 ### 新增
 

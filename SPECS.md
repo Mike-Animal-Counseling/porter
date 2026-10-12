@@ -338,7 +338,7 @@ MCP `sync_delta` tool, panel `/panel/sync`); migration `004_sync.sql`.
 
 ### 5.1 Endpoints (contract, normative)
 
-- `GET /api/v1/sync/delta?since=<int>&limit=<int,default 100,max 500>` →
+- `GET /api/v1/sync/delta?since=<int>&limit=<int,default 100,max 500>[&project=<name>]` →
   ```json
   {"changes":[{"seq":1234,"memory_id":"a1b2…","op":"approve","status":"active",
                "at":"2026-10-11T20:06:00Z","actor_client_id":"c3d4…",
@@ -346,6 +346,14 @@ MCP `sync_delta` tool, panel `/panel/sync`); migration `004_sync.sql`.
    "cursor":1234}
   ```
   - `since`: int >= 0, exclusive (422 otherwise); `limit`: 1..500.
+  - `project` (optional): the harness's current project name. The delta then
+    carries only that project's working memory — records tagged
+    `project:<name>` (normalized match) PLUS untagged/global records (the
+    personal domain follows the user everywhere; see §7.1.1). Omit for the
+    full feed. This is the "luggage follows you" mechanism: a harness in
+    project X never sees project Y's working memory. It is a convenience
+    filter, NOT a security boundary — OAuth tag scopes (§1.3) gate
+    visibility first, and synced content is always marked `untrusted_data`.
   - `op`: `create` | `approve` | `revise` (subject = the NEW record) |
     `delete`. `status` is the record's current status, `null` for delete
     tombstones (the row no longer exists).
