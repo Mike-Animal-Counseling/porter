@@ -625,8 +625,8 @@ async def memory_new(
     scope_tags: str = Form(default=""),
     _=Depends(panel_owner),
 ):
-    # Owner-created memories go through the same pending inbox as harness
-    # writes (PRD F1: no silent auto-activation).
+    # Owner-created memories go through the same triage as harness writes
+    # (automation layer): low-risk auto-approves, the rest queues.
     lang = get_lang()
     repo, _store, _snap = _deps(request)
     if type not in TYPE_LABEL[lang]:
@@ -639,14 +639,26 @@ async def memory_new(
         )
     except ValueError as exc:
         raise InvalidInput(str(exc))
-    rec, _dups = await repo.create_pending(
-        content=content, type=type, scope_tags=tags, confidence=1.0,
+    from .triage import create_with_triage
+
+    rec, decision = await create_with_triage(
+        repo, content=content, type=type, scope_tags=tags, confidence=1.0,
         source={"client_id": "owner-panel"},
+        via="panel", scopes_used=["memory.admin"],
     )
-    await repo.audit(
-        action="write", memory_ids=[rec.id], scopes_used=["memory.admin"],
-        meta={"via": "panel", "transition": "created->pending"},
-    )
+    if decision.action == "auto_merge" and decision.merge_target_id is not None:
+        return RedirectResponse(
+            f"/panel/memories/{decision.merge_target_id}"
+            f"?msg={quote(t('msg_saved', lang))}",
+            status_code=302,
+        )
+    if rec is None:  # defensive: auto_merge without a target id
+        raise InvalidInput("merge target unavailable")
+    if decision.action == "auto_approve":
+        return RedirectResponse(
+            f"/panel/memories/{rec.id}?msg={quote(t('msg_saved', lang))}",
+            status_code=302,
+        )
     return RedirectResponse(
         f"/panel/inbox?msg={quote(t('msg_memory_created', lang))}", status_code=302
     )
@@ -726,13 +738,29 @@ async def memory_delete(
 
 
 # ------------------------------------------------------------------ inbox
+def _triage_chips(m, lang: str) -> str:
+    """Triage reason chips for inbox cards (automation layer). Unknown
+    reason codes fall back to a generic label — never render raw codes."""
+    reasons = getattr(m, "triage_reasons", None) or ["unknown"]
+    chips = []
+    for r in reasons:
+        try:
+            label = t(f"triage_{r}", lang)
+        except KeyError:
+            label = t("triage_unknown", lang)
+        chips.append(
+            f"<span class='chip chip--warn'>{esc(label)}</span>"
+        )
+    return "".join(chips)
+
+
 def _inbox_card(m, lang: str, dups_html: str = "") -> str:
     src = (m.source or {}).get("client_id", "—")
     pct = int((m.confidence or 0) * 100)
     return f"""
 <div class="card inbox-card" id="inbox-card-{m.id}">
 <div class="inbox-card__eyebrow">
-{_tag_chips(m.scope_tags)}{_enc_badge(m, lang)}
+{_tag_chips(m.scope_tags)}{_enc_badge(m, lang)}{_triage_chips(m, lang)}
 <span>{esc(_type_label(m.type, lang))} · {esc(t("inbox_from", lang))} <span class="mono">{esc(src)}</span> · {_dt(m.created_at)}</span>
 </div>
 <p class="inbox-card__content">{esc(m.content)}</p>
