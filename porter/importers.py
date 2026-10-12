@@ -32,8 +32,9 @@ Harness coverage (verified 2026-10-11, extended same day):
 - Cursor: NO documented native memory store. Best-effort support for the
   ``.cursor/memories/`` community convention (per-project markdown dir).
 - Zed: NO native memory store at all. Honest no-op with documentation.
-- OpenCode / Amp / Kilo Code / Kimi CLI / Copilot CLI / Aider: NO native
-  portable memory store — MCP implant only (see NO_NATIVE_STORE).
+- Aider: ``<project>/.aider.chat.history.md`` (chat history, split into
+  per-session project-domain ``episode`` seeds; needs --project-root).
+  Best-effort; absence is normal and documented.
 
 Official data-export importers (best-effort, read-only on the export file):
 - ChatGPT: ``conversations.json`` from the official export (direct ``.json``
@@ -797,6 +798,82 @@ class WarpImporter(_GlobalMdSeedImporter):
     seed_confidence = 0.4
 
 
+def _split_aider_history(text: str) -> list[str]:
+    """Split an Aider chat-history file into per-session chunks.
+
+    Aider's ``.aider.chat.history.md`` separates sessions with top-level
+    ``# `` headers (``# aider chat started at …``). Best-effort: when no
+    headers are found the whole file is one chunk; callers skip stubs.
+    """
+    chunks: list[str] = []
+    current: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("# ") and current:
+            chunks.append("\n".join(current))
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        chunks.append("\n".join(current))
+    return [c for c in chunks if c.strip()]
+
+
+class AiderImporter(HarnessImporter):
+    """Aider: ``<project>/.aider.chat.history.md`` (chat history).
+
+    Conversation context IS project-domain working memory (SPECS §7.1.1 —
+    the domain covers task state and work context, not just instruction
+    files). Sessions are imported as project-domain ``episode`` seeds with
+    a ``project:<dir>`` tag, low confidence, into the pending inbox.
+    Best-effort parse; absence is normal and documented.
+    """
+
+    harness = "aider"
+
+    def __init__(self, project_roots: list[str | os.PathLike[str]] | None = None):
+        self.project_roots = [Path(p) for p in (project_roots or [])]
+
+    def scan(self) -> tuple[list[ImportCandidate], str]:
+        candidates: list[ImportCandidate] = []
+        seen: list[str] = []
+        for root in self.project_roots:
+            p = root / ".aider.chat.history.md"
+            seen.append(str(p))
+            if p.is_symlink() or not p.is_file():
+                continue
+            try:
+                if p.stat().st_size > _MAX_IMPORT_FILE_BYTES:
+                    continue
+                text = p.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for i, chunk in enumerate(_split_aider_history(text)):
+                chunk = chunk.strip()
+                if len(chunk) < 80:  # skip stubs/empty sessions
+                    continue
+                if len(chunk) > 20_000:  # same cap as the REST API
+                    chunk = chunk[:20_000]
+                candidates.append(ImportCandidate(
+                    title=f"aider session {i + 1} ({root.name})",
+                    content=chunk,
+                    type="project",
+                    scope_tags=[f"project:{root.name}", "seed"],
+                    confidence=0.35,
+                    source={
+                        "client_id": "aider",
+                        "imported_from": str(p),
+                        "imported_at": datetime.now(timezone.utc).isoformat(),
+                        "project_root": str(root),
+                        "seed": True,
+                    },
+                    imported_from=str(p),
+                ))
+        return candidates, (
+            f"scanned {seen}: {len(candidates)} aider sessions "
+            "(project-domain seeds)"
+        )
+
+
 class DevinImporter(HarnessImporter):
     """Devin (incl. Devin Desktop, formerly Windsurf): ``<project>/.devin/**/*.md``.
 
@@ -1331,9 +1408,10 @@ NO_NATIVE_STORE: dict[str, str] = {
         "via the MCP server."
     ),
     "aider": (
-        "Aider is stateless per run and keeps no memory store "
-        "(verified 2026-10-11). Memories live in Porter going forward "
-        "via the MCP server."
+        "Aider keeps no dedicated memory store, but per-project chat history "
+        "at <project>/.aider.chat.history.md is imported as project-domain "
+        "episode seeds (use the aider importer with --project-root). "
+        "Ongoing memories live in Porter via the MCP server."
     ),
     "continue": (
         "Continue.dev keeps no portable memory store on disk (rules only, "
@@ -1389,6 +1467,7 @@ IMPORTERS: dict[str, type[HarnessImporter]] = {
     "devin": DevinImporter,
     "openhands": OpenHandsImporter,
     "warp": WarpImporter,
+    "aider": AiderImporter,
     # Official data exports need --file (a .json path or a .zip); they are
     # intentionally NOT part of `--harness all`.
     "chatgpt": ChatGPTExportImporter,
