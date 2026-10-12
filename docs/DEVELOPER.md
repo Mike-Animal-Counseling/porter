@@ -1,3 +1,5 @@
+**English** | [中文](DEVELOPER.zh-CN.md)
+
 # Porter — Developer Integration Guide
 
 ## 1. What Porter is
@@ -73,7 +75,7 @@ curl -s -X POST http://localhost:8000/oauth/token \
 curl -s -X POST http://localhost:8000/api/v1/memories/search \
   -H "Authorization: Bearer <access-token>" \
   -H "Content-Type: application/json" \
-  -d '{"query": "我不吃什么", "top_k": 5, "tags": ["dietary"]}'
+  -d '{"query": "what foods should I avoid", "top_k": 5, "tags": ["dietary"]}'
 ```
 
 Scopes are **enforced server-side** on every call; the server never trusts what the client claims (T1, PRD §13.3).
@@ -149,13 +151,13 @@ curl -s -X GET "http://localhost:8000/api/v1/memories?tag=health" \
 # ...while the granted tag works:
 curl -s -X POST http://localhost:8000/api/v1/memories/search \
   -H "Authorization: Bearer <dietary-only-token>" \
-  -d '{"query": "忌口", "top_k": 5}'
+  -d '{"query": "dietary restrictions", "top_k": 5}'
 # -> 200: only memories with scope_tags ⊆ [dietary]
 
 # A token with NO read scope at all:
 curl -s -X POST http://localhost:8000/api/v1/memories/search \
   -H "Authorization: Bearer <write-only-token>" \
-  -d '{"query": "忌口"}'
+  -d '{"query": "dietary restrictions"}'
 # -> 403 {"error": {"code": "insufficient_scope", "message": "missing required scope: memory.read"}}
 ```
 

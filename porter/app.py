@@ -115,6 +115,7 @@ def create_app(
     lifespan=None,
     snapshot_store: SnapshotStore | None = None,
     enable_mcp: bool = True,
+    wiki_service=None,  # porter.wiki.WikiService | None; None = wiki layer off
 ) -> FastAPI:
     app = FastAPI(
         title="Porter",
@@ -122,6 +123,7 @@ def create_app(
         version="0.2.0",
         lifespan=lifespan,
     )
+    app.state.wiki_service = wiki_service
     app.middleware("http")(auth.auth_middleware)
     app.add_exception_handler(PorterError, porter_error_handler)
 
@@ -358,6 +360,15 @@ def create_app(
         )
         if rec is None:
             raise NotFound(f"memory {memory_id} not found")
+        # LLM Wiki layer (prototype, flag-gated): index entities on approve.
+        # Best-effort and non-blocking for the approve itself — a wiki
+        # failure must never fail the user's approval.
+        wiki = getattr(request.app.state, "wiki_service", None)
+        if wiki is not None and getattr(wiki, "enabled", False):
+            try:
+                await wiki.on_approved(rec)
+            except Exception:  # noqa: BLE001 - prototype best-effort hook
+                log.exception("wiki on_approved failed for %s", rec.id)
         # Visibility change is security-relevant: audit it (threat T7).
         await request_repo.audit(
             action="write",
@@ -1086,6 +1097,7 @@ def create_app(
                 revocation_cache_fn=lambda: app.state.revocation_cache,
                 rate_limiter_fn=lambda: app.state.rate_limiter,
                 auth_enabled_fn=lambda: app.state.auth_enabled,
+                wiki_fn=lambda: getattr(app.state, "wiki_service", None),
             ),
             path="/mcp",
         )

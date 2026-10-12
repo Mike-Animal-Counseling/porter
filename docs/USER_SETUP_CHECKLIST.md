@@ -1,89 +1,91 @@
-# Porter 上线检查清单 — 需要你亲手做的事
+**English** | [中文](USER_SETUP_CHECKLIST.zh-CN.md)
 
-> 代码 100% 写完了（273 个测试全绿），但有几件事必须在**你的机器**上做，我做不了。
-> 按顺序走完，Porter 就跑起来了。预计 30–60 分钟。
+# Porter Setup Checklist — Things Only You Can Do
+
+> The code is 100% done (all 273 tests green), but a few things have to happen on **your machine** — I can't do those for you.
+> Follow the steps in order and Porter will be up and running. Estimated 30–60 minutes.
 
 ---
 
-## 1. 准备环境（5 分钟）
+## 1. Prepare the environment (5 min)
 
-- [ ] 安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)（Mac / Windows）或 Docker Engine（Linux）
-- [ ] 安装 Python 3.12+（只用来跑导入器和客户端脚本）
-- [ ] 拉代码：
+- [ ] Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Mac / Windows) or Docker Engine (Linux)
+- [ ] Install Python 3.12+ (only used to run the importer and client scripts)
+- [ ] Clone the repo:
   ```bash
   git clone https://github.com/Mike-Animal-Counseling/porter.git
   cd porter
   ```
 
-## 2. 启动服务（10 分钟）
+## 2. Start the services (10 min)
 
-- [ ] 一条命令拉起全部（API + Postgres + pgvector + 面板 + embedding）：
+- [ ] One command brings everything up (API + Postgres + pgvector + panel + embedding):
   ```bash
   docker compose up -d
   ```
-- [ ] 看日志拿一次性 setup token（只显示一次）：
+- [ ] Grab the one-time setup token from the logs (shown only once):
   ```bash
   docker compose logs porter | grep PORTER_SETUP_TOKEN
   ```
-- [ ] 生产环境务必设置 JWT 签名密钥（不设的话重启后所有 token 失效）：
+- [ ] Set the JWT signing key for production (without it, all tokens are invalidated on restart):
   ```bash
-  # .env 文件里加一行（.env 已在 .gitignore，不会进 git）
-  PORTER_JWT_SECRET=<openssl rand -hex 32 的输出>
+  # Add this line to your .env file (.env is already in .gitignore, so it won't end up in git)
+  PORTER_JWT_SECRET=<output of openssl rand -hex 32>
   ```
-  然后 `docker compose up -d` 重启。
+  Then restart with `docker compose up -d`.
 
-## 3. 打开面板，熟悉一下（5 分钟）
+## 3. Open the panel and take a look around (5 min)
 
-- [ ] 浏览器打开 http://127.0.0.1:8000/panel
-- [ ] 设置页：确认语言（中文/English）、看看 scope tag 列表
-- [ ] 记住：面板只能本机访问，这是设计（外网打不开是正常的）
+- [ ] Open http://127.0.0.1:8000/panel in your browser
+- [ ] Settings page: confirm the language (中文/English), check the scope tag list
+- [ ] Note: the panel only accepts local connections — that's by design. Not being reachable from the internet is expected behavior.
 
-## 4. 接你的 harness（每个 2 分钟，27 个里只接你用的）
+## 4. Connect your harnesses (2 min each — only connect the ones you use)
 
-- [ ] 到 `clients/` 目录找对应模板（文件名即 harness 名）
-- [ ] 复制到模板头部注释里写的**目标路径**（如 Codex 的 `~/.codex/config.toml`）
-- [ ] 把 `{{PORTER_TOKEN}}` 换成真实 token（面板 → 授权页 → 新建 client 拿）
-- [ ] 重启那个 harness（Windsurf/Tabnine 必须完全重启才加载 MCP）
+- [ ] Find the matching template in `clients/` (the filename is the harness name)
+- [ ] Copy it to the **target path** noted in the template's header comment (e.g. `~/.codex/config.toml` for Codex)
+- [ ] Replace `{{PORTER_TOKEN}}` with a real token (Panel → Authorization page → create a new client)
+- [ ] Restart that harness (Windsurf/Tabnine must be fully restarted for MCP to load)
 
-> 建议顺序：Codex → Claude Code → Cursor（你最常用的先）
+> Suggested order: Codex → Claude Code → Cursor (most-used first)
 
-## 5. 导入存量记忆（10 分钟）
+## 5. Import your existing memories (10 min)
 
-- [ ] 先 dry-run 看会导入什么（**只读原文件，不碰你的 harness**）：
+- [ ] Dry-run first to see what would be imported (read-only — your harness files are not touched):
   ```bash
   python -m porter.import_cli --harness codex --dry-run
   ```
-- [ ] 没问题就正式导入（进待确认队列，不会自动生效）：
+- [ ] If it looks good, run the real import (memories go into the pending-review queue; nothing takes effect automatically):
   ```bash
   python -m porter.import_cli --harness codex
   ```
-- [ ] 其他 harness 照此办理：`--harness claude-code|cursor|windsurf|cline|roo|gemini|qwen|junie|droid|tabnine|devin|openhands|chatgpt|claude`
-- [ ] 去面板「待确认队列」逐条批准（或一键全部批准）
+- [ ] Repeat for your other harnesses: `--harness claude-code|cursor|windsurf|cline|roo|gemini|qwen|junie|droid|tabnine|devin|openhands|chatgpt|claude`
+- [ ] Go to the panel's pending-review queue and approve each item (or approve all at once)
 
-## 6. 端到端验证（5 分钟）
+## 6. End-to-end verification (5 min)
 
-- [ ] 在 harness A 里说"记住：我对花生过敏"
-- [ ] 面板待确认队列里批准它
-- [ ] 在 harness B 里问"我对什么过敏"——应该能答出来
-- [ ] 面板「同步」页能看到两个 adapter 的在线状态和 cursor
+- [ ] In harness A, say "remember: I'm allergic to peanuts"
+- [ ] Approve it in the panel's pending-review queue
+- [ ] In harness B, ask "what am I allergic to" — it should answer correctly
+- [ ] On the panel's "Sync" page you should see both adapters online with their cursors
 
-走完这一步，Porter 就正式接管你的记忆了。
+Once this step works, Porter is officially managing your memory.
 
 ---
 
-## 诚实清单：我还没验证过的（需要你在真机上确认）
+## Honest list: things I haven't verified (needs confirmation on a real machine)
 
-| # | 事项 | 为什么没验 | 你要做的 |
+| # | Item | Why unverified | What you need to do |
 |---|------|-----------|---------|
-| 1 | 真实 Postgres migration（004/005） | 我的环境没 Docker/PG | `docker compose up` 后看 migration 日志无报错 |
-| 2 | BGE-M3 真实 embedding 质量 | 小 VM 跑不动大模型，测试用的是 HashEmbedder | 随便搜个语义相近的词，看召回准不准 |
-| 3 | 真实 harness MCP 握手 | 这环境没装 Codex/Cursor | 第 4 步接完后，在 harness 里调一次 `memory_search` |
-| 4 | Antigravity 的 Authorization 头 | 文档没写清 | 如果连不上，告诉我，我给它做免密本地模式 |
+| 1 | Real Postgres migration (004/005) | My environment has no Docker/PG | After `docker compose up`, check the migration logs for errors |
+| 2 | Real BGE-M3 embedding quality | The small VM can't run big models; tests used HashEmbedder | Search a semantically similar term and check whether recall is accurate |
+| 3 | Real harness MCP handshake | Codex/Cursor aren't installed in this environment | After step 4, call `memory_search` once from your harness |
+| 4 | Antigravity's Authorization header | The docs are unclear on it | If you can't connect, tell me and I'll build a passwordless local mode for it |
 
 ---
 
-## 出问题找谁
+## Where to get help
 
-- 部署问题：看 `DEPLOY.md`
-- 接入开发：看 `docs/DEVELOPER.md`
-- 报错贴给我：`docker compose logs porter` 的最后 50 行
+- Deployment issues: see `DEPLOY.md`
+- Integration development: see `docs/DEVELOPER.md`
+- For errors, paste me the last 50 lines of `docker compose logs porter`

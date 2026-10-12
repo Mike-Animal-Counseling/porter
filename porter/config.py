@@ -20,8 +20,14 @@ class Settings:
             "DATABASE_URL", "postgresql://porter:porter@localhost:5432/porter"
         )
     )
-    # hash | sentence-transformer | http | openai
-    embedder_kind: str = field(default_factory=lambda: os.getenv("EMBEDDER_KIND", "hash"))
+    # hash | sentence-transformer | bge-m3 | qwen3 | http | openai
+    # PORTER_EMBEDDER is the documented flag (EMBEDDER_KIND kept as alias).
+    # Default stays "hash": real models load in Docker, never implicitly.
+    embedder_kind: str = field(
+        default_factory=lambda: os.getenv(
+            "PORTER_EMBEDDER", os.getenv("EMBEDDER_KIND", "hash")
+        )
+    )
     embedder_url: str = field(
         default_factory=lambda: os.getenv("EMBEDDER_URL", "http://embedder:8001")
     )
@@ -53,6 +59,17 @@ class Settings:
     # v1 snapshots are local files (PRD §9.1, panel).
     snapshot_dir: str = field(
         default_factory=lambda: os.getenv("PORTER_SNAPSHOT_DIR", "snapshots")
+    )
+    # LLM Wiki layer (entity graph, prototype): PORTER_WIKI_ENABLED=1 turns
+    # on entity extraction at approve-time + hybrid graph-boosted retrieval.
+    # Default OFF: with the flag off, search behavior is identical to v1.
+    wiki_enabled: bool = field(
+        default_factory=lambda: os.getenv("PORTER_WIKI_ENABLED", "0") == "1"
+    )
+    # LLM extractor backend for the wiki layer: stub (default, deterministic,
+    # no model) — see porter/llm.py for ollama/openai wiring notes.
+    llm_extractor_kind: str = field(
+        default_factory=lambda: os.getenv("PORTER_LLM_EXTRACTOR", "stub")
     )
 
 
