@@ -1,0 +1,3 @@
+# local dev / test deps
+-r api/requirements.txt
+pytest>=8.0
