@@ -64,6 +64,7 @@ from .schemas import (
     ShareCreateOut,
     ShareOut,
     SnapshotCreate,
+    _validate_tags as _validate_tag_list,
     SnapshotOut,
     SyncChange,
     SyncDeltaOut,
@@ -240,7 +241,22 @@ def create_app(
         # queue for humans; near-identical (>= 0.97) auto-merge. E2EE always
         # queues (ciphertext-blind). PORTER_APPROVAL_MODE=strict restores the
         # v1 "everything queues" behavior.
-        from .triage import create_with_triage
+        from .triage import create_with_triage, project_tag
+
+        # `project` convenience -> normalized `project:<name>` scope tag
+        # (SPECS §7.1.1). Re-validated: one more tag can breach MAX_TAGS.
+        tags = list(body.scope_tags)
+        if body.project:
+            try:
+                ptag = project_tag(body.project)
+            except ValueError as exc:
+                raise InvalidInput(f"invalid project: {exc}")
+            if ptag not in tags:
+                tags.append(ptag)
+            try:
+                tags = _validate_tag_list(tags)
+            except ValueError as exc:
+                raise InvalidInput(str(exc))
 
         if body.content_ciphertext is not None:
             if body.encryption is None:
@@ -251,7 +267,7 @@ def create_app(
                 request_repo,
                 content=body.content_ciphertext,
                 type=body.type,
-                scope_tags=body.scope_tags,
+                scope_tags=tags,
                 confidence=body.confidence,
                 source=body.source,
                 actor_client_id=_client_pk(request),
@@ -267,7 +283,7 @@ def create_app(
                 request_repo,
                 content=body.content,
                 type=body.type,
-                scope_tags=body.scope_tags,
+                scope_tags=tags,
                 confidence=body.confidence,
                 source=body.source,
                 actor_client_id=_client_pk(request),
@@ -1133,13 +1149,17 @@ def create_app(
         request: Request,
         since: int = Query(default=0, ge=0),
         limit: int = Query(default=100, ge=1, le=500),
+        # Project filter (SPECS §7.1.1): only this project's working memory
+        # plus untagged/global memories. Omit for the full feed.
+        project: str | None = Query(default=None, max_length=128),
         request_repo: MemoryRepository = Depends(get_repo),
         granted: list[str] = Depends(auth.require_scopes("memory.read")),
     ):
         # Visibility rules (tag-scope filtering, inbox rule, non-admin
         # active-only) live in porter/sync.py, shared with the MCP tool.
         payload = await sync_logic.build_sync_delta(
-            request_repo, since=since, limit=limit, granted=granted
+            request_repo, since=since, limit=limit, granted=granted,
+            project=project,
         )
         # Online-status bookkeeping: refresh last_seen, but NEVER advance
         # the cursor on a fetch — the adapter acks explicitly via POST.

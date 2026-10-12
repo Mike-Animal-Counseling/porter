@@ -66,12 +66,18 @@ TYPE_LABEL = {
         "fact": "事实",
         "episode": "经历",
         "skill_ref": "技能引用",
+        # Two-domain taxonomy (SPECS §7.1.1)
+        "personal": "个人",
+        "project": "项目",
     },
     "en": {
         "preference": "Preference",
         "fact": "Fact",
         "episode": "Episode",
         "skill_ref": "Skill ref",
+        # Two-domain taxonomy (SPECS §7.1.1)
+        "personal": "Personal",
+        "project": "Project",
     },
 }
 
@@ -139,6 +145,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "search_semantic": "语义搜索",
         "opt_all_tags": "全部标签",
         "opt_all_types": "全部类型",
+        "domain_all": "全部",
+        "domain_personal": "个人",
+        "domain_project": "项目",
+        "domain_toggle_label": "按记忆域筛选",
         "th_content": "内容",
         "th_type": "类型",
         "th_status": "状态",
@@ -429,6 +439,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "search_semantic": "Semantic",
         "opt_all_tags": "All tags",
         "opt_all_types": "All types",
+        "domain_all": "All",
+        "domain_personal": "Personal",
+        "domain_project": "Project",
+        "domain_toggle_label": "Filter by memory domain",
         "th_content": "Content",
         "th_type": "Type",
         "th_status": "Status",
