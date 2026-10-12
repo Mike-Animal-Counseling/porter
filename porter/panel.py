@@ -27,6 +27,7 @@ import csv
 import html
 import io
 import json
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -100,6 +101,23 @@ def _deps(request: Request):
 
         raise ServiceNotReady("panel backend is still starting up")
     return repo, store, snap
+
+
+log = logging.getLogger("porter.panel")
+
+
+async def _wiki_index(request: Request, rec) -> None:
+    """Best-effort LLM-wiki indexing after an approval.
+
+    Flag-gated (PORTER_WIKI_ENABLED=1): with the flag off, wiki_service is
+    None and this is a no-op. A wiki failure must never fail the approval.
+    """
+    wiki = getattr(request.app.state, "wiki_service", None)
+    if wiki is not None and getattr(wiki, "enabled", False) and rec is not None:
+        try:
+            await wiki.on_approved(rec)
+        except Exception:  # noqa: BLE001 - prototype best-effort hook
+            log.exception("wiki on_approved failed for %s", rec.id)
 
 
 def _dt(v) -> str:
@@ -336,7 +354,7 @@ def _mem_row(m, lang: str, dup_note: str = "") -> str:
     return (
         f"<tr><td style='max-width:340px'>"
         f"<a href='/panel/memories/{m.id}' hx-get='/panel/memories/{m.id}' "
-        f"hx-target='#drawer-body' hx-swap='innerHTML'>{snippet}</a>{dup_note}"
+        f"hx-target='#drawer-body' hx-swap='innerHTML' class='mem-snippet'>{snippet}</a>{dup_note}"
         f"<div style='margin-top:4px'>{_tag_chips(m.scope_tags)}</div></td>"
         f"<td>{esc(_type_label(m.type, lang))}</td>"
         f"<td>{_status_badge(m.status, lang)}{_enc_badge(m, lang)}</td>"
@@ -395,7 +413,30 @@ async def memories_page(
         f"<option value='{s}' {'selected' if s == status else ''}>{esc(_status_label(s, lang))}</option>"
         for s in ("active", "pending", "archived")
     )
+    # Constellation data: up to 60 memories under the current filters.
+    # Only id + short label + tags are embedded; labels are drawn with
+    # canvas fillText (never innerHTML). Clicks reuse the HTMX drawer.
+    graph_mems = await repo.list(
+        status=status or None, tags=(tag,) if tag else (),
+        type=type or None, limit=60, query=q or None,
+    )
+    nodes = [
+        {"id": str(m.id), "label": m.content[:24], "tags": list(m.scope_tags or []),
+         "confidence": m.confidence}
+        for m in graph_mems
+    ]
+    nodes_json = esc(json.dumps(nodes, ensure_ascii=False))
+    graph_empty = "" if nodes else (
+        f"<div class='empty'><div class='empty__desc'>"
+        f"{esc(t('constel_empty', lang))}</div></div>"
+    )
     body = f"""
+<div class="row" style="margin-bottom:16px;justify-content:flex-end">
+<div class="seg view-toggle" role="group" aria-label="{esc(t("view_toggle_label", lang))}">
+<button type="button" data-mem-view="table" aria-pressed="true">{esc(t("view_table", lang))}</button>
+<button type="button" data-mem-view="graph" aria-pressed="false">{esc(t("view_graph", lang))}</button>
+</div></div>
+<div id="mem-table-wrap">
 <div class="card">
 <form method="get" action="/panel/memories" id="mem-filter-form">
 <div class="toolbar" id="mem-filters">
@@ -427,7 +468,13 @@ async def memories_page(
 <tbody id="mem-rows">{rows_html}</tbody></table></div>
 <div id="mem-skel" class="htmx-indicator" style="padding:12px"><div class="skel" style="height:44px;margin-bottom:8px"></div><div class="skel" style="height:44px;margin-bottom:8px"></div><div class="skel" style="height:44px"></div></div>
 <div class="small muted" style="margin-top:10px">{esc(t("mem_note", lang))}</div>
-</div>"""
+</div></div>
+<div id="mem-graph-wrap" hidden>
+<div class="card constel-card constel-card--large">
+<canvas id="constel" data-nodes="{nodes_json}"></canvas>
+{graph_empty}
+<div class="constel-hint">{esc(t("constel_hint", lang))}</div>
+</div></div>"""
     return HTMLResponse(
         await _layout(request, "memories", t("title_memories", lang), body, lang)
     )
@@ -763,6 +810,7 @@ async def inbox_approve_all(request: Request, _=Depends(panel_owner)):
         rec = await repo.approve(m.id)
         if rec is not None:
             n += 1
+            await _wiki_index(request, rec)
     await repo.audit(
         action="write", memory_ids=[m.id for m in pendings],
         scopes_used=["memory.admin"],
@@ -791,6 +839,7 @@ async def inbox_approve(
     rec = await repo.approve(memory_id)
     if rec is None:
         raise NotFound(f"memory {memory_id} not found")
+    await _wiki_index(request, rec)
     await repo.audit(
         action="write", memory_ids=[rec.id], scopes_used=["memory.admin"],
         meta={"via": "panel", "transition": "pending->active"},
@@ -1443,6 +1492,35 @@ async def snapshots_apply_confirm(
 
 
 # ------------------------------------------------------------------ sync (P1, PRD §9.5 / US7)
+def _pulse_svg(live: bool, lang: str) -> str:
+    """Thin gold heartbeat strip. Live = animated crawl; idle = calm flat line."""
+    # EKG-like polyline, generated once (purely decorative; liveness comes from
+    # real adapter last_seen, decided by the caller).
+    pts = []
+    x = 0
+    base_y = 22
+    beat = [0, 0, -9, 14, -4, 0, 0, 0, 6, -6, 0, 0]  # one QRS-ish complex
+    while x < 1200:
+        for dy in beat:
+            pts.append(f"{x},{base_y + dy}")
+            x += 14
+        # flat gap between beats
+        for _ in range(6):
+            pts.append(f"{x},{base_y}")
+            x += 14
+    if not live:
+        pts = [f"{i * 14},{base_y}" for i in range(86)]
+    path = "M" + " L".join(pts)
+    cls = "pulse-strip--live" if live else "pulse-strip--idle"
+    label = esc(t("pulse_live", lang)) if live else esc(t("pulse_idle", lang))
+    return (
+        f'<div class="pulse-strip {cls}" aria-hidden="true">'
+        f'<svg viewBox="0 0 1200 44" preserveAspectRatio="none">'
+        f'<path class="pulse-strip__line" d="{path}"/></svg>'
+        f'<span class="pulse-strip__label">{label}</span></div>'
+    )
+
+
 def _sync_adapter_cards(adapter_ids, cursors, name_of, head, now, lang: str) -> str:
     cards = []
     for aid in adapter_ids:
@@ -1519,6 +1597,7 @@ async def sync_page(request: Request, _=Depends(panel_owner)):
 {_sync_adapter_cards(adapter_ids, cursors, name_of, head, now, lang) or f"<div class='card'><div class='muted'>{esc(t('sync_empty', lang))}</div></div>"}
 </div>"""
     body = f"""
+{_pulse_svg(online_n > 0, lang)}
 <div class="muted small" style="margin-bottom:16px">head seq <code class="mono">#{head}</code> · {esc(t("sync_sub", lang))}</div>
 {live}
 <div class="card" style="margin-top:16px"><h2>{esc(t("sync_how_title", lang))}</h2>
