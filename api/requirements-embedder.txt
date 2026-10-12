@@ -1,0 +1,3 @@
+# include base, then the model stack (heavy: torch + transformers)
+-r requirements.txt
+sentence-transformers>=3.0

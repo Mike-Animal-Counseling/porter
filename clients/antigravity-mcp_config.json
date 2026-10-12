@@ -1,0 +1,8 @@
+{
+  "_comment": "Porter MCP server for Google Antigravity. HOW TO APPLY: merge the mcpServers.porter block into ~/.gemini/config/mcp_config.json. NOTE the vendor-specific key: \"serverUrl\" (HTTP transport) instead of command/args. UNVERIFIED (prominent): no source confirms how Antigravity attaches an Authorization header; if it cannot send a custom Authorization header carrying {{PORTER_TOKEN}}, Porter's bearer-token requirement will NOT work over this HTTP transport — verify on a real install before relying on it. Not tested against a live Antigravity install here.",
+  "mcpServers": {
+    "porter": {
+      "serverUrl": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}

@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Env / secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Porter runtime data
+snapshots/
+*.porter
+*.porter.json
+*.memport
+porter.db
+*.sqlite3
+
+# Signing keys (instance Ed25519)
+**/.keys/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Node (if any tooling added later)
+node_modules/

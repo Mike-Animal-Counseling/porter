@@ -1,0 +1,16 @@
+{
+  "_comment": "Porter MCP server for Augment Code. HOW TO APPLY: merge the mcpServers.porter block into your workspace settings JSON (or use CLI: auggie mcp add). Replace {{PORTER_TOKEN}} with a real Porter access token. UNVERIFIED: CLI stdio flags are partially attested in community sources — verify on a real install. Not tested against a live Augment install here.",
+  "mcpServers": {
+    "porter": {
+      "transport": "stdio",
+      "command": "python",
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}"
+      }
+    }
+  }
+}
