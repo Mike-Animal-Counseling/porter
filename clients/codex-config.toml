@@ -1,0 +1,28 @@
+# Porter MCP server — Codex CLI config template.
+#
+# HOW TO USE (see DEPLOY.md for the full walkthrough):
+#   1. Copy the [mcp_servers.porter] block below into ~/.codex/config.toml
+#      (MERGE with your existing file — do not replace it).
+#   2. Replace {{PORTER_TOKEN}} with a real Porter access token minted via
+#      the OAuth flow (needs `memory.read` + `memory.write`; prefer
+#      `memory.read.<tag>` tags for least privilege).
+#   3. Make the `porter` package importable: either `pip install -e <repo>/api`
+#      or set PYTHONPATH to your porter repo checkout (see below).
+#   4. PORTER_REPO=postgres + DATABASE_URL point the MCP server at the SAME
+#      Postgres the Porter API uses. Without this, memories would live in a
+#      separate ephemeral store and nothing would sync.
+#
+# Docs: https://developers.openai.com/codex/mcp/
+
+[mcp_servers.porter]
+command = "python3"
+args = ["-m", "porter.mcp_stdio"]
+
+[mcp_servers.porter.env]
+PORTER_TOKEN = "{{PORTER_TOKEN}}"
+PORTER_REPO = "postgres"
+DATABASE_URL = "postgresql://porter:porter@localhost:5432/porter"
+EMBEDDER_KIND = "http"
+EMBEDDER_URL = "http://localhost:8001"
+# Point at your porter checkout so `python3 -m porter.mcp_stdio` resolves:
+PYTHONPATH = "/path/to/porter"

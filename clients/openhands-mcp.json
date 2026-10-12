@@ -1,0 +1,15 @@
+{
+  "_comment": "Porter MCP server for OpenHands (open-source SWE-agent successor). HOW TO APPLY: merge the mcpServers.porter block into ~/.openhands/mcp.json. CLI alternative: openhands mcp add. Replace {{PORTER_TOKEN}} with a real Porter access token. UNVERIFIED: not tested against a live OpenHands install here.",
+  "mcpServers": {
+    "porter": {
+      "command": "python",
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}"
+      }
+    }
+  }
+}

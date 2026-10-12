@@ -1,0 +1,15 @@
+{
+  "_comment": "Porter MCP server for Devin (incl. Devin Desktop, formerly Windsurf). HOW TO APPLY: merge the mcpServers.porter block into ~/.config/devin/mcp_config.json (create the file if absent); project-level: .devin/mcp_config.json; local-only (gitignored): .devin/mcp_config.local.json. CLI alternative: devin mcp add --scope user porter -- python -m porter.mcp_stdio. Replace {{PORTER_TOKEN}} with a real Porter access token. NOTE: Windsurf was renamed Devin Desktop (2026-06); the legacy windsurf-mcp_config.json is kept for existing Cascade installs. UNVERIFIED: not tested against a live Devin install here.",
+  "mcpServers": {
+    "porter": {
+      "command": "python",
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}"
+      }
+    }
+  }
+}

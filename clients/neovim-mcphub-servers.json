@@ -1,0 +1,15 @@
+{
+  "_comment": "Porter MCP server for Neovim AI plugins (avante.nvim + codecompanion.nvim) via mcphub.nvim. HOW TO APPLY: merge the mcpServers.porter block into ~/.config/mcphub/servers.json (requires mcphub.nvim installed; one config covers both plugins). Replace {{PORTER_TOKEN}} with a real Porter access token, then :MCPHub refresh or restart Neovim. UNVERIFIED: not tested against a live Neovim install here.",
+  "mcpServers": {
+    "porter": {
+      "command": "python",
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}"
+      }
+    }
+  }
+}

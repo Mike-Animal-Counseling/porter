@@ -1,0 +1,65 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: porter
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-porter}
+      POSTGRES_DB: porter
+    volumes:
+      - porter-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U porter"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  embedder:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+      args:
+        REQ_FILE: requirements-embedder.txt
+    command: uvicorn porter.embed_server:app --host 0.0.0.0 --port 8001
+    environment:
+      EMBEDDER_KIND: sentence-transformer
+      HF_HOME: /home/porter/models
+    volumes:
+      - porter-models:/home/porter/models   # BGE-M3 cached here (~2.3 GB first run)
+    healthcheck:
+      # Model download can take minutes on first boot; start_period covers it.
+      test: ["CMD-SHELL", "python -c \"import httpx; httpx.get('http://localhost:8001/healthz', timeout=5).raise_for_status()\""]
+      interval: 30s
+      timeout: 10s
+      start_period: 600s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    # Migrations + pool run inside the FastAPI lifespan (porter.main); no
+    # separate migrate step needed (scripts/migrate.py stays for manual use).
+    command: uvicorn porter.main:app --host 0.0.0.0 --port 8000
+    environment:
+      DATABASE_URL: postgresql://porter:${POSTGRES_PASSWORD:-porter}@db:5432/porter
+      PORTER_REPO: postgres
+      EMBEDDER_KIND: http
+      EMBEDDER_URL: http://embedder:8001
+    ports:
+      # P0: bind localhost only. The consent screen has no owner session, so
+      # /oauth/* must not be exposed to a network without a reverse-proxy
+      # auth layer in front. Change deliberately if you know what you do.
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      embedder:
+        condition: service_healthy
+
+volumes:
+  porter-db:
+  porter-models:

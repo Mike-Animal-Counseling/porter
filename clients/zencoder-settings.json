@@ -1,0 +1,15 @@
+{
+  "_comment": "Porter MCP server for Zencoder (VS Code + JetBrains). HOW TO APPLY (VS Code): merge the zencoder.mcpServers.porter block into your VS Code settings.json. NOTE the vendor-specific key: \"zencoder.mcpServers\", NOT \"mcpServers\". For JetBrains: Tools > Zencoder > MCP Servers UI. Replace {{PORTER_TOKEN}} with a real Porter access token. UNVERIFIED: not tested against a live Zencoder install here.",
+  "zencoder.mcpServers": {
+    "porter": {
+      "command": "python",
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}"
+      }
+    }
+  }
+}

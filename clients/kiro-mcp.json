@@ -1,0 +1,15 @@
+{
+  "_comment": "Porter MCP server for Kiro. HOW TO APPLY: merge the mcpServers.porter block into ~/.kiro/settings/mcp.json. Replace {{PORTER_TOKEN}} with a real Porter access token. UNVERIFIED: not tested against a live Kiro install here.",
+  "mcpServers": {
+    "porter": {
+      "command": "python",
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}"
+      }
+    }
+  }
+}

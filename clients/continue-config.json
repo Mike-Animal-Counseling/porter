@@ -1,0 +1,15 @@
+{
+  "_comment": "Porter MCP server for Continue.dev (VS Code + JetBrains, open source). HOW TO APPLY: merge the mcpServers.porter block into ~/.continue/config.json (JSON) or the equivalent section of config.yaml. Replace {{PORTER_TOKEN}} with a real Porter access token. IMPORTANT: MCP tools are only exposed in Continue's Agent mode, not Chat mode. UNVERIFIED: not tested against a live Continue install here.",
+  "mcpServers": {
+    "porter": {
+      "command": "python",
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}"
+      }
+    }
+  }
+}

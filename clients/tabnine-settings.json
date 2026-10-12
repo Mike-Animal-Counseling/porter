@@ -1,0 +1,15 @@
+{
+  "_comment": "Porter MCP server for Tabnine (CLI + IDE agent). HOW TO APPLY: merge the mcpServers.porter block into .tabnine/agent/settings.json (project-level) or the global settings.json. Replace {{PORTER_TOKEN}} with a real Porter access token. IMPORTANT: Tabnine requires a RESTART (not just reload) to pick up MCP config changes. UNVERIFIED: not tested against a live Tabnine install here.",
+  "mcpServers": {
+    "porter": {
+      "command": "python",
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}"
+      }
+    }
+  }
+}

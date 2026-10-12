@@ -1,0 +1,15 @@
+{
+  "_comment": "Porter MCP server for JetBrains Junie (+ JetBrains AI Assistant). HOW TO APPLY: merge the mcpServers.porter block into ~/.junie/mcp/mcp.json (user-level) or .junie/mcp/mcp.json (project-level). Replace {{PORTER_TOKEN}} with a real Porter access token. For the JetBrains AI Assistant (non-Junie), use Settings > Tools > AI Assistant > MCP and paste the porter server JSON instead (no file). UNVERIFIED: not tested against a live Junie install here.",
+  "mcpServers": {
+    "porter": {
+      "command": "python",
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}"
+      }
+    }
+  }
+}

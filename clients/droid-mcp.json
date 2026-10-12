@@ -1,0 +1,16 @@
+{
+  "_comment": "Porter MCP server for Factory Droid (terminal agent). HOW TO APPLY: merge the mcpServers.porter block into ~/.factory/mcp.json (user-level) or .factory/mcp.json (project-level). Replace {{PORTER_TOKEN}} with a real Porter access token. Supports ${NAME} env expansion in values. UNVERIFIED: not tested against a live Droid install here.",
+  "mcpServers": {
+    "porter": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}"
+      }
+    }
+  }
+}
