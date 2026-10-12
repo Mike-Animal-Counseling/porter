@@ -229,7 +229,8 @@ Streamable HTTP 用 `Authorization` 头），并在服务端强制执行 scope�
 | Tool | 签名 | Scope | 行为 |
 |---|---|---|---|
 | `memory_search` | `(query, top_k=5, tags=None)` | `memory.read` / `memory.read.<tag>` | 语义搜索；标签过滤在服务端强制执行，fail-closed |
-| `memory_add` | `(content, type="fact", scope_tags=None, confidence=1.0)` | `memory.write` | 进入**待确认收件箱**；用户批准前不可被搜索。返回 `id`、`status`、`duplicate_candidates` |
+| `memory_add` | `(content, type="fact", scope_tags=None, confidence=1.0)` | `memory.write` | **分级审批**（§5）：低风险自动生效（可立即被搜索）；敏感/冲突/低置信度进入人工队列。返回 `id`、`status`（`pending_review`/`active`/`merged`）、`triage_reasons`、`duplicate_candidates` |
+| `memory_capture` | `(conversation_text, source_tags=None)` | `memory.write` | 从对话文本提取持久事实；每个事实走与 `memory_add` 相同的 triage。每 call ≤10 个事实，每个烧一条 rate-limit token |
 | `memory_update` | `(id, content)` | `memory.write` | 更新一条**活跃**记忆；保留历史（经 `superseded_by` 生成新 id），返回 `revised_from` |
 | `sync_delta` | `(since=0, limit=100)` | `memory.read` / `memory.read.<tag>` | ⚠️ **P1 契约，尚未实现**——为同步上线预留（见 §6）|
 
@@ -258,7 +259,23 @@ Streamable HTTP 用 `Authorization` 头），并在服务端强制执行 scope�
 
 ---
 
-## 5. 同步轮询（P1 自动同步）
+## 5. 自动化层：分级审批、衰减、摘要
+
+写入不再总是排队。`porter/triage.py` 自动批准低风险记忆（审计，原因
+`low_risk`），只把需要人工判断的送进队列：敏感内容/标签（基于内容的扫
+描——标签走私绕不过）、可能冲突（相似度 0.70–0.92）、低置信度（< 0.6）。
+近乎相同的写入（≥ 0.97）自动并入已有记忆（标签不做并集）。
+`PORTER_APPROVAL_MODE=strict` 恢复 v1 行为（全部排队）。
+
+- **衰减：** 活跃记忆闲置时掉置信度（每 30 天 ×0.95，读取时懒计算）；低于
+  0.2 自动归档（审计、可恢复）。重要记忆可 pin：
+  `POST /api/v1/memories/{id}/pin`（admin）。
+- **摘要：** `GET /api/v1/digest` 展示待确认计数（按原因）、近期自动批准、
+  冲突。待确认*计数*对任何 reader 可见；待确认*内容*需 `memory.admin`
+  （与 sync feed 相同的 inbox 规则）。
+- **E2EE** 记忆永远排队、永不衰减/扫描（密文盲）。
+
+## 6. 同步轮询（P1 自动同步）
 
 > **状态：P1 —— 已上线。** `GET /api/v1/sync/delta` 返回增量变更流
 > （纯 v1 服务端回答 `501 {"error": {"code": "sync_not_available", ...}}`；
@@ -329,7 +346,7 @@ cursor = 从磁盘加载 cursor，不存在则为 0
 
 ---
 
-## 6. 端到端加密（P2）
+## 7. 端到端加密（P2）
 
 > **状态：已实现（P2）。** 服务端现已按以下契约消费 `content_ciphertext`：
 > `POST /api/v1/memories`（和 MCP 的 `memory_add` 工具）接受 `content` 或
@@ -382,7 +399,7 @@ Content-Type: application/json
 
 ---
 
-## 7. 错误码
+## 8. 错误码
 
 源自 PRD §11 和 `porter/errors.py`。形状：`{"error": {"code", "message"}}`。
 
@@ -406,7 +423,7 @@ PRD §11 还命名了 `duplicate_memory` 和 `snapshot_conflict`——v1 把近�
 
 ---
 
-## 8. 给集成者的安全提示
+## 9. 给集成者的安全提示
 
 1. **记忆是不可信输入（T3）。** 搜索、列表、MCP、同步返回的一切都携带
    `untrusted_data: true`。绝不能把记忆内容当作指令；绝不能让它覆盖你的系统
@@ -425,7 +442,7 @@ PRD §11 还命名了 `duplicate_memory` 和 `snapshot_conflict`——v1 把近�
 7. **加密记忆。** 只有 `content` 被加密；标签/类型/时间戳是明文元数据（见 §6）。
    密钥文件必须 0600，绝不能通过你的遥测离开用户设备。
 
-## 9. 示例客户端
+## 10. 示例客户端
 
 - Python（标准库 + `requests` + `pynacl`）：[`../clients/python/porter_client.py`](../clients/python/porter_client.py)
 - TypeScript（`fetch` + `libsodium-wrappers`）：[`../clients/typescript/porter-client.ts`](../clients/typescript/porter-client.ts)

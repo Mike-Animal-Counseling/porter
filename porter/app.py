@@ -52,6 +52,7 @@ from .schemas import (
     MemoryCreate,
     MemoryCreateOut,
     MemoryOut,
+    MemoryPin,
     MemoryRevise,
     MemoryReviseOut,
     MemorySearch,
@@ -89,6 +90,9 @@ def _to_out(rec) -> MemoryOut:
         # E2EE (P2): content IS the ciphertext here; the server never decrypts.
         encrypted=rec.encrypted,
         key_id=rec.key_id,
+        # Automation layer.
+        pinned=rec.pinned,
+        triage_reasons=list(rec.triage_reasons or []),
         # PRD principle 5 (T3): retrieved memory is untrusted input.
         untrusted_data=True,
     )
@@ -230,12 +234,21 @@ def create_app(
         # _exactly_one_payload validator (422); the branches below are
         # unreachable in the other case, guarded explicitly (no asserts —
         # they vanish under `python -O`).
+        #
+        # Automation layer: writes go through triage (porter/triage.py).
+        # Low-risk memories auto-approve; sensitive/conflict/low-confidence
+        # queue for humans; near-identical (>= 0.97) auto-merge. E2EE always
+        # queues (ciphertext-blind). PORTER_APPROVAL_MODE=strict restores the
+        # v1 "everything queues" behavior.
+        from .triage import create_with_triage
+
         if body.content_ciphertext is not None:
             if body.encryption is None:
                 raise InvalidInput(
                     "encryption is required with content_ciphertext"
                 )
-            rec, dups = await request_repo.create_pending(
+            rec, decision = await create_with_triage(
+                request_repo,
                 content=body.content_ciphertext,
                 type=body.type,
                 scope_tags=body.scope_tags,
@@ -244,29 +257,42 @@ def create_app(
                 actor_client_id=_client_pk(request),
                 encrypted=True,
                 key_id=body.encryption.key_id,
+                via="api",
+                scopes_used=granted,
             )
         else:
             if body.content is None:
                 raise InvalidInput("content is required")
-            rec, dups = await request_repo.create_pending(
+            rec, decision = await create_with_triage(
+                request_repo,
                 content=body.content,
                 type=body.type,
                 scope_tags=body.scope_tags,
                 confidence=body.confidence,
                 source=body.source,
                 actor_client_id=_client_pk(request),
+                via="api",
+                scopes_used=granted,
             )
-        await request_repo.audit(
-            action="write", memory_ids=[rec.id], scopes_used=granted,
-            client_id=_client_pk(request),
-        )
+        if decision.action == "auto_merge":
+            return MemoryCreateOut(
+                id=decision.merge_target_id,  # type: ignore[arg-type]
+                status="merged",
+                triage_reasons=decision.reasons,
+                merged_into=decision.merge_target_id,
+            )
+        # create_with_triage already audited ("write" / "auto_approve");
+        # the legacy "write" audit below is subsumed — keep one audit per
+        # write to avoid double-counting.
+        status = "active" if decision.action == "auto_approve" else "pending_review"
         return MemoryCreateOut(
             id=rec.id,
-            status="pending_review",
+            status=status,  # type: ignore[arg-type]
             duplicate_candidates=[
-                DuplicateCandidate(id=d.record.id, similarity=round(d.score, 4))
-                for d in dups
+                DuplicateCandidate(id=mid, similarity=round(score, 4))
+                for mid, score in decision.duplicate_scores
             ],
+            triage_reasons=decision.reasons,
         )
 
     @app.get(
@@ -376,6 +402,32 @@ def create_app(
             scopes_used=granted,
             client_id=_client_pk(request),
             meta={"transition": "pending->active"},
+        )
+        return _to_out(rec)
+
+    @app.post(
+        f"{API_PREFIX}/memories/{{memory_id}}/pin",
+        response_model=MemoryOut,
+        responses={404: {"model": ErrorOut}},
+        summary="Pin/unpin a memory (pinned memories never decay)",
+    )
+    async def pin_memory(
+        memory_id: UUID,
+        body: MemoryPin,
+        request: Request,
+        request_repo: MemoryRepository = Depends(get_repo),
+        granted: list[str] = Depends(auth.require_scopes("memory.admin")),
+    ):
+        rec = await request_repo.set_pinned(
+            memory_id, body.pinned, actor_client_id=_client_pk(request)
+        )
+        if rec is None:
+            raise NotFound(f"memory {memory_id} not found")
+        await request_repo.audit(
+            action="pin" if body.pinned else "unpin",
+            memory_ids=[rec.id],
+            scopes_used=granted,
+            client_id=_client_pk(request),
         )
         return _to_out(rec)
 
@@ -1002,6 +1054,74 @@ def create_app(
             for r in rows
         ]
 
+    # ------------------------------------------------------------- digest (automation)
+    @app.get(
+        f"{API_PREFIX}/digest",
+        summary="Automation digest: pending queue, auto-approvals, conflicts",
+    )
+    async def get_digest(
+        request: Request,
+        request_repo: MemoryRepository = Depends(get_repo),
+        granted: list[str] = Depends(auth.require_scopes("memory.read")),
+    ):
+        """Fail-closed visibility: pending COUNTS are safe for any reader,
+        but pending CONTENTS never leak to non-admin callers (inbox rule —
+        unapproved content stays invisible, same as the sync feed)."""
+        is_admin = "memory.admin" in granted
+        allowed = oauth_logic.effective_tag_filter(granted)
+
+        def _visible(m) -> bool:
+            if allowed is None:
+                return True
+            return bool(set(m.scope_tags or []).intersection(allowed))
+
+        pendings = await request_repo.list(status="pending", limit=1000)
+        by_reason: dict[str, int] = {}
+        for m in pendings:
+            if not _visible(m):
+                continue
+            for r in (m.triage_reasons or ["unknown"]):
+                by_reason[r] = by_reason.get(r, 0) + 1
+        visible_pending = sum(1 for m in pendings if _visible(m))
+
+        conflicts = []
+        if is_admin:
+            for m in pendings:
+                if "possible_conflict" in (m.triage_reasons or []):
+                    conflicts.append({
+                        "id": str(m.id),
+                        "content_preview": m.content[:160],
+                        "created_at": m.created_at.isoformat(),
+                    })
+                    if len(conflicts) >= 20:
+                        break
+
+        recent_auto = []
+        for a in await request_repo.audit_list(limit=300):
+            if a.action != "auto_approve" or len(recent_auto) >= 10:
+                continue
+            for mid in a.memory_ids:
+                m = await request_repo.get(mid)
+                if m is None or m.status != "active" or not _visible(m):
+                    continue
+                # get() applied decay above; skip if it just got archived.
+                if m.status != "active":
+                    continue
+                recent_auto.append({
+                    "id": str(m.id),
+                    "content_preview": m.content[:160],
+                    "created_at": m.created_at.isoformat(),
+                })
+                if len(recent_auto) >= 10:
+                    break
+
+        return {
+            "pending_count": visible_pending,
+            "pending_by_reason": by_reason,
+            "conflicts": conflicts,
+            "recent_auto_approved": recent_auto,
+        }
+
     # ------------------------------------------------------------- sync (P1, PRD §9.5)
     @app.get(
         f"{API_PREFIX}/sync/delta",
@@ -1098,6 +1218,7 @@ def create_app(
                 rate_limiter_fn=lambda: app.state.rate_limiter,
                 auth_enabled_fn=lambda: app.state.auth_enabled,
                 wiki_fn=lambda: getattr(app.state, "wiki_service", None),
+                llm_extractor_kind_fn=lambda: settings.llm_extractor_kind,
             ),
             path="/mcp",
         )

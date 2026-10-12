@@ -71,6 +71,13 @@ class Settings:
     llm_extractor_kind: str = field(
         default_factory=lambda: os.getenv("PORTER_LLM_EXTRACTOR", "stub")
     )
+    # Automation layer: tiered approval for new memories (porter/triage.py).
+    # "tiered" (default): low-risk memories auto-approve (audited); sensitive
+    # content/tags, possible conflicts, and low confidence queue for humans.
+    # "strict": v1 behavior — every write goes to the pending inbox.
+    approval_mode: str = field(
+        default_factory=lambda: os.getenv("PORTER_APPROVAL_MODE", "tiered")
+    )
 
 
 settings = Settings()

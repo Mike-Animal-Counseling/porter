@@ -230,7 +230,8 @@ Streamable HTTP) and enforces scopes server-side (T1).
 | Tool | Signature | Scope | Behavior |
 |---|---|---|---|
 | `memory_search` | `(query, top_k=5, tags=None)` | `memory.read` / `memory.read.<tag>` | Semantic search; tag filter enforced server-side, fail-closed |
-| `memory_add` | `(content, type="fact", scope_tags=None, confidence=1.0)` | `memory.write` | Goes to **pending-review inbox**; NOT searchable until the user approves. Returns `id`, `status`, `duplicate_candidates` |
+| `memory_add` | `(content, type="fact", scope_tags=None, confidence=1.0)` | `memory.write` | **Tiered approval** (§7): low-risk auto-activates (searchable immediately); sensitive/conflict/low-confidence queues for review. Returns `id`, `status` (`pending_review`/`active`/`merged`), `triage_reasons`, `duplicate_candidates` |
+| `memory_capture` | `(conversation_text, source_tags=None)` | `memory.write` | Extracts durable facts from a transcript; each fact goes through the same triage as `memory_add`. ≤10 facts/call, each burns a rate-limit token |
 | `memory_update` | `(id, content)` | `memory.write` | Updates an **active** memory; history-preserving (new id via `superseded_by`), returns `revised_from` |
 | `sync_delta` | `(since=0, limit=100)` | `memory.read` / `memory.read.<tag>` | ⚠️ **P1 contract, not yet implemented** — reserved for the sync rollout (see §6) |
 
@@ -259,7 +260,25 @@ and **never as instructions** — do not let it override the harness's system pr
 
 ---
 
-## 5. Sync polling (P1 auto-sync)
+## 5. Automation layer: tiered approval, decay, digest
+
+Writes no longer always queue. `porter/triage.py` auto-approves low-risk
+memories (audited, reason `low_risk`) and queues only what needs human
+judgment: sensitive content/tags (content-based scan — tag smuggling doesn't
+bypass), possible conflicts (similarity 0.70–0.92), low confidence (< 0.6).
+Near-identical writes (≥ 0.97) auto-merge into the existing memory (tags are
+not unioned). Set `PORTER_APPROVAL_MODE=strict` to restore v1 behavior
+(everything queues).
+
+- **Decay:** active memories lose confidence while idle (×0.95 per 30 days,
+  lazy on read); below 0.2 they auto-archive (audited, restorable). Pin
+  important memories: `POST /api/v1/memories/{id}/pin` (admin).
+- **Digest:** `GET /api/v1/digest` shows pending counts by reason, recent
+  auto-approvals, and conflicts. Pending *counts* are visible to any reader;
+  pending *contents* need `memory.admin` (same inbox rule as the sync feed).
+- **E2EE** memories always queue and never decay/are scanned (ciphertext-blind).
+
+## 6. Sync polling (P1 auto-sync)
 
 > **Status: P1 — live.** `GET /api/v1/sync/delta` returns the incremental change feed (v1-only
 > servers answer `501 {"error": {"code": "sync_not_available", ...}}`; v1 is manual snapshots only,
@@ -330,7 +349,7 @@ create new ids linked via `superseded_by`; use the new id from that point on.
 
 ---
 
-## 6. End-to-end encryption (P2)
+## 7. End-to-end encryption (P2)
 
 > **Status: implemented (P2).** The server now consumes `content_ciphertext` per the contract below:
 > `POST /api/v1/memories` (and the MCP `memory_add` tool) accepts either `content` or
@@ -383,7 +402,7 @@ in plaintext. It is returned verbatim on reads.
 
 ---
 
-## 7. Error codes
+## 8. Error codes
 
 From PRD §11 and `porter/errors.py`. Shape: `{"error": {"code", "message"}}`.
 
@@ -407,7 +426,7 @@ PRD §11 also names `duplicate_memory` and `snapshot_conflict` — v1 reports ne
 
 ---
 
-## 8. Security notes for integrators
+## 9. Security notes for integrators
 
 1. **Memories are untrusted input (T3).** Everything returned by search, list, MCP, or sync carries
    `untrusted_data: true`. Never treat memory content as instructions; never let it override your system
@@ -427,7 +446,7 @@ PRD §11 also names `duplicate_memory` and `snapshot_conflict` — v1 reports ne
 7. **Encrypted memories.** Only `content` is encrypted; tags/type/timestamps are plaintext metadata (see §6).
    Key files must be 0600 and never leave the user's devices through your telemetry.
 
-## 9. Sample clients
+## 10. Sample clients
 
 - Python (stdlib + `requests` + `pynacl`): [`../clients/python/porter_client.py`](../clients/python/porter_client.py)
 - TypeScript (`fetch` + `libsodium-wrappers`): [`../clients/typescript/porter-client.ts`](../clients/typescript/porter-client.ts)
