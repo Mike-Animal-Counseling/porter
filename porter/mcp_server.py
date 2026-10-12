@@ -1,9 +1,12 @@
 """MCP server for Porter (PRD §8 F3, §11, principle 5 / T3).
 
-Tools (exactly the PRD §11 set):
+Tools (the PRD §11 set, plus the LLM Wiki prototype tool):
   memory_search(query, top_k=5, tags=[]) -> memories, each marked untrusted_data
   memory_add(content, type="fact", scope_tags=[]) -> pending-review inbox entry
   memory_update(id, content) -> updates an ACTIVE memory
+  sync_delta(...) -> change feed
+  memory_graph(entity=|memory_id=) -> entity-graph neighbors (prototype,
+      flag-gated via PORTER_WIKI_ENABLED; porter:wiki_disabled when off)
 
 Transports:
   stdio (priority, local CLIs): `python -m porter.mcp_stdio`,
@@ -65,6 +68,12 @@ class MCPDeps:
     revocation_cache_fn: Callable[[], RevocationCache]
     rate_limiter_fn: Callable[[], object]  # TokenBucket-like (.allow(key) -> bool)
     auth_enabled_fn: Callable[[], bool]
+    # LLM Wiki layer (prototype, flag-gated). The memory_graph tool is
+    # always registered but returns porter:wiki_disabled at call time
+    # unless the service is enabled. Unconditional registration is
+    # deliberate: in postgres mode the service attaches in lifespan, AFTER
+    # build_mcp_server runs (same late-wiring reason MCPDeps uses getters).
+    wiki_fn: Callable[[], object | None] | None = None
 
 
 def _ready_repo(deps: MCPDeps) -> MemoryRepository:
@@ -72,6 +81,16 @@ def _ready_repo(deps: MCPDeps) -> MemoryRepository:
     if repo is None:
         raise ToolError("porter:not_ready: memory repository is still starting up")
     return repo
+
+
+def _wiki_service(deps: MCPDeps):
+    """Return the enabled WikiService, or None (flag off / not wired)."""
+    if deps.wiki_fn is None:
+        return None
+    wiki = deps.wiki_fn()
+    if wiki is None or not getattr(wiki, "enabled", False):
+        return None
+    return wiki
 
 
 def _check_rate_limit(deps: MCPDeps, ctx_auth: AuthContext) -> None:
@@ -161,7 +180,10 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
             "Search the user's Porter memories by meaning. Returns matching "
             "memories (id, content, type, scope_tags, confidence, score). "
             "Requires the memory.read scope (or memory.read.<tag>); tag "
-            "filtering is enforced server-side. " + UNTRUSTED_NOTICE
+            "filtering is enforced server-side. "
+            "Set wiki_boost=true to also expand one hop over the LLM Wiki "
+            "entity graph (prototype, only when the server enabled it). "
+            + UNTRUSTED_NOTICE
         )
     )
     async def memory_search(
@@ -169,6 +191,7 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
         ctx: Context,
         top_k: int = 5,
         tags: list[str] | None = None,
+        wiki_boost: bool = False,
     ) -> dict:
         try:
             auth = await _resolve_mcp_auth(ctx, deps)
@@ -193,14 +216,25 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
                           "hits": 0, "note": "tag_filter_empty"},
                 )
                 return {"results": []}  # fail closed
-            scored = await repo.search(query=query, top_k=top_k, tags=eff_tags)
+            scored = None
+            wiki = _wiki_service(deps)
+            if wiki_boost and wiki is not None:
+                # Hybrid path (prototype): embedding recall, then 1-hop
+                # graph expansion over shared entities, merged + ranked.
+                # Same tag/active filters as the base path.
+                scored = await wiki.hybrid_search(
+                    repo, query, top_k=top_k, tags=eff_tags,
+                )
+            if scored is None:
+                scored = await repo.search(query=query, top_k=top_k, tags=eff_tags)
             await repo.audit(
                 action="read",
                 memory_ids=[s.record.id for s in scored],
                 scopes_used=granted,
                 client_id=auth.client_pk,
                 meta={"via": "mcp", "tool": "memory_search",
-                      "top_k": top_k, "hits": len(scored)},
+                      "top_k": top_k, "hits": len(scored),
+                      "wiki_boost": bool(wiki_boost and wiki is not None)},
             )
             return {
                 "results": [
@@ -215,6 +249,133 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
                     }
                     for s in scored
                 ]
+            }
+        except ToolError:
+            raise
+        except PorterError as exc:
+            raise ToolError(f"porter:{exc.code}: {exc.message}") from exc
+
+    # LLM Wiki layer (prototype, flag-gated): the graph tool is always
+    # registered but returns porter:wiki_disabled unless the server enabled
+    # the wiki service. Registration is unconditional because in postgres
+    # mode the service is attached in lifespan, AFTER build_mcp_server runs
+    # (same late-wiring reason MCPDeps uses getter lambdas).
+    @mcp.tool(
+        description=(
+            "Explore the Porter LLM Wiki entity graph (prototype; requires "
+            "PORTER_WIKI_ENABLED=1 on the server). "
+            "Pass entity=<name> for its 1-hop neighbors plus the "
+            "memories mentioning it, or memory_id=<uuid> for that "
+            "memory's entities. Requires the memory.read scope "
+            "(or memory.read.<tag>); tag filtering is enforced "
+            "server-side. " + UNTRUSTED_NOTICE
+        )
+    )
+    async def memory_graph(
+        ctx: Context,
+        entity: str | None = None,
+        memory_id: str | None = None,
+    ) -> dict:
+        try:
+            auth = await _resolve_mcp_auth(ctx, deps)
+            _check_rate_limit(deps, auth)
+            granted = _need_scope(auth, "memory.read")
+            repo = _ready_repo(deps)
+            svc = _wiki_service(deps)
+            if svc is None:
+                raise ToolError(
+                    "porter:wiki_disabled: wiki layer is not enabled "
+                    "(set PORTER_WIKI_ENABLED=1 on the server)"
+                )
+            if (entity is None) == (memory_id is None):
+                raise ToolError(
+                    "porter:invalid_input: pass exactly one of "
+                    "entity or memory_id"
+                )
+            # T1: tag filter from the token's scopes, never the client's.
+            allowed = oauth_logic.effective_tag_filter(granted)
+
+            def _visible(rec) -> bool:
+                if rec is None or rec.status != "active":
+                    return False
+                if rec.encrypted:
+                    return False  # E2EE: graph never surfaces ciphertext
+                if allowed is not None and not (
+                    set(rec.scope_tags) & set(allowed)
+                ):
+                    return False
+                return True
+
+            async def _mem_out(rec):
+                return {
+                    "id": str(rec.id),
+                    "content": rec.content,
+                    "type": rec.type,
+                    "scope_tags": rec.scope_tags,
+                    "confidence": rec.confidence,
+                    "untrusted_data": True,
+                }
+
+            if entity is not None:
+                name = entity.strip().lower()
+                if not name or len(name) > 128:
+                    raise ToolError(
+                        "porter:invalid_input: entity must be 1..128 chars"
+                    )
+                neighbors = await svc.store.neighbors(name)
+                mem_ids = await svc.store.memory_ids_for_entity(name)
+                memories = []
+                for mid in mem_ids[:20]:
+                    rec = await repo.get(mid)
+                    if _visible(rec):
+                        memories.append(await _mem_out(rec))
+                await repo.audit(
+                    action="read", memory_ids=[m["id"] for m in memories],
+                    scopes_used=granted, client_id=auth.client_pk,
+                    meta={"via": "mcp", "tool": "memory_graph",
+                          "entity": name},
+                )
+                return {
+                    "entity": name,
+                    "neighbors": [
+                        {
+                            "name": n.entity.name,
+                            "kind": n.entity.kind,
+                            "relation": n.relation,
+                            "via_memory_id": (
+                                str(n.via_memory_id)
+                                if n.via_memory_id else None
+                            ),
+                        }
+                        for n in neighbors[:50]
+                    ],
+                    "memories": memories,
+                    "untrusted_data": True,
+                }
+
+            try:
+                mid = UUID(str(memory_id))
+            except ValueError:
+                raise ToolError(
+                    "porter:invalid_input: memory_id must be a UUID"
+                ) from None
+            rec = await repo.get(mid)
+            if not _visible(rec):
+                return {"memory_id": str(mid), "entities": [],
+                        "untrusted_data": True}
+            entities = await svc.store.entities_for_memory(mid)
+            await repo.audit(
+                action="read", memory_ids=[rec.id],
+                scopes_used=granted, client_id=auth.client_pk,
+                meta={"via": "mcp", "tool": "memory_graph",
+                      "memory_id": str(mid)},
+            )
+            return {
+                "memory_id": str(mid),
+                "entities": [
+                    {"name": e.name, "kind": e.kind} for e in entities
+                ],
+                "untrusted_data": True,
             }
         except ToolError:
             raise

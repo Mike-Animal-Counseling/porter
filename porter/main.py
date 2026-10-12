@@ -25,13 +25,34 @@ def _use_postgres() -> bool:
 
 
 def build_embedder_from_settings():
-    kind = os.getenv("EMBEDDER_KIND", settings.embedder_kind)
+    # PORTER_EMBEDDER is canonical; EMBEDDER_KIND kept as a legacy alias.
+    kind = os.getenv(
+        "PORTER_EMBEDDER", os.getenv("EMBEDDER_KIND", settings.embedder_kind)
+    )
     kwargs: dict = {}
     if kind == "http":
         kwargs["base_url"] = settings.embedder_url
     elif kind == "openai":
         kwargs["api_key"] = settings.openai_api_key
     return build_embedder(kind, **kwargs)
+
+
+def build_wiki_from_settings(pool=None):
+    """Wiki service for the LLM entity-graph layer (default OFF).
+
+    Returns None unless PORTER_WIKI_ENABLED=1. In-memory repo mode gets an
+    InMemoryWikiStore; postgres mode gets PostgresWikiStore over the pool.
+    """
+    if not settings.wiki_enabled:
+        return None
+    from .wiki import build_wiki_service
+
+    return build_wiki_service(
+        "postgres" if pool is not None else "memory",
+        pool,
+        enabled=True,
+        extractor_kind=settings.llm_extractor_kind,
+    )
 
 
 @asynccontextmanager
@@ -45,6 +66,7 @@ async def lifespan(app):
         app.state.repo = PostgresMemoryRepository(build_embedder_from_settings(), pool)
         app.state.oauth_store = PostgresOAuthStore(pool)
         app.state.snapshot_store = PostgresSnapshotStore(pool)
+        app.state.wiki_service = build_wiki_from_settings(pool)
         try:
             yield
         finally:
@@ -59,8 +81,10 @@ def build_app():
     )
     oauth_store = None if _use_postgres() else InMemoryOAuthStore()
     snapshot_store = None if _use_postgres() else InMemorySnapshotStore()
+    wiki_service = None if _use_postgres() else build_wiki_from_settings()
     return create_app(repo, oauth_store, lifespan=lifespan,
-                      snapshot_store=snapshot_store)
+                      snapshot_store=snapshot_store,
+                      wiki_service=wiki_service)
 
 
 app = build_app()

@@ -58,6 +58,37 @@ class SentenceTransformerEmbedder(Embedder):
         return [list(map(float, v)) for v in vecs]
 
 
+class Qwen3Embedder(Embedder):
+    """Challenger embedder: Qwen3-Embedding-0.6B via sentence-transformers.
+
+    Why it is the challenger (researched 2026-10-12):
+    - MTEB Multilingual 64.33 overall / 64.64 retrieval, C-MTEB 66.33 —
+      beats BGE-M3 and multilingual-e5-large-instruct at the same 0.6B size.
+    - 1024 dim == EMBEDDING_DIM, so the existing pgvector vector(1024)
+      schema needs NO migration to A/B it against BGE-M3.
+    - 0.6B params (~1.2 GB bf16): lighter than BGE-M3 (~2.3 GB), runs on
+      CPU-only hosts. The 4B/8B siblings score higher but need a GPU.
+    - 32k context, 100+ languages incl. strong Chinese.
+
+    Model downloads once from HuggingFace on first use. Lazy import keeps
+    the API importable without torch installed. Select with
+    PORTER_EMBEDDER=qwen3 (default embedder is unchanged: hash for dev,
+    sentence-transformer/BGE-M3 for the docker prod profile).
+    """
+
+    MODEL_ID = "Qwen/Qwen3-Embedding-0.6B"
+
+    def __init__(self, model_id: str = MODEL_ID) -> None:
+        from sentence_transformers import SentenceTransformer
+
+        self._model = SentenceTransformer(model_id, trust_remote_code=True)
+        self.dim = self._model.get_sentence_embedding_dimension() or EMBEDDING_DIM
+
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        vecs = self._model.encode(list(texts), normalize_embeddings=True)
+        return [list(map(float, v)) for v in vecs]
+
+
 class HashEmbedder(Embedder):
     """Deterministic dev/test stub.
 
@@ -154,7 +185,12 @@ class OpenAIEmbedder(Embedder):
 def build_embedder(kind: str, **kwargs) -> Embedder:
     kinds = {
         "hash": HashEmbedder,
+        # BGE-M3 (v1 default for prod): both names work.
         "sentence-transformer": SentenceTransformerEmbedder,
+        "bge-m3": SentenceTransformerEmbedder,
+        # Challenger (2026-10): Qwen3-Embedding-0.6B. Same 1024 dim as
+        # BGE-M3, so no pgvector migration is needed to compare them.
+        "qwen3": Qwen3Embedder,
         "http": HttpEmbedder,
         "openai": OpenAIEmbedder,
     }

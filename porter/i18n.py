@@ -1,13 +1,13 @@
 """Panel UI internationalization (Chinese/English).
 
-- `STRINGS`: every user-facing panel string, keyed by language. Chinese is
+- `STRINGS`: every user-facing panel string, keyed by language. English is
   the default. A test asserts every key exists in BOTH languages.
-- `t(key, lang)`: look up a string; falls back to zh so a missing key can
+- `t(key, lang)`: look up a string; falls back to en so a missing key can
   never 500 the panel (the completeness test catches it in CI instead).
 - `get_lang()` / `set_lang(lang)`: the persisted language preference,
   stored in a small JSON file (``~/.porter/settings.json`` by default,
   overridable via ``PORTER_SETTINGS_PATH`` for tests). It only ever holds
-  ``{"lang": "zh"}`` — no secrets — but is still written 0600.
+  ``{"lang": "en"}`` — no secrets — but is still written 0600.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import json
 import os
 
 LANGS = ("zh", "en")
-DEFAULT_LANG = "zh"
+DEFAULT_LANG = "en"
 
 
 def settings_path() -> str:
@@ -54,9 +54,9 @@ def t(key: str, lang: str = DEFAULT_LANG) -> str:
     table = STRINGS.get(lang) or STRINGS[DEFAULT_LANG]
     if key in table:
         return table[key]
-    zh = STRINGS[DEFAULT_LANG]
-    if key in zh:
-        return zh[key]
+    fallback = STRINGS[DEFAULT_LANG]
+    if key in fallback:
+        return fallback[key]
     raise KeyError(f"i18n: missing key {key!r}")
 
 
@@ -290,7 +290,15 @@ STRINGS: dict[str, dict[str, str]] = {
         "sync_online": "在线（5 分钟内活跃）",
         "sync_offline": "离线",
         "sync_never": "从未同步",
-        "sync_empty": "还没有 adapter 同步记录。adapter 首次拉取 delta 后会出现在表中。",
+        "sync_empty": "还没有 adapter 来同步过。当第一个 adapter 拉取 delta，它会在这里亮起。",
+        # ---- soul: pulse + constellation ----
+        "pulse_live": "同步脉搏",
+        "pulse_idle": "静默",
+        "view_table": "表格",
+        "view_graph": "星图",
+        "view_toggle_label": "切换视图",
+        "constel_hint": "点击节点查看详情 · 拥有相同标签的记忆相互连接",
+        "constel_empty": "记忆太少，还连不成星空——多攒几条再来看",
         "sync_note": "注意：delta 拉取只更新「最近同步」，不会推进 cursor；cursor 仅在 adapter 显式确认（POST /api/v1/sync/cursor）后推进。滞后 = 变更头 − cursor。",
         # ---- settings ----
         "h_tag_mgmt": "标签管理",
@@ -335,7 +343,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "confirm_approve_all": "批准全部 {n} 条待确认记忆？",
         "msg_approved_all": "已批准 {n} 条记忆",
         "inbox_zero_title": "全部处理完了",
-        "inbox_zero_desc": "待确认队列是空的。新记忆会出现在这里。",
+        "inbox_zero_desc": "都处理完了，你的记忆星空很干净。",
         # ---- redesign: clients ----
         "client_status_active": "有效",
         "clients_empty_title": "还没有接入方",
@@ -563,7 +571,15 @@ STRINGS: dict[str, dict[str, str]] = {
         "sync_online": "Online (active within 5 min)",
         "sync_offline": "Offline",
         "sync_never": "Never synced",
-        "sync_empty": "No adapter sync records yet. An adapter appears here after its first delta pull.",
+        "sync_empty": "No adapter has synced yet. The first delta pull will light it up here.",
+        # ---- soul: pulse + constellation ----
+        "pulse_live": "sync pulse",
+        "pulse_idle": "quiet",
+        "view_table": "Table",
+        "view_graph": "Graph",
+        "view_toggle_label": "Switch view",
+        "constel_hint": "Click a node for detail · memories sharing tags are linked",
+        "constel_empty": "Not enough memories to form a constellation yet — come back with more",
         "sync_note": "Note: a delta fetch only refreshes \"last sync\" — the cursor advances solely on explicit acks (POST /api/v1/sync/cursor). Lag = feed head − cursor.",
         # ---- settings ----
         "h_tag_mgmt": "Tag management",
@@ -608,7 +624,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "confirm_approve_all": "Approve all {n} pending memories?",
         "msg_approved_all": "Approved {n} memories",
         "inbox_zero_title": "All caught up",
-        "inbox_zero_desc": "The pending inbox is empty. New memories will appear here.",
+        "inbox_zero_desc": "All clear — your memory sky is quiet.",
         # ---- redesign: clients ----
         "client_status_active": "Active",
         "clients_empty_title": "No clients yet",
