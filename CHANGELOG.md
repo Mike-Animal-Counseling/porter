@@ -1,3 +1,5 @@
+**English** | [中文](CHANGELOG.zh-CN.md)
+
 # Changelog
 
 All notable changes to Porter are documented here. Format follows
@@ -7,6 +9,26 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+
+**Panel "restrained" design pass (95% restrained, 5% soul)**
+- Accent indigo `#6E6BF2` → warm gold `#D4A24E` (hover `#E5B45E`,
+  muted `rgba(212,162,78,.14)`); dark surfaces shifted to warm charcoal;
+  light theme gold adjusted for contrast (`#A87B2A`).
+- Page headings (`h1`) → Chinese serif display stack
+  (`"Noto Serif SC","Songti SC","STSong","SimSun",serif`); body keeps clean
+  sans with CJK coverage; mono for IDs/cursors/hashes unchanged.
+- Sync page: thin gold heartbeat strip (pure CSS/SVG animated dash, no JS
+  lib); liveness tied to real adapter `last_seen` — animated when an
+  adapter is online, calm flat line + "静默 / quiet" when none.
+- Memories page: Table / Graph view toggle; Graph shows a mini
+  force-directed constellation (vanilla canvas, nodes from the real memory
+  list, links on shared tags; click node → existing slide-over detail via
+  HTMX; labels drawn with `fillText` only, never `innerHTML`).
+- Warmer microcopy (zh/en): inbox-zero "你的记忆星空很干净",
+  sync empty-state, constellation hints.
+- Instrument-grade polish: hairline card inset highlight, gold view-toggle
+  active state, button press feedback, drawer easing curve, tabular-nums
+  for timestamps/IDs, 2-line clamp on long memory snippets.
 
 **Panel UI redesign (per `ui-redesign-spec.md`)**
 - Dark-first design system with light mode via CSS-variable token swap:
