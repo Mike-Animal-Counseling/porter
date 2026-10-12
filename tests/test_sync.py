@@ -295,13 +295,15 @@ def test_pending_create_invisible_to_non_admin_delta(sapp):
         sapp["client"], "memory.read",
         admin_token=sapp["admin_token"], name="adapter-b")
     # A writes but does NOT approve: unapproved content must never leak.
+    # (Sensitive content forces the triage queue even in tiered mode.)
     r = sapp["client"].post(
         "/api/v1/memories",
-        json={"content": "secret pending thought", "type": "fact",
-              "scope_tags": ["general"]},
+        json={"content": "secret pending thought: my medication is lisinopril",
+              "type": "fact", "scope_tags": ["general"]},
         headers=_bearer(token_a),
     )
     assert r.status_code == 202
+    assert r.json()["status"] == "pending_review"
     r = sapp["client"].get("/api/v1/sync/delta?since=0",
                            headers=_bearer(token_b))
     assert r.status_code == 200
@@ -315,7 +317,7 @@ def test_pending_create_invisible_to_non_admin_delta(sapp):
     assert r.status_code == 200
     creates = [c for c in r.json()["changes"] if c["op"] == "create"]
     assert any(c["memory"] is not None
-               and c["memory"]["content"] == "secret pending thought"
+               and c["memory"]["content"] == "secret pending thought: my medication is lisinopril"
                and c["memory"]["status"] == "pending"
                for c in creates)
 

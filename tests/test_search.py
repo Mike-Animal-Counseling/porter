@@ -52,7 +52,10 @@ def test_search_writes_audit_entry(client: TestClient):
     assert reads and mid in reads[0]["memory_ids"]
 
 
-def test_duplicate_detection_on_write(client: TestClient):
+def test_duplicate_detection_on_write(client: TestClient, monkeypatch):
+    # Strict mode: exercise the classic 0.92 duplicate-candidates path
+    # (in tiered mode a >= 0.97 near-identical write auto-merges instead).
+    monkeypatch.setattr("porter.triage.settings.approval_mode", "strict")
     r1 = client.post("/api/v1/memories", json={
         "content": "User prefers pnpm over npm for JavaScript projects",
         "type": "preference", "scope_tags": ["coding_style"],

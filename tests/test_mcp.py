@@ -197,7 +197,7 @@ def test_stdio_full_handshake_and_tools():
         # PRD §11 set + memory_graph (LLM Wiki prototype; registered always,
         # gated at call time via PORTER_WIKI_ENABLED).
         assert names == {"memory_search", "memory_add", "memory_update",
-                         "sync_delta", "memory_graph"}, names
+                         "sync_delta", "memory_graph", "memory_capture"}, names
         descs = {t["name"]: t["description"] for t in r["result"]["tools"]}
         assert "UNTRUSTED" in descs["memory_search"]  # T3 notice present
 
@@ -205,7 +205,8 @@ def test_stdio_full_handshake_and_tools():
         r = drv.request("tools/call", {
             "name": "memory_add",
             "arguments": {"content": "stdio test memory: avoids cilantro",
-                          "type": "preference", "scope_tags": ["dietary"]},
+                          "type": "preference", "scope_tags": ["dietary"],
+                          "confidence": 0.3},
         }, 3)
         assert r["result"].get("isError") is not True, r
         payload = json.loads(r["result"]["content"][0]["text"])
@@ -347,7 +348,7 @@ def test_mcp_add_goes_to_pending_and_update_only_active(
 
         result = await server.call_tool("memory_add", {
             "content": "prefers pnpm over npm", "type": "preference",
-            "scope_tags": ["coding_style"]})
+            "scope_tags": ["coding_style"], "confidence": 0.3})
         payload = json.loads(result.content[0].text)
         assert payload["status"] == "pending_review"
         mid = payload["id"]
@@ -490,7 +491,7 @@ def test_streamable_http_with_real_sdk_client():
                     # PRD §11 set + memory_graph (LLM Wiki prototype).
                     assert {t.name for t in listed.tools} == {
                         "memory_search", "memory_add", "memory_update",
-                        "sync_delta", "memory_graph"}
+                        "sync_delta", "memory_graph", "memory_capture"}
                     res = await session.call_tool(
                         "memory_search", {"query": "cilantro", "top_k": 5})
                     assert not res.is_error

@@ -14,7 +14,9 @@ def _write(client: TestClient, body: dict | None = None) -> dict:
     r = client.post("/api/v1/memories", json=body or MEM)
     assert r.status_code == 202, r.text
     data = r.json()
-    assert data["status"] == "pending_review"
+    # Tiered approval: low-risk writes auto-approve; the default MEM fixture
+    # ("allergic") still queues via the sensitivity gate.
+    assert data["status"] in ("pending_review", "active", "merged")
     assert "id" in data
     return data
 
