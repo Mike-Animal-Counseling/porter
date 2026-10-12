@@ -133,7 +133,7 @@ def test_panel_index_redirects(pclient):
 def test_memories_page_renders(pclient):
     r = pclient.get("/panel/memories")
     assert r.status_code == 200
-    assert "记忆" in r.text
+    assert "Memories" in r.text  # en default
     assert "htmx.min.js" in r.text
 
 
@@ -254,7 +254,7 @@ def test_panel_client_register_shows_secret_once(pclient):
         "name": "Codex", "redirect_uris": "http://localhost:9999/callback"},
         follow_redirects=False)
     assert r.status_code == 200
-    assert "只显示这一次" in r.text
+    assert "only this once" in r.text  # en default (client_new_done_warn)
     assert "porter_" in r.text
 
 
@@ -308,7 +308,7 @@ def test_audit_page_shows_integrity_note(pclient, papp):
     r = pclient.get("/panel/audit")
     assert r.status_code == 200
     assert "append-only" in r.text
-    assert "不记录记忆内容文本" in r.text
+    assert "never the memory content itself" in r.text  # en default
 
 
 # ------------------------------------------------------------------ scope tags
@@ -387,8 +387,8 @@ def test_snapshot_create_download_apply_flow(pclient, papp, tmp_path):
 
     r = pclient.get("/panel/snapshots")
     assert r.status_code == 200
-    assert "条记忆" in r.text
-    assert "加密" in r.text
+    assert "memories" in r.text  # en default ("{n} memories")
+    assert "Encrypted" in r.text  # en default
 
     async def get_rec():
         recs = await snap.list(limit=5)
@@ -408,7 +408,7 @@ def test_snapshot_create_download_apply_flow(pclient, papp, tmp_path):
                      data={"password": "s3cret"})
     assert r.status_code == 200
     assert "Dry-run" in r.text
-    assert "确认导入" in r.text
+    assert "Confirm import" in r.text  # en default
 
     # extract the hidden upload field and confirm
     import re

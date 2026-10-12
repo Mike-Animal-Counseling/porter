@@ -66,17 +66,17 @@ def test_label_maps_cover_same_keys_in_both_languages():
                 assert v.strip(), f"{name}.{lang}.{k} is empty"
 
 
-def test_t_falls_back_to_zh_and_raises_on_unknown():
-    # t() never 500s the panel on a missing key: falls back to zh...
-    assert t("nav_memories", "xx") == i18n.STRINGS["zh"]["nav_memories"]
+def test_t_falls_back_to_en_and_raises_on_unknown():
+    # t() never 500s the panel on a missing key: falls back to en...
+    assert t("nav_memories", "xx") == i18n.STRINGS["en"]["nav_memories"]
     # ...but a totally unknown key is a loud programmer error.
     with pytest.raises(KeyError):
         t("no_such_key_xyz", "en")
 
 
 # ------------------------------------------------------------------ persistence
-def test_default_is_chinese(langfile):
-    assert get_lang() == "zh"  # file absent -> default
+def test_default_is_english(langfile):
+    assert get_lang() == "en"  # file absent -> default
 
 
 def test_set_get_roundtrip(langfile):
@@ -101,11 +101,11 @@ def test_set_lang_rejects_unknown(langfile):
         set_lang("")
 
 
-def test_corrupt_settings_file_falls_back_to_zh(langfile):
+def test_corrupt_settings_file_falls_back_to_en(langfile):
     langfile.write_text("{not json", encoding="utf-8")
-    assert get_lang() == "zh"
+    assert get_lang() == "en"
     langfile.write_text('{"lang": "de"}', encoding="utf-8")
-    assert get_lang() == "zh"  # unknown value -> default
+    assert get_lang() == "en"  # unknown value -> default
 
 
 # ------------------------------------------------------------------ panel rendering
