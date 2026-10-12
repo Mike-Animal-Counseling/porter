@@ -116,9 +116,11 @@ Set by migrations `001_init.sql` + `002_oauth.sql`; matches the reference
 implementation's actual `audit(...)` call sites:
 
 `read`, `write`, `delete`, `export`, `snapshot_apply`, `revoke`, `grant`,
-`refresh`, `security`.
+`refresh`, `security`, `auto_approve`, `auto_merge`, `auto_archive`, `pin`,
+`unpin`.
 
-(`security` covers refresh-token reuse detection — suspected theft.)
+(`security` covers refresh-token reuse detection — suspected theft.
+`auto_*` cover the automation layer, §7.)
 
 ### 2.3 Append-only guarantee (normative)
 
@@ -467,6 +469,65 @@ A memory's `content` field is replaced by a JSON envelope:
   design); this spec does not promise it.
 
 ---
+
+## 7. Automation layer — `spec: automation/v1` [spec-implemented]
+
+### Rationale
+
+A memory layer that requires a human click for every write does not scale
+past a single user. The automation layer keeps the human in the loop where
+judgment matters (sensitive content, conflicts) and gets out of the way
+everywhere else — without weakening any §14 guarantee.
+
+### 7.1 Tiered approval (normative)
+
+Every write (`POST /api/v1/memories`, `memory_add`, panel owner writes,
+`memory_capture` facts) passes through triage (`porter/triage.py`):
+
+| Condition | Disposition |
+|---|---|
+| Sensitive scope tag (after normalization) | queue (`sensitive_tag`) |
+| Sensitive content (NFKC-normalized pattern scan, EN/ZH; content-based, not tag-based) | queue (`sensitive_content`) |
+| Max similarity to an active memory in [0.70, 0.92) | queue (`possible_conflict`) |
+| Confidence < 0.6 | queue (`low_confidence`) |
+| Similarity in [0.92, 0.97) to an active memory | queue (`duplicate_candidate`) — existing dedup path |
+| Similarity ≥ 0.97 to an active memory | **auto-merge** into the target |
+| Otherwise | **auto-approve** (`low_risk`), audit-logged |
+
+Normative rules:
+- Queues are fail-closed: similarity/confidence gates cannot be forced by an
+  attacker-controlled confidence value (the conflict gate ignores confidence).
+- E2EE memories are NEVER auto-approved, auto-merged, content-scanned, or
+  decayed (ciphertext-blind).
+- `PORTER_APPROVAL_MODE=strict` restores v1 behavior: every write queues.
+- Auto-merge folds content into the target (confidence = max, `updated_at`
+  bumped, history chain kept) but does NOT union scope tags (T1: tags drive
+  scoped reads).
+
+### 7.2 Confidence decay (normative)
+
+Active memories lose confidence while idle: `effective = stored × 0.95^(idle_days/30)`,
+computed lazily on read (search/get). Below 0.2 a memory is auto-archived
+(audited `auto_archive`, restorable). Retrieval resets the idle clock.
+Pinned memories (`POST /memories/{id}/pin`, admin-only) and E2EE memories
+never decay.
+
+### 7.3 Auto-capture (normative)
+
+The `memory_capture` MCP tool extracts durable facts (preferences, decisions,
+project context) from a conversation transcript via the `porter/llm.py`
+`extract_facts` protocol (regex stub by default; `PORTER_LLM_EXTRACTOR`
+selects a real backend). Extracted facts are **untrusted data** and each one
+passes through the same triage as `memory_add`. Bounds: ≤ 50k chars input,
+≤ 10 facts per call, each fact burns one rate-limit token (T5).
+
+### 7.4 Digest (normative)
+
+`GET /api/v1/digest` (requires `memory.read`) returns `{pending_count,
+pending_by_reason, recent_auto_approved, conflicts}`. Pending COUNTS are
+visible to any reader; pending CONTENTS (previews, conflict text) are
+admin-only (`memory.admin`) and tag-scoped — the same inbox visibility rule
+as the sync feed.
 
 ## Conformance
 

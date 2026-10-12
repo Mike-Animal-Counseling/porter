@@ -10,6 +10,28 @@ Porter 的所有重要变更都记录在此。格式遵循
 
 ### 新增
 
+**自动化层（分级审批、自动合并、衰减、自动捕获、摘要）**
+- `porter/triage.py`：分级审批。低风险写入自动批准（审计，原因
+  `low_risk`）；以下情况进入人工队列：基于内容的敏感检测
+  （NFKC 归一化的中英 pattern——看内容不只看标签，标签走私无法绕过）、
+  敏感 scope 标签、相似度 [0.70, 0.92)（可能冲突）、置信度 < 0.6。
+  相似度 ≥ 0.92 保留去重候选路径。E2EE 记忆永远排队、永不内容扫描。
+  `PORTER_APPROVAL_MODE=strict` 恢复 v1「全部排队」行为。
+- 自动合并：与活跃记忆相似度 ≥ 0.97 自动并入（审计，状态 `merged`，保留
+  历史链）；标签不做并集（T1）。
+- `porter/decay.py`：懒置信度衰减（闲置每 30 天 ×0.95，读取时计算）；
+  低于 0.2 → 自动归档（审计、可恢复）。跳过 E2EE 和 pinned 记忆。
+  新增 `POST /memories/{id}/pin`（admin）。
+- `memory_capture` MCP 工具：用 `porter/llm.py`（`extract_facts` 协议，默认
+  regex stub，`PORTER_LLM_EXTRACTOR` 可接真实后端）从对话文本提取持久事实。
+  每个事实走 triage；每 call ≤10 个事实，每个烧一条 rate limit（T5）。
+- `GET /api/v1/digest`：待确认计数 + 按原因 breakdown、近期自动批准、冲突
+  （待确认内容仅 admin 可见，按 tag scope 过滤）。
+- 面板 inbox 显示 triage 原因 chips；owner 面板写入同样走 triage。
+- 迁移 `007_automation.sql`：`last_retrieved_at`（衰减闲置时钟，从
+  `updated_at` 回填）、`pinned`、`triage_reasons` 列。
+  （`confidence` 自 migration 001 已存在。）
+
 **面板「克制」设计打磨（95% 克制，5% 灵魂）**
 - 强调色 indigo `#6E6BF2` → 暖金 `#D4A24E`（hover `#E5B45E`，
   弱化 `rgba(212,162,78,.14)`）；深色底面改为暖炭灰；

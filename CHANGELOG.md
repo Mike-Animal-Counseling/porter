@@ -10,6 +10,30 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+**Automation layer (tiered approval, auto-merge, decay, auto-capture, digest)**
+- `porter/triage.py`: tiered approval. Low-risk writes auto-approve (audited,
+  reason `low_risk`); queue for human review on content-based sensitive
+  detection (NFKC-normalized EN/ZH patterns — content, not just tags, so tag
+  smuggling can't bypass), sensitive scope tags, similarity in [0.70, 0.92)
+  (possible conflict), or confidence < 0.6. Similarity ≥ 0.92 keeps the
+  dedup-candidates path. E2EE memories always queue, never content-scanned.
+  `PORTER_APPROVAL_MODE=strict` restores the v1 "everything queues" behavior.
+- Auto-merge: similarity ≥ 0.97 to an active memory folds in automatically
+  (audited, `merged` status, history chain kept); tags are NOT unioned (T1).
+- `porter/decay.py`: lazy confidence decay (×0.95 per 30 idle days, computed
+  on read); below 0.2 → auto-archived (audited, restorable). Skips E2EE and
+  pinned memories. New `POST /memories/{id}/pin` (admin).
+- `memory_capture` MCP tool: extracts durable facts from a conversation
+  transcript via `porter/llm.py` (`extract_facts` protocol; regex stub by
+  default, `PORTER_LLM_EXTRACTOR` for real backends). Each fact goes through
+  triage; ≤10 facts/call, each burns a rate-limit token (T5).
+- `GET /api/v1/digest`: pending count + by-reason breakdown, recent
+  auto-approvals, conflicts (pending contents admin-only, tag-scoped).
+- Panel inbox shows triage reason chips; owner panel writes go through triage.
+- Migration `007_automation.sql`: `last_retrieved_at` (idle clock for decay,
+  backfilled from `updated_at`), `pinned`, `triage_reasons` columns.
+  (`confidence` already existed since migration 001.)
+
 **Panel "restrained" design pass (95% restrained, 5% soul)**
 - Accent indigo `#6E6BF2` → warm gold `#D4A24E` (hover `#E5B45E`,
   muted `rgba(212,162,78,.14)`); dark surfaces shifted to warm charcoal;

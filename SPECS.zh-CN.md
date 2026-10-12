@@ -116,9 +116,11 @@ Set by migrations `001_init.sql` + `002_oauth.sql`; matches the reference
 implementation's actual `audit(...)` call sites:
 
 `read`, `write`, `delete`, `export`, `snapshot_apply`, `revoke`, `grant`,
-`refresh`, `security`.
+`refresh`, `security`, `auto_approve`, `auto_merge`, `auto_archive`, `pin`,
+`unpin`.
 
-(`security` covers refresh-token reuse detection — suspected theft.)
+(`security` covers refresh-token reuse detection — suspected theft.
+`auto_*` cover the automation layer, §7.)
 
 ### 2.3 Append-only guarantee (normative)
 
@@ -467,6 +469,59 @@ A memory's `content` field is replaced by a JSON envelope:
   design); this spec does not promise it.
 
 ---
+
+## 7. Automation layer — `spec: automation/v1` [spec-implemented]
+
+### Rationale
+
+要求每次写入都人工点一次的记忆层，撑不过单用户规模。自动化层把人留在
+真正需要判断的地方（敏感内容、冲突），其他地方让路——且不削弱 §14 的任
+何保证。
+
+### 7.1 分级审批（normative）
+
+每次写入（`POST /api/v1/memories`、`memory_add`、面板 owner 写入、
+`memory_capture` 事实）都经过 triage（`porter/triage.py`）：
+
+| 条件 | 处置 |
+|---|---|
+| 敏感 scope 标签（归一化后） | 排队（`sensitive_tag`） |
+| 敏感内容（NFKC 归一化 pattern 扫描，中英；基于内容而非标签） | 排队（`sensitive_content`） |
+| 与活跃记忆最大相似度在 [0.70, 0.92) | 排队（`possible_conflict`） |
+| 置信度 < 0.6 | 排队（`low_confidence`） |
+| 与活跃记忆相似度在 [0.92, 0.97) | 排队（`duplicate_candidate`）——既有去重路径 |
+| 与活跃记忆相似度 ≥ 0.97 | **自动合并**进目标 |
+| 其他 | **自动批准**（`low_risk`），审计记录 |
+
+Normative 规则：
+- 队列是 fail-closed：攻击者控制的 confidence 值无法强制绕过相似度/冲突门
+  （冲突门忽略 confidence）。
+- E2EE 记忆永不自动批准、自动合并、内容扫描或衰减（密文盲）。
+- `PORTER_APPROVAL_MODE=strict` 恢复 v1 行为：每次写入都排队。
+- 自动合并把内容并入目标（confidence 取最大，`updated_at` 更新，保留历史
+  链），但不做标签并集（T1：标签驱动 scope 读取）。
+
+### 7.2 置信度衰减（normative）
+
+活跃记忆闲置时掉置信度：`effective = stored × 0.95^(idle_days/30)`，读取时
+（search/get）懒计算。低于 0.2 自动归档（审计 `auto_archive`，可恢复）。
+检索会重置闲置时钟。Pinned 记忆（`POST /memories/{id}/pin`，仅 admin）和
+E2EE 记忆永不衰减。
+
+### 7.3 自动捕获（normative）
+
+`memory_capture` MCP 工具经 `porter/llm.py` 的 `extract_facts` 协议从对话
+文本提取持久事实（偏好、决策、项目上下文；默认 regex stub，
+`PORTER_LLM_EXTRACTOR` 可选真实后端）。提取的事实是**不可信数据**，每个都
+走与 `memory_add` 相同的 triage。边界：输入 ≤ 50k 字符，每 call ≤ 10 个事
+实，每个事实烧一条 rate-limit token（T5）。
+
+### 7.4 摘要（normative）
+
+`GET /api/v1/digest`（需 `memory.read`）返回 `{pending_count,
+pending_by_reason, recent_auto_approved, conflicts}`。待确认**计数**对任何
+reader 可见；待确认**内容**（预览、冲突文本）仅 admin（`memory.admin`）可
+见且按 tag scope 过滤——与 sync feed 相同的 inbox 可见性规则。
 
 ## Conformance
 
