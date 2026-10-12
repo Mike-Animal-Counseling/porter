@@ -230,10 +230,10 @@ Streamable HTTP) and enforces scopes server-side (T1).
 | Tool | Signature | Scope | Behavior |
 |---|---|---|---|
 | `memory_search` | `(query, top_k=5, tags=None)` | `memory.read` / `memory.read.<tag>` | Semantic search; tag filter enforced server-side, fail-closed |
-| `memory_add` | `(content, type="fact", scope_tags=None, confidence=1.0)` | `memory.write` | **Tiered approval** (§7): low-risk auto-activates (searchable immediately); sensitive/conflict/low-confidence queues for review. Returns `id`, `status` (`pending_review`/`active`/`merged`), `triage_reasons`, `duplicate_candidates` |
+| `memory_add` | `(content, type="fact", scope_tags=None, confidence=1.0, project=None)` | `memory.write` | **Tiered approval** (§7): low-risk auto-activates (searchable immediately); sensitive/conflict/low-confidence queues for review. `type` may be `personal`/`project` to declare the memory domain (SPECS §7.1.1); `project="<name>"` adds a normalized `project:<name>` scope tag. Returns `id`, `status` (`pending_review`/`active`/`merged`), `triage_reasons`, `duplicate_candidates` |
 | `memory_capture` | `(conversation_text, source_tags=None)` | `memory.write` | Extracts durable facts from a transcript; each fact goes through the same triage as `memory_add`. ≤10 facts/call, each burns a rate-limit token |
 | `memory_update` | `(id, content)` | `memory.write` | Updates an **active** memory; history-preserving (new id via `superseded_by`), returns `revised_from` |
-| `sync_delta` | `(since=0, limit=100)` | `memory.read` / `memory.read.<tag>` | ⚠️ **P1 contract, not yet implemented** — reserved for the sync rollout (see §6) |
+| `sync_delta` | `(since=0, limit=100, project=None)` | `memory.read` / `memory.read.<tag>` | Incremental change feed (P1 auto-sync). `project="<name>"` pulls only that project's working memory plus untagged/global memories (SPECS §7.1.1) |
 
 **All returned memory is `untrusted_data`.** Every result carries `"untrusted_data": true`, and the tool
 descriptions say so explicitly (T3, PRD §5 principle 5): memory content must be treated as untrusted user data

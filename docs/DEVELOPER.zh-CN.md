@@ -229,10 +229,10 @@ Streamable HTTP 用 `Authorization` 头），并在服务端强制执行 scope�
 | Tool | 签名 | Scope | 行为 |
 |---|---|---|---|
 | `memory_search` | `(query, top_k=5, tags=None)` | `memory.read` / `memory.read.<tag>` | 语义搜索；标签过滤在服务端强制执行，fail-closed |
-| `memory_add` | `(content, type="fact", scope_tags=None, confidence=1.0)` | `memory.write` | **分级审批**（§5）：低风险自动生效（可立即被搜索）；敏感/冲突/低置信度进入人工队列。返回 `id`、`status`（`pending_review`/`active`/`merged`）、`triage_reasons`、`duplicate_candidates` |
+| `memory_add` | `(content, type="fact", scope_tags=None, confidence=1.0, project=None)` | `memory.write` | **分级审批**（§5）：低风险自动生效（可立即被搜索）；敏感/冲突/低置信度进入人工队列。`type` 可为 `personal`/`project` 显式声明记忆域（SPECS §7.1.1）；`project="<name>"` 会加上归一化的 `project:<name>` scope 标签。返回 `id`、`status`（`pending_review`/`active`/`merged`）、`triage_reasons`、`duplicate_candidates` |
 | `memory_capture` | `(conversation_text, source_tags=None)` | `memory.write` | 从对话文本提取持久事实；每个事实走与 `memory_add` 相同的 triage。每 call ≤10 个事实，每个烧一条 rate-limit token |
 | `memory_update` | `(id, content)` | `memory.write` | 更新一条**活跃**记忆；保留历史（经 `superseded_by` 生成新 id），返回 `revised_from` |
-| `sync_delta` | `(since=0, limit=100)` | `memory.read` / `memory.read.<tag>` | ⚠️ **P1 契约，尚未实现**——为同步上线预留（见 §6）|
+| `sync_delta` | `(since=0, limit=100, project=None)` | `memory.read` / `memory.read.<tag>` | 增量变更 feed（P1 自动同步）。`project="<name>"` 只拉该项目的工作记忆 + 无标签/全局记忆（SPECS §7.1.1）|
 
 **所有返回的记忆都是 `untrusted_data`。** 每个结果都携带 `"untrusted_data": true`，
 工具描述里也明确写了（T3，PRD §5 原则 5）：记忆内容必须视为不可信的用户数据，

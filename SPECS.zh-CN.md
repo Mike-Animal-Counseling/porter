@@ -338,7 +338,7 @@ MCP `sync_delta` tool, panel `/panel/sync`); migration `004_sync.sql`.
 
 ### 5.1 Endpoints (contract, normative)
 
-- `GET /api/v1/sync/delta?since=<int>&limit=<int,default 100,max 500>` →
+- `GET /api/v1/sync/delta?since=<int>&limit=<int,default 100,max 500>[&project=<name>]` →
   ```json
   {"changes":[{"seq":1234,"memory_id":"a1b2…","op":"approve","status":"active",
                "at":"2026-10-11T20:06:00Z","actor_client_id":"c3d4…",
@@ -346,6 +346,12 @@ MCP `sync_delta` tool, panel `/panel/sync`); migration `004_sync.sql`.
    "cursor":1234}
   ```
   - `since`: int >= 0, exclusive (422 otherwise); `limit`: 1..500.
+  - `project`（可选）：harness 当前项目名。此时 delta 只携带该项目的
+    工作记忆——带 `project:<name>` 标签的记录（归一化匹配）加上无标签/
+    全局记录（个人域跟随用户到处走，见 §7.1.1）。省略则返回全量。这就是
+    "行李跟人走"机制：项目 X 的 harness 看不到项目 Y 的工作记忆。这只是
+    便利过滤，**不是**安全边界——OAuth 标签 scope（§1.3）先做可见性门控，
+    同步内容一律标记 `untrusted_data`。
   - `op`: `create` | `approve` | `revise` (subject = the NEW record) |
     `delete`. `status` is the record's current status, `null` for delete
     tombstones (the row no longer exists).
