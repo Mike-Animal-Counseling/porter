@@ -1,3 +1,5 @@
+**English** | [中文](ui-redesign-spec.zh-CN.md)
+
 # Porter Panel UI Redesign Spec
 
 **Status:** research complete, ready for implementation

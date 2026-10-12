@@ -605,7 +605,7 @@ def test_panel_sync_page_renders(sapp):
     pclient = TestClient(app)
     r = pclient.get("/panel/sync")
     assert r.status_code == 200, r.text
-    assert "同步" in r.text  # nav_sync + page title (zh default)
+    assert "Sync" in r.text  # nav_sync + page title (en default)
     assert "/panel/sync" in r.text  # nav entry present
 
     async def seed():
