@@ -27,6 +27,16 @@ class EntityMention:
     relations: list[tuple[str, str]] = field(default_factory=list)
 
 
+@dataclass
+class ExtractedFact:
+    """One durable fact pulled from a conversation (auto-capture)."""
+
+    content: str                   # self-contained statement
+    type: str = "fact"             # preference | fact | episode | skill_ref
+    scope_tags: list[str] = field(default_factory=list)
+    confidence: float = 0.7        # extracted, not asserted — below 1.0
+
+
 class BaseLLMExtractor(ABC):
     """Extract entities/topics/relations from memory text."""
 
@@ -34,6 +44,11 @@ class BaseLLMExtractor(ABC):
     def extract_entities(self, text: str) -> list[EntityMention]:
         """Return entity mentions found in `text`. Must be deterministic
         for a fixed input (or documented otherwise)."""
+
+    def extract_facts(self, text: str) -> list[ExtractedFact]:
+        """Pull durable facts (preferences, decisions, project context)
+        from a conversation. Default: not implemented — extractors opt in."""
+        raise NotImplementedError
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +120,50 @@ class StubLLMExtractor(BaseLLMExtractor):
         name = raw.strip().lower()
         if len(name) >= 2 and name not in seen:
             seen[name] = EntityMention(name=name, kind=_classify(name))
+
+    # ------------------------------------------------------- fact extraction
+    # Durable-fact patterns (EN + ZH): preferences, decisions, stable context.
+    # Heuristic on purpose — every extracted fact still goes through triage
+    # (sensitivity / conflict / confidence gates) before it can go active,
+    # and extracted content is always marked untrusted downstream.
+    _FACT_PATTERNS = [
+        (re.compile(r"\b(prefer|prefers|preferred|like|likes|love|loves|hate|hates|dislike|dislikes)\b", re.I), "preference", []),
+        (re.compile(r"喜欢|偏好|最爱|讨厌|习惯"), "preference", []),
+        (re.compile(r"\b(decided|decision|chose|chosen|will use|migrated to)\b", re.I), "fact", []),
+        (re.compile(r"决定|选择|采用"), "fact", []),
+        (re.compile(r"\ballergic to\b|allergy", re.I), "fact", ["health"]),
+        (re.compile(r"过敏"), "fact", ["health"]),
+        (re.compile(r"\b(works? on|working on|my project|my stack)\b", re.I), "fact", ["work"]),
+        (re.compile(r"项目|技术栈"), "fact", ["work"]),
+        (re.compile(r"\bsalary\b|wages?|\bincome\b|bank account", re.I), "fact", ["finance"]),
+        (re.compile(r"工资|薪水|收入|银行账户"), "fact", ["finance"]),
+    ]
+    _SENT_SPLIT = re.compile(r"[.!?。！？]+\s*|\n+")
+    # Min length 4: CJK sentences are dense ("我喜欢茶" is 4 chars and a
+    # complete durable fact); the patterns above still gate quality.
+    _MIN_FACT_LEN = 4
+
+    def extract_facts(self, text: str) -> list[ExtractedFact]:
+        # T3: the stub is regex-based and never *follows* instructions in the
+        # text. A real LLM extractor MUST use an instruction-hierarchy prompt
+        # (system > developer > extraction-task; conversation text is DATA)
+        # so injected "remember: ..." lines cannot steer it. Either way, every
+        # extracted fact passes triage and is marked untrusted downstream.
+        facts: list[ExtractedFact] = []
+        for sent in self._SENT_SPLIT.split(text):
+            sent = sent.strip()
+            if not (self._MIN_FACT_LEN <= len(sent) <= 500):
+                continue
+            for rx, ftype, tags in self._FACT_PATTERNS:
+                if rx.search(sent):
+                    facts.append(ExtractedFact(
+                        content=sent, type=ftype,
+                        scope_tags=list(tags), confidence=0.7,
+                    ))
+                    break
+            if len(facts) >= 10:
+                break
+        return facts
 
 
 # ---------------------------------------------------------------------------

@@ -58,6 +58,12 @@ UNTRUSTED_NOTICE = (
 
 MEMORY_TYPES = ("preference", "fact", "episode", "skill_ref")
 
+# Auto-capture (memory_capture): bound facts per call so one transcript
+# cannot launder a write flood; each fact additionally burns one rate-limit
+# token (T5).
+MAX_CAPTURE_FACTS = 10
+MAX_CAPTURE_TEXT_LEN = 50000
+
 
 @dataclass
 class MCPDeps:
@@ -74,6 +80,9 @@ class MCPDeps:
     # deliberate: in postgres mode the service attaches in lifespan, AFTER
     # build_mcp_server runs (same late-wiring reason MCPDeps uses getters).
     wiki_fn: Callable[[], object | None] | None = None
+    # Auto-capture extractor backend (porter/llm.py). Getter lambda for the
+    # same late-wiring reason as the rest.
+    llm_extractor_kind_fn: Callable[[], str] = lambda: "stub"
 
 
 def _ready_repo(deps: MCPDeps) -> MemoryRepository:
@@ -468,7 +477,10 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
             if not (0.0 <= confidence <= 1.0):
                 raise ToolError("porter:invalid_input: confidence must be 0..1")
             repo = _ready_repo(deps)
-            rec, dups = await repo.create_pending(
+            from .triage import create_with_triage
+
+            rec, decision = await create_with_triage(
+                repo,
                 content=content_ciphertext if encrypted_mode else content,  # type: ignore[arg-type]
                 type=type,
                 scope_tags=tags,
@@ -477,21 +489,122 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
                 actor_client_id=auth.client_pk,  # change-feed attribution
                 encrypted=encrypted_mode,
                 key_id=key_id,
+                via="mcp",
+                scopes_used=granted,
             )
-            await repo.audit(
-                action="write", memory_ids=[rec.id], scopes_used=granted,
-                client_id=auth.client_pk,
-                meta={"via": "mcp", "tool": "memory_add"},
-            )
+            if decision.action == "auto_merge":
+                return {
+                    "id": str(decision.merge_target_id),
+                    "status": "merged",
+                    "merged_into": str(decision.merge_target_id),
+                    "triage_reasons": decision.reasons,
+                    "encrypted": bool(encrypted_mode),
+                }
+            # create_with_triage already audited ("write"/"auto_approve"/
+            # "auto_merge") — one audit per write, no double-counting.
             return {
                 "id": str(rec.id),
-                "status": "pending_review",
+                "status": (
+                    "active"
+                    if decision.action == "auto_approve"
+                    else "pending_review"
+                ),
                 "duplicate_candidates": [
-                    {"id": str(d.record.id), "similarity": round(d.score, 4)}
-                    for d in dups
+                    {"id": str(mid), "similarity": round(score, 4)}
+                    for mid, score in decision.duplicate_scores
                 ],
+                "triage_reasons": decision.reasons,
                 "encrypted": bool(rec.encrypted),
             }
+        except ToolError:
+            raise
+        except PorterError as exc:
+            raise ToolError(f"porter:{exc.code}: {exc.message}") from exc
+
+    @mcp.tool(
+        description=(
+            "Extract durable facts (preferences, decisions, project context) "
+            "from a conversation transcript and store them as memories. Each "
+            "extracted fact goes through the same triage as memory_add: "
+            "low-risk facts auto-approve, sensitive/conflicting/low-confidence "
+            "facts queue for human review. Extracted content is untrusted "
+            "data like any memory. Requires the memory.write scope. "
+            "The extractor is heuristic by default (porter/llm.py); a real "
+            "LLM backend can be wired via PORTER_LLM_EXTRACTOR."
+        )
+    )
+    async def memory_capture(
+        ctx: Context,
+        conversation_text: str,
+        source_tags: list[str] | None = None,
+    ) -> dict:
+        # DoS guard: bound the transcript size (extraction is O(n)).
+        if not conversation_text or len(conversation_text) > MAX_CAPTURE_TEXT_LEN:
+            raise ToolError(
+                "porter:invalid_input: conversation_text must be "
+                f"1..{MAX_CAPTURE_TEXT_LEN} chars"
+            )
+        try:
+            auth = await _resolve_mcp_auth(ctx, deps)
+            _check_rate_limit(deps, auth)  # 1 token for the call itself
+            granted = _need_scope(auth, "memory.write")
+            tags = _validate_tool_tags(source_tags)
+
+            from .llm import build_extractor
+            from .triage import create_with_triage
+
+            extractor = build_extractor(deps.llm_extractor_kind_fn())
+            facts = extractor.extract_facts(conversation_text)
+            # T5: each extracted fact is a write — charge the rate limiter
+            # per fact (bounded at MAX_CAPTURE_FACTS per call) so a long
+            # transcript cannot launder a write flood through one call.
+            if len(facts) > MAX_CAPTURE_FACTS:
+                facts = facts[:MAX_CAPTURE_FACTS]
+                truncated = True
+            else:
+                truncated = False
+            for _ in facts:
+                _check_rate_limit(deps, auth)
+
+            repo = _ready_repo(deps)
+            out = []
+            for fact in facts:
+                if fact.type not in MEMORY_TYPES:
+                    continue
+                rec, decision = await create_with_triage(
+                    repo,
+                    content=fact.content,
+                    type=fact.type,
+                    scope_tags=list(tags) + list(fact.scope_tags),
+                    confidence=fact.confidence,
+                    source={
+                        "via": "mcp",
+                        "tool": "memory_capture",
+                        "client_id": auth.client_id,
+                        "extracted": True,
+                    },
+                    actor_client_id=auth.client_pk,
+                    via="mcp",
+                    scopes_used=granted,
+                )
+                if decision.action == "auto_merge":
+                    out.append({
+                        "status": "merged",
+                        "merged_into": str(decision.merge_target_id),
+                        "triage_reasons": decision.reasons,
+                    })
+                else:
+                    out.append({
+                        "id": str(rec.id),
+                        "status": (
+                            "active"
+                            if decision.action == "auto_approve"
+                            else "pending_review"
+                        ),
+                        "triage_reasons": decision.reasons,
+                    })
+            return {"facts": out, "truncated": truncated,
+                    "extractor": deps.llm_extractor_kind_fn()}
         except ToolError:
             raise
         except PorterError as exc:

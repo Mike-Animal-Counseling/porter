@@ -182,6 +182,15 @@ STRINGS: dict[str, dict[str, str]] = {
         "inbox_empty": "待确认队列是空的。harness 写入的新记忆会先到这里，经你批准后才生效。",
         "msg_approved": "已批准",
         "msg_rejected": "已拒绝并删除",
+        # ---- triage reason chips ----
+        "triage_sensitive_tag": "敏感标签",
+        "triage_sensitive_content": "敏感内容",
+        "triage_possible_conflict": "可能冲突",
+        "triage_low_confidence": "低置信度",
+        "triage_duplicate_candidate": "疑似重复",
+        "triage_encrypted": "加密",
+        "triage_strict_mode": "严格模式",
+        "triage_unknown": "待确认",
         # ---- clients ----
         "clients_summary": "共 {n} 个接入方。撤销后其所有 token 在 60 秒内失效。",
         "btn_new_client": "注册新接入方",
@@ -463,6 +472,15 @@ STRINGS: dict[str, dict[str, str]] = {
         "inbox_empty": "The pending inbox is empty. New memories written by harnesses land here first and take effect only after you approve them.",
         "msg_approved": "Approved",
         "msg_rejected": "Rejected and deleted",
+        # ---- triage reason chips ----
+        "triage_sensitive_tag": "sensitive tag",
+        "triage_sensitive_content": "sensitive content",
+        "triage_possible_conflict": "possible conflict",
+        "triage_low_confidence": "low confidence",
+        "triage_duplicate_candidate": "possible duplicate",
+        "triage_encrypted": "encrypted",
+        "triage_strict_mode": "strict mode",
+        "triage_unknown": "pending review",
         # ---- clients ----
         "clients_summary": "{n} client(s). After revocation, all their tokens expire within 60 seconds.",
         "btn_new_client": "Register client",

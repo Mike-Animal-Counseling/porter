@@ -54,6 +54,7 @@ async def _build_deps():
         revocation_cache_fn=lambda: revocation_cache,
         rate_limiter_fn=lambda: rate_limiter,
         auth_enabled_fn=lambda: auth_enabled,
+        llm_extractor_kind_fn=lambda: os.getenv("PORTER_LLM_EXTRACTOR", "stub"),
     )
     return deps, pool
 
