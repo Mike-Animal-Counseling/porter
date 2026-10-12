@@ -138,21 +138,71 @@ def detect_sensitive_tags(tags: Sequence[str]) -> list[str]:
 
 
 # ------------------------------------------------------------------- decision
+#: Memory domain taxonomy (dimension 1). See porter/triage_model.py.
+#: A memory belongs to the user's PERSONAL domain or a PROJECT domain —
+#: there is no middle ground; "unknown" triages like the pre-taxonomy
+#: default (auto-approve eligible, sensitivity/conflict gates still apply).
+NEW_TAXONOMY = frozenset({"personal", "project"})
+#: v1 type values mapped onto the domain taxonomy for triage purposes.
+OLD_TYPE_TO_NEW = {"preference": "personal"}
+
+
+def _project_names(tags: Sequence[str]) -> set[str]:
+    """Extract project names from `project:<name>` tags (normalized)."""
+    out = set()
+    for t in tags:
+        norm = _norm_tag(t)
+        if norm.startswith("project:"):
+            name = norm[len("project:"):].strip()
+            if name:
+                out.add(name)
+    return out
+
+
+def _norm_similar(similar):
+    """Normalize similar entries to (id, score, tags) triples."""
+    out = []
+    for entry in similar:
+        if len(entry) == 3:
+            out.append((entry[0], entry[1], list(entry[2] or ())))
+        else:
+            out.append((entry[0], entry[1], []))
+    return out
+
+
 def decide(
     *,
     content: str,
     scope_tags: Sequence[str],
     confidence: float,
     encrypted: bool,
-    # (record_id, similarity) of active memories, descending by similarity.
-    similar: Sequence[tuple[UUID, float]],
+    # (record_id, similarity[, tags]) of ACTIVE, non-encrypted memories,
+    # descending by similarity. Tags enable project-scoped conflict checks.
+    similar: Sequence[tuple],
     approval_mode: str = "tiered",
     duplicate_threshold: float = 0.92,
+    # ML second opinion (porter/triage_model.py): categories the model
+    # flagged over threshold, e.g. ["health"]. Empty = model not run or
+    # no signal. Treated exactly like a rule sensitivity hit: queues the
+    # memory and blocks auto-merge.
+    ml_categories: Sequence[str] = (),
+    # Dimension 1: one of "personal" | "project" | "unknown". Callers
+    # resolve it from the explicit type and/or the ML classifier;
+    # "unknown" triages like the pre-taxonomy default.
+    domain: str = "unknown",
 ) -> TriageDecision:
     """Pure policy function — no I/O, fully unit-testable.
 
-    `similar` must only contain ACTIVE, non-encrypted memories (ciphertext
-    is not comparable; callers enforce this).
+    Two-domain triage:
+    - personal domain OR any sensitivity hit (dim 2) -> queue for humans.
+    - project domain -> auto-approve by default (audit-logged), BUT the
+      memory MUST carry a project:<name> tag; without one it queues with
+      missing_project_scope. Conflict detection is per-project: a new
+      instruction contradicting an existing memory with the SAME project
+      tag queues side-by-side; cross-project similarities are not
+      conflicts.
+    - unknown domain -> auto-approve eligible (sensitivity, conflict, and
+      confidence gates still apply).
     """
     if approval_mode == "strict":
         return TriageDecision(action="queue", reasons=["strict_mode"])
@@ -161,12 +211,17 @@ def decide(
         return TriageDecision(action="queue", reasons=["encrypted"])
 
     reasons: list[str] = []
+    # Dimension 1: personal domain always queues (like a sensitivity hit).
+    if domain == "personal":
+        reasons.append("personal_domain")
     tag_hits = detect_sensitive_tags(scope_tags)
     if tag_hits:
         reasons.append("sensitive_tag")
     content_hits = detect_sensitive_content(content)
     if content_hits:
         reasons.append("sensitive_content")
+    for _ml_cat in ml_categories:
+        reasons.append(f"ml_sensitive:{_ml_cat}")
     if not (0.0 <= confidence <= 1.0):
         # Defensive: schema clamps this, but a caller bug must fail toward
         # human review, never toward auto-approve.
@@ -174,20 +229,38 @@ def decide(
     elif confidence < LOW_CONFIDENCE:
         reasons.append("low_confidence")
 
-    dup_ids = [mid for mid, s in similar if s >= duplicate_threshold]
-    dup_scores = [(mid, s) for mid, s in similar if s >= duplicate_threshold]
-    conflict_ids = [
-        mid for mid, s in similar if CONFLICT_MIN_SIMILARITY <= s < duplicate_threshold
-    ]
+    # Dimension 1: project memories must be scoped to a project. Unscoped
+    # project content could leak across projects — queue for a human to tag
+    # (or confirm global scope).
+    my_projects = _project_names(scope_tags)
+    if domain == "project" and not my_projects:
+        reasons.append("missing_project_scope")
+
+    sim3 = _norm_similar(similar)
+    dup_ids = [mid for mid, s, _ in sim3 if s >= duplicate_threshold]
+    dup_scores = [(mid, s) for mid, s, _ in sim3 if s >= duplicate_threshold]
+    if domain == "project" and my_projects:
+        # Conflicts only matter within the same project: instructions for
+        # project A never conflict with project B's.
+        conflict_ids = [
+            mid for mid, s, tags in sim3
+            if CONFLICT_MIN_SIMILARITY <= s < duplicate_threshold
+            and (my_projects & _project_names(tags))
+        ]
+    else:
+        conflict_ids = [
+            mid for mid, s, _ in sim3
+            if CONFLICT_MIN_SIMILARITY <= s < duplicate_threshold
+        ]
 
     # Near-identical -> merge, but NEVER when any sensitivity/low-confidence
     # flag fired: a sensitive near-duplicate still deserves human eyes
     # (e.g. a corrected dosage).
-    if similar and similar[0][1] >= AUTO_MERGE_SIMILARITY and not reasons:
+    if sim3 and sim3[0][1] >= AUTO_MERGE_SIMILARITY and not reasons:
         return TriageDecision(
             action="auto_merge",
             reasons=["near_duplicate"],
-            merge_target_id=similar[0][0],
+            merge_target_id=sim3[0][0],
             duplicate_ids=dup_ids,
             duplicate_scores=dup_scores,
         )
@@ -208,6 +281,56 @@ def decide(
 
 
 # ------------------------------------------------------------------ orchestration
+# ------------------------------------------------- ML second opinion (triage_model)
+async def _ml_second_opinion(
+    content: str, scope_tags: Sequence[str]
+) -> tuple[list[str], str, dict]:
+    """Run the ML triage model as a second opinion over a rule-passed write.
+
+    Returns (flagged_categories, predicted_domain, meta). Never raises: on
+    timeout, missing deps, or any model error the rule decision stands and
+    the fallback is reported in meta for the audit log. Results are
+    LRU-cached per content hash (model scores only; rules always run fresh).
+    """
+    # Lazy import: triage_model imports config only at module level, but
+    # keeping the import here avoids any import-order surprises and lets
+    # tests monkeypatch porter.triage_model.get_triage_model cleanly.
+    from . import triage_model as _tm
+
+    timeout = float(getattr(settings, "triage_model_timeout", 2.0))
+    meta: dict = {"backend": "none", "fallback": None, "latency_ms": 0.0}
+    try:
+        model = _tm.get_triage_model()
+    except Exception:
+        meta["fallback"] = "model_unavailable"
+        return [], "unknown", meta
+    meta["backend"] = model.backend
+    try:
+        import asyncio as _asyncio
+
+        score = await _asyncio.wait_for(
+            _asyncio.to_thread(_tm.cached_score, model, content, scope_tags),
+            timeout=timeout,
+        )
+    except _asyncio.TimeoutError:
+        meta["fallback"] = "timeout"
+        return [], "unknown", meta
+    except Exception:
+        meta["fallback"] = "error"
+        return [], "unknown", meta
+    meta["latency_ms"] = score.latency_ms
+    meta["predicted_domain"] = score.domain
+    threshold = float(getattr(settings, "triage_model_threshold", 0.65))
+    flagged = sorted(
+        c for c, s in score.categories.items() if s >= threshold
+    )
+    # Heuristic backend reports 1.0 for hits / nothing otherwise, so the
+    # threshold check is a no-op for it; zeroshot needs it.
+    if score.backend == "heuristic":
+        flagged = sorted(score.categories.keys()) if score.sensitive else []
+    return flagged, score.domain, meta
+
+
 async def create_with_triage(
     repo,
     *,
@@ -248,12 +371,54 @@ async def create_with_triage(
 
     vec = repo.embedder.embed_one(content)
     similar = await repo.find_similar_active(vec, threshold=CONFLICT_MIN_SIMILARITY, limit=5)
+    # 3-tuples carry tags for project-scoped conflict checks.
+    similar3 = [(s.record.id, s.score, list(s.record.scope_tags or ()))
+                for s in similar]
+
+    # Dimension 1 resolution: explicit new-taxonomy type wins; v1
+    # "preference" maps to the personal domain; otherwise the ML model gets
+    # a vote on the second pass.
+    explicit_domain = type if type in NEW_TAXONOMY else OLD_TYPE_TO_NEW.get(type)
+    first_pass_domain = explicit_domain or "unknown"
     decision = decide(
         content=content, scope_tags=scope_tags, confidence=confidence,
         encrypted=False,
-        similar=[(s.record.id, s.score) for s in similar],
+        similar=similar3,
         approval_mode=mode, duplicate_threshold=dup_threshold,
+        domain=first_pass_domain,
     )
+
+    # ML second opinion: rules are the fast pre-filter — if they already
+    # queued the memory, the model adds nothing. Only rule-passed writes
+    # (auto_approve / auto_merge candidates) get the model check, which
+    # contributes BOTH dimensions (sensitivity + predicted domain).
+    ml_meta: dict = {"backend": "none", "fallback": None, "latency_ms": 0.0}
+    if decision.action in ("auto_approve", "auto_merge"):
+        ml_cats, ml_domain, ml_meta = await _ml_second_opinion(content, scope_tags)
+        # "personal" is sticky: either the explicit type or the model
+        # saying personal queues the memory. Otherwise explicit wins.
+        if explicit_domain == "personal" or ml_domain == "personal":
+            effective_domain = "personal"
+        else:
+            effective_domain = explicit_domain or ml_domain or "unknown"
+        if ml_cats or effective_domain != first_pass_domain:
+            # Re-decide with the ML signal: sensitivity queues the memory
+            # and blocks auto-merge; a refined domain re-evaluates the
+            # project-tag and personal rules.
+            decision = decide(
+                content=content, scope_tags=scope_tags, confidence=confidence,
+                encrypted=False,
+                similar=similar3,
+                approval_mode=mode, duplicate_threshold=dup_threshold,
+                ml_categories=ml_cats,
+                domain=effective_domain,
+            )
+
+    def _audit_meta(extra: dict | None = None) -> dict:
+        m = {"via": via, "triage": decision.reasons, "triage_model": ml_meta}
+        if extra:
+            m.update(extra)
+        return m
 
     if decision.action == "auto_merge":
         assert decision.merge_target_id is not None
@@ -276,13 +441,12 @@ async def create_with_triage(
             await repo.audit(
                 action="auto_merge", memory_ids=[target.id],
                 scopes_used=list(scopes_used), client_id=actor_client_id,
-                meta={
-                    "via": via,
+                meta=_audit_meta({
                     "similarity": round(similar[0].score, 4),
                     "content_sha256": hashlib.sha256(
                         content.encode("utf-8", "replace")).hexdigest(),
                     "content_preview": content[:200],
-                },
+                }),
             )
             return None, decision
 
@@ -297,7 +461,7 @@ async def create_with_triage(
             action="auto_approve", memory_ids=[rec.id],
             scopes_used=list(scopes_used),
             client_id=actor_client_id,
-            meta={"via": via, "triage": decision.reasons},
+            meta=_audit_meta(),
         )
         return rec, decision
 
@@ -315,6 +479,6 @@ async def create_with_triage(
     await repo.audit(
         action="write", memory_ids=[rec.id], scopes_used=list(scopes_used),
         client_id=actor_client_id,
-        meta={"via": via, "triage": decision.reasons},
+        meta=_audit_meta(),
     )
     return rec, decision

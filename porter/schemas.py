@@ -8,7 +8,18 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-MemoryType = Literal["preference", "fact", "episode", "skill_ref"]
+MemoryType = Literal[
+    # v1 kinds (still accepted; mapped for triage, see triage.OLD_TYPE_TO_NEW)
+    "preference", "fact", "episode", "skill_ref",
+    # Triage taxonomy (two domains; triage resolves the domain per write —
+    # it is not a stored type field):
+    #  personal  the user's own memories (prefs, health, finance, PII,
+    #            relationships) — sensitivity-gated, human-review queue
+    #  project   the agent harness's working memory for a project/workspace
+    #            (conventions, decisions, codebase knowledge, task state) —
+    #            auto-approved, must carry a project:<name> tag
+    "personal", "project",
+]
 MemoryStatus = Literal["pending", "active", "archived"]
 
 MAX_CONTENT_LEN = 20_000  # DoS guard: embedding a novel is not a memory

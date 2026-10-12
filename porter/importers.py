@@ -115,7 +115,8 @@ class ImportCandidate:
     redactions: int = 0  # filled by the scrub pass at import time
 
 
-_VALID_TYPES = ("preference", "fact", "episode", "skill_ref")
+_VALID_TYPES = ("preference", "fact", "episode", "skill_ref",
+                "personal", "project")  # two-domain taxonomy
 
 
 def import_dedupe_key(source: Mapping[str, Any]) -> str:
@@ -278,15 +279,20 @@ class CodexImporter(HarnessImporter):
 
 
 class CursorImporter(HarnessImporter):
-    """Cursor: NO documented native memory store.
+    """Cursor: project instruction files + community memory convention.
 
     Cursor's "Memories" feature has no filesystem path, schema, or export
-    API (verified 2026-10-11). This importer therefore only covers the
-    ``.cursor/memories/`` community convention (per-project markdown dirs,
-    e.g. from cursor-commands-style skills). Pass project roots explicitly.
+    API (verified 2026-10-11). This importer therefore covers:
+      - ``.cursorrules`` and ``.cursor/rules/*.mdc`` (Cursor's instruction
+        files) — imported as ``project``-domain seeds with a
+        ``project:<name>`` tag derived from the directory name;
+      - ``.cursor/memories/`` (community convention per-project markdown
+        dirs, e.g. from cursor-commands-style skills).
+    Pass project roots explicitly.
     """
 
     harness = "cursor"
+    seed_confidence = 0.4
 
     def __init__(self, project_roots: list[str | os.PathLike[str]] | None = None):
         self.project_roots = [Path(p) for p in (project_roots or [])]
@@ -295,6 +301,24 @@ class CursorImporter(HarnessImporter):
         candidates: list[ImportCandidate] = []
         scanned: list[str] = []
         for root in self.project_roots:
+            # Instruction files: project-domain seeds (project tag from the
+            # directory name so triage can auto-approve them).
+            for rule_file in [root / ".cursorrules"] + sorted(
+                (root / ".cursor" / "rules").glob("*.mdc")
+            ):
+                if rule_file.is_symlink() or not rule_file.is_file():
+                    continue
+                scanned.append(str(rule_file))
+                cand = _seed_candidate(
+                    rule_file,
+                    client_id=self.harness,
+                    confidence=self.seed_confidence,
+                    tags=[f"project:{root.name}"],
+                )
+                if cand is not None:
+                    cand.source["project_root"] = str(root)
+                    candidates.append(cand)
+            # Community memory convention dirs.
             mem_dir = root / ".cursor" / "memories"
             scanned.append(str(mem_dir))
             if not mem_dir.is_dir():
@@ -312,8 +336,9 @@ class CursorImporter(HarnessImporter):
                 )
                 candidates.append(cand)
         note = (
-            "Cursor has no native portable memory store; scanned community "
-            f"convention dirs {scanned}: {len(candidates)} memories"
+            "Cursor has no native portable memory store; scanned instruction "
+            f"files + community convention dirs {scanned}: {len(candidates)} "
+            "candidates"
         )
         return candidates, note
 
@@ -359,13 +384,17 @@ def _seed_candidate(
     client_id: str,
     confidence: float,
     tags: list[str],
-    mem_type: str = "preference",
+    mem_type: str = "project",
 ) -> ImportCandidate | None:
     """Parse an instruction/config-style file as a low-confidence seed.
 
-    Files like CLAUDE.md / GEMINI.md are instructions, not episodic
-    memories — they enter the inbox as ``preference`` seeds the user can
-    keep or discard. Tagged ``seed`` so the panel can filter them.
+    Files like CLAUDE.md / GEMINI.md / AGENTS.md are project instruction
+    files — ONE source among many for the project domain (which also
+    covers task state, decisions, codebase knowledge, work context), not
+    its definition. They enter the inbox as ``project``-domain seeds the
+    user can keep or discard. Tagged ``seed`` so the panel can filter
+    them. Per the triage rules, project seeds without a ``project:<name>``
+    tag queue for human scoping instead of auto-approving.
     """
     cand = _parse_markdown_file(path)
     if cand is None:
@@ -677,7 +706,7 @@ class _GlobalMdSeedImporter(HarnessImporter):
                 p,
                 client_id=self.harness,
                 confidence=self.seed_confidence,
-                tags=[],
+                tags=[f"project:{root.name}"],
             )
             if cand is not None:
                 cand.source["project_root"] = str(root)
@@ -754,6 +783,20 @@ class TabnineImporter(_GlobalMdSeedImporter):
     seed_confidence = 0.4
 
 
+class WarpImporter(_GlobalMdSeedImporter):
+    """Warp: ``~/.warp/WARP.md`` (+ ``<project>/WARP.md``).
+
+    WARP.md is Warp's per-project instruction file — imported as a
+    low-confidence project-domain seed, same treatment as the other
+    instruction files (AGENTS.md / CLAUDE.md / GEMINI.md).
+    """
+
+    harness = "warp"
+    tool_dir_name = "warp"
+    file_name = "WARP.md"
+    seed_confidence = 0.4
+
+
 class DevinImporter(HarnessImporter):
     """Devin (incl. Devin Desktop, formerly Windsurf): ``<project>/.devin/**/*.md``.
 
@@ -783,7 +826,7 @@ class DevinImporter(HarnessImporter):
                     path,
                     client_id=self.harness,
                     confidence=self.seed_confidence,
-                    tags=[],
+                    tags=[f"project:{root.name}"],
                 )
                 if cand is None:
                     continue
@@ -1345,6 +1388,7 @@ IMPORTERS: dict[str, type[HarnessImporter]] = {
     "tabnine": TabnineImporter,
     "devin": DevinImporter,
     "openhands": OpenHandsImporter,
+    "warp": WarpImporter,
     # Official data exports need --file (a .json path or a .zip); they are
     # intentionally NOT part of `--harness all`.
     "chatgpt": ChatGPTExportImporter,
