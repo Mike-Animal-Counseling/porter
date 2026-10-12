@@ -323,7 +323,7 @@ def test_capture_tool_end_to_end(monkeypatch):
         facts = ext.extract_facts(
             "I prefer dark mode. My salary is 200k per year.")
         assert len(facts) == 2
-        statuses = []
+        decisions = []
         for f in facts:
             rec, d = await triage.create_with_triage(
                 repo, content=f.content, type=f.type,
@@ -331,10 +331,12 @@ def test_capture_tool_end_to_end(monkeypatch):
                 source={"via": "test", "tool": "memory_capture",
                         "extracted": True},
                 via="test")
-            statuses.append(d.action)
-        # preference auto-approves; salary queues (sensitive).
-        assert "auto_approve" in statuses
-        assert "queue" in statuses
+            decisions.append(d)
+        # Two-domain triage: "I prefer dark mode" is a personal-domain
+        # memory -> queue; "My salary is 200k" is sensitive -> queue.
+        assert [d.action for d in decisions] == ["queue", "queue"]
+        assert "personal_domain" in decisions[0].reasons
+        assert "sensitive_content" in decisions[1].reasons
     _run(_run2())
 
 
@@ -354,23 +356,29 @@ def test_capture_injected_instruction_still_triaged():
 
 
 def test_digest_endpoint_counts_and_conflicts(client: TestClient):
-    # low-risk -> active; sensitive -> pending; conflict-band -> pending.
+    # project-domain (tagged) -> active; sensitive -> pending;
+    # personal-domain -> pending.
     r = client.post("/api/v1/memories", json={
-        "content": "User prefers dark mode for the editor",
-        "type": "preference", "scope_tags": ["general"]})
+        "content": "Repo uses Ruff for linting and formatting",
+        "type": "project", "scope_tags": ["project:porter"]})
     assert r.json()["status"] == "active"
     r = client.post("/api/v1/memories", json={
         "content": "my salary is 200k per year",
         "type": "fact", "scope_tags": ["general"]})
     assert r.json()["status"] == "pending_review"
     assert "sensitive_content" in r.json()["triage_reasons"]
+    r = client.post("/api/v1/memories", json={
+        "content": "User prefers dark mode for the editor",
+        "type": "preference", "scope_tags": ["general"]})
+    assert r.json()["status"] == "pending_review"
+    assert "personal_domain" in r.json()["triage_reasons"]
 
     r = client.get("/api/v1/digest")
     assert r.status_code == 200
     body = r.json()
     assert body["pending_count"] >= 1
     assert body["pending_by_reason"].get("sensitive_content", 0) >= 1
-    assert any(m["content_preview"].startswith("User prefers dark mode")
+    assert any(m["content_preview"].startswith("Repo uses Ruff")
                for m in body["recent_auto_approved"])
 
 

@@ -1,3 +1,8 @@
 # local dev / test deps
 -r api/requirements.txt
 pytest>=8.0
+# Optional: ML triage model backends (zero-shot + finetune loop).
+# The server runs fine without these (falls back to heuristic triage).
+transformers>=4.40
+torch>=2.2
+scikit-learn>=1.4

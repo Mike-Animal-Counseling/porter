@@ -26,9 +26,11 @@ from porter.importers import (
     IMPORTERS,
     ClaudeCodeImporter,
     ClineImporter,
+    CursorImporter,
     GeminiImporter,
     QwenImporter,
     RooImporter,
+    WarpImporter,
     WindsurfImporter,
     _decode_claude_project_dir,
     run_import,
@@ -121,7 +123,7 @@ def test_claude_code_scan(claude_home):
     auto = by_src["extra.md"]
     assert auto.source.get("auto_memory_dir") is True
     seed = by_src["CLAUDE.md"]
-    assert seed.type == "preference"
+    assert seed.type == "project"
     assert seed.confidence == 0.3
     assert "seed" in seed.scope_tags
     assert seed.source.get("seed") is True
@@ -193,7 +195,7 @@ def test_gemini_scan(gemini_home):
                          [gemini_home / "proj"])
     candidates, note = imp.scan()
     assert len(candidates) == 2, note
-    assert all(c.type == "preference" for c in candidates)
+    assert all(c.type == "project" for c in candidates)
     assert all(c.confidence == 0.4 for c in candidates)
     assert all("seed" in c.scope_tags for c in candidates)
     assert all(c.source["client_id"] == "gemini" for c in candidates)
@@ -209,6 +211,39 @@ def test_qwen_scan(tmp_path):
     assert len(candidates) == 1
     assert candidates[0].source["client_id"] == "qwen"
     assert candidates[0].confidence == 0.4
+
+
+def test_warp_scan(tmp_path):
+    # global ~/.warp/WARP.md + <project>/WARP.md -> project-domain seeds
+    warp_home = tmp_path / ".warp"
+    warp_home.mkdir()
+    (warp_home / "WARP.md").write_text("# Warp\n\nAlways use pnpm.\n")
+    proj = tmp_path / "myrepo"
+    proj.mkdir()
+    (proj / "WARP.md").write_text("# Project\n\nUse ruff.\n")
+    candidates, note = WarpImporter(warp_home, [proj]).scan()
+    assert len(candidates) == 2, note
+    assert all(c.type == "project" for c in candidates)
+    assert all("seed" in c.scope_tags for c in candidates)
+    tagged = next(c for c in candidates if "project:myrepo" in c.scope_tags)
+    assert tagged.source["project_root"] == str(proj)
+    assert "warp" in IMPORTERS
+
+
+def test_cursor_rules_scan(tmp_path):
+    # .cursorrules + .cursor/rules/*.mdc -> project-domain seeds with the
+    # project tag from the directory name
+    proj = tmp_path / "myrepo"
+    (proj / ".cursor" / "rules").mkdir(parents=True)
+    (proj / ".cursorrules").write_text("Always run tests.\n")
+    (proj / ".cursor" / "rules" / "style.mdc").write_text("Use tabs.\n")
+    candidates, note = CursorImporter([proj]).scan()
+    assert len(candidates) == 2, note
+    assert all(c.type == "project" for c in candidates)
+    assert all("project:myrepo" in c.scope_tags for c in candidates)
+    assert all(c.source["client_id"] == "cursor" for c in candidates)
+    names = sorted(Path(c.imported_from).name for c in candidates)
+    assert names == [".cursorrules", "style.mdc"]
 
 
 # ------------------------------------------------------------ honesty registry
