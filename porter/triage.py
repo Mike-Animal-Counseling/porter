@@ -149,6 +149,11 @@ OLD_TYPE_TO_NEW = {"preference": "personal"}
 
 def _project_names(tags: Sequence[str]) -> set[str]:
     """Extract project names from `project:<name>` tags (normalized)."""
+    return project_names(tags)
+
+
+def project_names(tags: Sequence[str]) -> set[str]:
+    """Public: normalized project names from `project:<name>` scope tags."""
     out = set()
     for t in tags:
         norm = _norm_tag(t)
@@ -157,6 +162,29 @@ def _project_names(tags: Sequence[str]) -> set[str]:
             if name:
                 out.add(name)
     return out
+
+
+def project_tag(name: str) -> str:
+    """Build a normalized `project:<name>` scope tag from a project name.
+
+    Used by the REST/MCP `project` convenience parameter so harnesses don't
+    hand-roll the tag format. Raises ValueError on an empty name; overlong
+    names are rejected downstream by tag-length validation (fail loudly,
+    never silently truncate — two truncated names could collide).
+    """
+    norm = _normalize(name).strip()
+    norm = re.sub(r"\s+", "-", norm)
+    if not norm:
+        raise ValueError("project name must not be empty")
+    return f"project:{norm}"
+
+
+def has_project_tag(tags: Sequence[str]) -> bool:
+    """True when any tag is a `project:<name>` tag (normalized)."""
+    return any(
+        _norm_tag(t).startswith("project:") and _norm_tag(t)[len("project:"):].strip()
+        for t in tags
+    )
 
 
 def _norm_similar(similar):
@@ -255,12 +283,26 @@ def decide(
 
     # Near-identical -> merge, but NEVER when any sensitivity/low-confidence
     # flag fired: a sensitive near-duplicate still deserves human eyes
-    # (e.g. a corrected dosage).
-    if sim3 and sim3[0][1] >= AUTO_MERGE_SIMILARITY and not reasons:
+    # (e.g. a corrected dosage). For project-domain writes the merge target
+    # must share a project tag — a project:A memory must never fold into a
+    # project:B memory, or the project scope is silently lost (the
+    # duplicate_candidate path below still flags cross-project near-dups
+    # for human review instead).
+    merge_target_id = None
+    if not reasons:
+        for mid, s, tags in sim3:
+            if s < AUTO_MERGE_SIMILARITY:
+                break  # sim3 is similarity-descending
+            if (domain == "project" and my_projects
+                    and not (my_projects & _project_names(tags))):
+                continue  # same text, different project: not a merge
+            merge_target_id = mid
+            break
+    if merge_target_id is not None:
         return TriageDecision(
             action="auto_merge",
             reasons=["near_duplicate"],
-            merge_target_id=sim3[0][0],
+            merge_target_id=merge_target_id,
             duplicate_ids=dup_ids,
             duplicate_scores=dup_scores,
         )

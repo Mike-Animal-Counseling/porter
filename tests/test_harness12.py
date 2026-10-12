@@ -24,6 +24,7 @@ from porter.import_cli import main as import_main
 from porter.importers import (
     NO_NATIVE_STORE,
     IMPORTERS,
+    AiderImporter,
     ClaudeCodeImporter,
     ClineImporter,
     CursorImporter,
@@ -244,6 +245,31 @@ def test_cursor_rules_scan(tmp_path):
     assert all(c.source["client_id"] == "cursor" for c in candidates)
     names = sorted(Path(c.imported_from).name for c in candidates)
     assert names == [".cursorrules", "style.mdc"]
+
+
+def test_aider_chat_history_scan(tmp_path):
+    # <project>/.aider.chat.history.md -> per-session project-domain seeds
+    proj = tmp_path / "myrepo"
+    proj.mkdir()
+    (proj / ".aider.chat.history.md").write_text(
+        "# aider chat started at 2026-10-01\n\n"
+        "User asked to refactor the auth module. We decided to use JWT.\n"
+        "This is a fairly long session body so it passes the stub filter. "
+        "More context about the codebase structure and decisions made.\n\n"
+        "# aider chat started at 2026-10-02\n\n"
+        "Fixed the login bug. The pitfall was the token refresh race. "
+        "Added a regression test and documented the workaround in detail.\n"
+    )
+    candidates, note = AiderImporter([proj]).scan()
+    assert len(candidates) == 2, note
+    assert all(c.type == "project" for c in candidates)
+    assert all("project:myrepo" in c.scope_tags for c in candidates)
+    assert all(c.source["client_id"] == "aider" for c in candidates)
+    assert "aider" in IMPORTERS
+
+    # missing file -> empty, honest note (no crash)
+    candidates, note = AiderImporter([tmp_path / "empty"]).scan()
+    assert candidates == []
 
 
 # ------------------------------------------------------------ honesty registry

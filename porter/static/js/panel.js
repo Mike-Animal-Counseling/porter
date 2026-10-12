@@ -133,4 +133,221 @@
   });
 
   /* ---- confirm dialogs via hx-confirm are native; nothing needed ---- */
+
+  /* ---- memories: domain filter (personal / project / all) ---- */
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest("[data-domain-filter]");
+    if (!btn) return;
+    var val = btn.getAttribute("data-domain-filter");
+    var input = document.getElementById("domain-input");
+    if (input) input.value = val;
+    document.querySelectorAll("[data-domain-filter]").forEach(function (b) {
+      b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+    });
+    var form = document.getElementById("mem-filter-form");
+    if (form && window.htmx) {
+      htmx.ajax("GET", "/panel/memories/rows", {
+        target: "#mem-rows", swap: "innerHTML",
+        values: htmx.values(form),
+      });
+    }
+  });
+
+  /* ---- memories: table/graph view toggle ---- */
+  document.addEventListener("click", function (ev) {
+    var btn = ev.target.closest("[data-mem-view]");
+    if (!btn) return;
+    var view = btn.getAttribute("data-mem-view");
+    var tw = document.getElementById("mem-table-wrap");
+    var gw = document.getElementById("mem-graph-wrap");
+    document.querySelectorAll("[data-mem-view]").forEach(function (b) {
+      b.setAttribute("aria-pressed", b === btn ? "true" : "false");
+    });
+    if (tw) tw.hidden = view !== "table";
+    if (gw) {
+      gw.hidden = view !== "graph";
+      if (view === "graph") initConstellation();
+    }
+  });
+
+  /* ---- constellation: mini force-directed graph of memories ----
+     Data comes from canvas[data-nodes] (server-escaped JSON: id/label/tags).
+     Labels are drawn with fillText only — never innerHTML. Clicks reuse the
+     existing HTMX drawer via htmx.ajax. Vanilla, no libraries. */
+  var constelDone = false;
+  function initConstellation() {
+    var cv = document.getElementById("constel");
+    if (!cv || constelDone) { if (cv && constelDone) drawConstellation(cv); return; }
+    var nodes;
+    try { nodes = JSON.parse(cv.getAttribute("data-nodes") || "[]"); }
+    catch (e) { nodes = []; }
+    if (!nodes.length) return;
+    // links: memories sharing at least one tag
+    var tagMap = {};
+    nodes.forEach(function (n, i) {
+      (n.tags || []).forEach(function (tg) {
+        (tagMap[tg] = tagMap[tg] || []).push(i);
+      });
+    });
+    var links = [];
+    Object.keys(tagMap).forEach(function (tg) {
+      var idx = tagMap[tg];
+      for (var a = 0; a < idx.length; a++)
+        for (var b = a + 1; b < idx.length; b++)
+          links.push([idx[a], idx[b]]);
+    });
+    // init positions on a circle, then relax (all in CSS pixels)
+    var W, H, dpr = 1;
+    function size() {
+      var r = cv.getBoundingClientRect();
+      dpr = Math.min(2, window.devicePixelRatio || 1);
+      W = Math.max(280, r.width);
+      H = parseInt(getComputedStyle(cv).height, 10) || 320;
+      cv.width = Math.round(W * dpr);
+      cv.height = Math.round(H * dpr);
+    }
+    size();
+    nodes.forEach(function (n, i) {
+      var a = (i / nodes.length) * Math.PI * 2;
+      var jr = 0.9 + Math.random() * 0.2; // break symmetry
+      n.x = W / 2 + Math.cos(a) * Math.min(W, H) * 0.36 * jr;
+      n.y = H / 2 + Math.sin(a) * Math.min(W, H) * 0.36 * jr;
+      n.vx = 0; n.vy = 0;
+      n.r = 5 + Math.min(4, (n.tags || []).length);
+    });
+    for (var iter = 0; iter < 150; iter++) {
+      // repulsion (stronger so labels never stack)
+      for (var i = 0; i < nodes.length; i++) {
+        for (var j = i + 1; j < nodes.length; j++) {
+          var dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y;
+          var d2 = dx * dx + dy * dy + 40;
+          var f = 3200 / d2;
+          var d = Math.sqrt(d2);
+          dx /= d; dy /= d;
+          nodes[i].vx += dx * f; nodes[i].vy += dy * f;
+          nodes[j].vx -= dx * f; nodes[j].vy -= dy * f;
+        }
+      }
+      // springs on shared-tag links
+      links.forEach(function (l) {
+        var A = nodes[l[0]], B = nodes[l[1]];
+        var dx = B.x - A.x, dy = B.y - A.y;
+        var d = Math.sqrt(dx * dx + dy * dy) || 1;
+        var f = (d - 150) * 0.012;
+        dx /= d; dy /= d;
+        A.vx += dx * f; A.vy += dy * f;
+        B.vx -= dx * f; B.vy -= dy * f;
+      });
+      // gentle centering + damping + integrate
+      nodes.forEach(function (n) {
+        n.vx += (W / 2 - n.x) * 0.004;
+        n.vy += (H / 2 - n.y) * 0.004;
+        n.vx *= 0.86; n.vy *= 0.86;
+        n.x += n.vx; n.y += n.vy;
+        n.x = Math.max(40, Math.min(W - 40, n.x));
+        n.y = Math.max(30, Math.min(H - 30, n.y));
+      });
+    }
+    cv._nodes = nodes;
+    constelDone = true;
+    drawConstellation(cv);
+    cv.addEventListener("click", function (e) {
+      var r = cv.getBoundingClientRect();
+      var mx = e.clientX - r.left, my = e.clientY - r.top; // CSS px
+      var best = null, bestD = 1e9;
+      nodes.forEach(function (n) {
+        var d = Math.hypot(n.x - mx, n.y - my);
+        if (d < bestD) { bestD = d; best = n; }
+      });
+      if (best && bestD < Math.max(16, best.r + 8) && window.htmx) {
+        window.htmx.ajax("GET", "/panel/memories/" + encodeURIComponent(best.id),
+          { target: "#drawer-body", swap: "innerHTML" });
+      }
+    });
+    window.addEventListener("resize", function () {
+      constelDone = false; initConstellation();
+    });
+  }
+  function drawConstellation(cv) {
+    var nodes = cv._nodes || [];
+    var ctx = cv.getContext("2d");
+    var r = cv.getBoundingClientRect();
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    var W = Math.max(280, r.width);
+    var H = parseInt(getComputedStyle(cv).height, 10) || 320;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var css = getComputedStyle(document.documentElement);
+    var gold = (css.getPropertyValue("--accent") || "#D4A24E").trim();
+    var dim = (css.getPropertyValue("--text-tertiary") || "#6E675C").trim();
+    ctx.clearRect(0, 0, W, H);
+    // links
+    var tagMap = {};
+    nodes.forEach(function (n, i) {
+      (n.tags || []).forEach(function (tg) { (tagMap[tg] = tagMap[tg] || []).push(i); });
+    });
+    ctx.strokeStyle = gold; ctx.globalAlpha = 0.28; ctx.lineWidth = 1;
+    Object.keys(tagMap).forEach(function (tg) {
+      var idx = tagMap[tg];
+      for (var a = 0; a < idx.length; a++)
+        for (var b = a + 1; b < idx.length; b++) {
+          ctx.beginPath();
+          ctx.moveTo(nodes[idx[a]].x, nodes[idx[a]].y);
+          ctx.lineTo(nodes[idx[b]].x, nodes[idx[b]].y);
+          ctx.stroke();
+        }
+    });
+    ctx.globalAlpha = 1;
+    // nodes
+    nodes.forEach(function (n) {
+      var g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 3);
+      g.addColorStop(0, gold); g.addColorStop(1, "rgba(212,162,78,0)");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r * 3, 0, 7); ctx.fill();
+      ctx.fillStyle = gold;
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, 7); ctx.fill();
+    });
+    // labels: de-collide — draw highest-confidence first, skip any label
+    // whose box intersects an already-placed one. Labels never overlap.
+    ctx.font = "11px " + (css.getPropertyValue("font-family") || "sans-serif");
+    ctx.textAlign = "center";
+    var MAX_LABEL_W = 132, LABEL_H = 14, PAD = 4;
+    function isWordChar(ch) { return /[A-Za-z0-9_]/.test(ch); }
+    function fitLabel(text) {
+      text = String(text || "");
+      if (ctx.measureText(text).width <= MAX_LABEL_W) return text;
+      var ell = "…", lo = 0, hi = text.length;
+      while (lo < hi) {
+        var mid = Math.ceil((lo + hi) / 2);
+        if (ctx.measureText(text.slice(0, mid) + ell).width <= MAX_LABEL_W) lo = mid;
+        else hi = mid - 1;
+      }
+      // don't cut a Latin word mid-way: backtrack to the previous space
+      if (lo < text.length && isWordChar(text.charAt(lo - 1)) && isWordChar(text.charAt(lo))) {
+        var sp = text.lastIndexOf(" ", lo - 1);
+        if (sp > lo * 0.5) lo = sp;
+      }
+      return text.slice(0, lo).replace(/\s+$/, "") + ell;
+    }
+    function boxesHit(a, b) {
+      return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+    }
+    var placed = [];
+    nodes.slice().sort(function (a, b) {
+      return (b.confidence || 0) - (a.confidence || 0);
+    }).forEach(function (n) {
+      var label = fitLabel(n.label);
+      if (!label) return;
+      var w = Math.ceil(ctx.measureText(label).width);
+      // clamp horizontally so the label never clips at the canvas edge
+      var lx = Math.max(w / 2 + PAD, Math.min(W - w / 2 - PAD, n.x));
+      var ly = n.y + n.r + 13; // baseline
+      var box = { x0: lx - w / 2 - PAD, y0: ly - LABEL_H, x1: lx + w / 2 + PAD, y1: ly + 3 };
+      for (var i = 0; i < placed.length; i++) {
+        if (boxesHit(box, placed[i])) return; // lower priority: skip the label
+      }
+      placed.push(box);
+      ctx.fillStyle = dim;
+      ctx.fillText(label, lx, ly);
+    });
+  }
 })();

@@ -59,13 +59,30 @@ async def build_sync_delta(
     since: int,
     limit: int,
     granted: list[str],
+    project: str | None = None,
 ) -> dict[str, Any]:
     """Build the delta payload shared by REST GET /sync/delta and the MCP
     sync_delta tool. `granted` is the caller's verified scope list.
 
+    `project`: when given, the delta carries only memories relevant to that
+    project — memories tagged `project:<name>` (normalized match) PLUS
+    untagged/global memories (the personal domain follows the user
+    everywhere). This is the "luggage follows you" mechanism: a harness
+    working in project X pulls project X's working memory + the user's
+    personal memories, nothing from project Y. It is a convenience filter,
+    NOT a security boundary — OAuth tag scopes still gate visibility first.
+
     Returns {"changes": [...], "cursor": head_seq}. Each change:
     {seq, memory_id, op, status, at, actor_client_id, memory}.
     """
+    from .triage import has_project_tag, project_names, project_tag
+
+    want: str | None = None
+    if project:
+        try:
+            want = next(iter(project_names([project_tag(project)])))
+        except (ValueError, TypeError, AttributeError):
+            want = None  # empty/garbled project name -> no filtering
     raw, head = await repo.get_changes(since, limit)
     is_admin = "memory.admin" in granted
     allowed = oauth_logic.effective_tag_filter(granted)
@@ -83,6 +100,11 @@ async def build_sync_delta(
                 continue
             if allowed is not None and not set(allowed).intersection(rec.scope_tags):
                 continue  # tag-scope filtering, server-side (T1)
+            if want is not None and has_project_tag(rec.scope_tags or ()):
+                # Project-scoped memory for a DIFFERENT project: not mine.
+                # Untagged (global/personal) memories pass through.
+                if want not in project_names(rec.scope_tags or ()):
+                    continue
         if not is_admin and c["op"] != "delete":
             # Non-admin adapters see currently-active memories only. This
             # also enforces the inbox rule: a pending create change whose

@@ -49,21 +49,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from porter import triage_model as tm  # noqa: E402
 from porter.config import settings  # noqa: E402
+from porter.triage import project_names as _project_names  # noqa: E402
 
 SENS_LABELS = ["health", "finance", "pii", "credentials"]
 DOMAIN_LABELS = ["personal", "project"]
-
-
-def _project_names(tags):
-    """Extract project names from `project:<name>` tags (normalized)."""
-    out = set()
-    for t in tags or ():
-        norm = t.strip().lower().replace("：", ":")
-        if norm.startswith("project:"):
-            name = norm[len("project:"):].strip()
-            if name:
-                out.add(name)
-    return out
 
 
 def predict_labels(text, model=None, tags=()):

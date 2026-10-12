@@ -63,6 +63,11 @@ class MemoryCreate(BaseModel):
     scope_tags: list[str] = Field(default_factory=list)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     source: dict[str, Any] = Field(default_factory=dict)
+    #: Convenience for the project domain (SPECS §7.1.1): the project this
+    #: memory belongs to. Mapped to a normalized `project:<name>` scope tag
+    #: on write (merged with scope_tags, deduped). Harness adapters should
+    #: pass their working project/repo name here.
+    project: str | None = Field(default=None, max_length=128)
 
     @field_validator("scope_tags")
     @classmethod
