@@ -393,9 +393,12 @@ async def memories_page(
     type: str = Query(default=""),
     client: str = Query(default=""),
     status: str = Query(default="active"),
+    domain: str = Query(default=""),
     _=Depends(panel_owner),
 ):
     lang = get_lang()
+    if domain not in ("", "personal", "project"):
+        domain = ""
     repo, store, _snap = _deps(request)
     tags, _labels = await _all_tags(repo, store)
     tag_opts = "".join(
@@ -407,7 +410,8 @@ async def memories_page(
         for tp in TYPE_LABEL[lang]
     )
     rows_html = await _mem_rows_html(
-        repo, lang, q=q, mode=mode, tag=tag, type=type, client=client, status=status
+        repo, lang, q=q, mode=mode, tag=tag, type=type, client=client,
+        status=status, domain=domain,
     )
     status_opts = "".join(
         f"<option value='{s}' {'selected' if s == status else ''}>{esc(_status_label(s, lang))}</option>"
@@ -418,7 +422,7 @@ async def memories_page(
     # canvas fillText (never innerHTML). Clicks reuse the HTMX drawer.
     graph_mems = await repo.list(
         status=status or None, tags=(tag,) if tag else (),
-        type=type or None, limit=60, query=q or None,
+        type=(domain or type) or None, limit=60, query=q or None,
     )
     nodes = [
         {"id": str(m.id), "label": m.content[:24], "tags": list(m.scope_tags or []),
@@ -431,7 +435,12 @@ async def memories_page(
         f"{esc(t('constel_empty', lang))}</div></div>"
     )
     body = f"""
-<div class="row" style="margin-bottom:16px;justify-content:flex-end">
+<div class="row" style="margin-bottom:16px;justify-content:space-between">
+<div class="seg" role="group" aria-label="{esc(t("domain_toggle_label", lang))}">
+<button type="button" data-domain-filter="" aria-pressed="{str(domain == '').lower()}">{esc(t("domain_all", lang))}</button>
+<button type="button" data-domain-filter="personal" aria-pressed="{str(domain == 'personal').lower()}">{esc(t("domain_personal", lang))}</button>
+<button type="button" data-domain-filter="project" aria-pressed="{str(domain == 'project').lower()}">{esc(t("domain_project", lang))}</button>
+</div>
 <div class="seg view-toggle" role="group" aria-label="{esc(t("view_toggle_label", lang))}">
 <button type="button" data-mem-view="table" aria-pressed="true">{esc(t("view_table", lang))}</button>
 <button type="button" data-mem-view="graph" aria-pressed="false">{esc(t("view_graph", lang))}</button>
@@ -460,6 +469,7 @@ async def memories_page(
 {status_opts}
 </select>
 <input type="hidden" name="client" value="{esc(client)}">
+<input type="hidden" name="domain" id="domain-input" value="{esc(domain)}">
 </div></form>
 <div class="tbl-wrap"><table class="tbl"><thead><tr>
 <th>{esc(t("th_content", lang))}</th><th>{esc(t("th_type", lang))}</th><th>{esc(t("th_status", lang))}</th>
@@ -480,7 +490,13 @@ async def memories_page(
     )
 
 
-async def _mem_rows_html(repo, lang: str, *, q, mode, tag, type, client, status) -> str:
+async def _mem_rows_html(repo, lang: str, *, q, mode, tag, type, client, status,
+                      domain: str = "") -> str:
+    # Domain toggle (SPECS §7.1.1): filter by DECLARED domain. The ML-resolved
+    # domain is a triage-time signal, not a stored field — the toggle filters
+    # on the stored type, which harnesses set explicitly for personal/project.
+    if domain in ("personal", "project"):
+        type = domain
     if mode == "semantic" and q.strip():
         tags = [tag] if tag else []
         scored = await repo.search(
@@ -513,13 +529,17 @@ async def memories_rows(
     type: str = Query(default=""),
     client: str = Query(default=""),
     status: str = Query(default="active"),
+    domain: str = Query(default=""),
     _=Depends(panel_owner),
 ):
     lang = get_lang()
+    if domain not in ("", "personal", "project"):
+        domain = ""
     repo, _store, _snap = _deps(request)
     return HTMLResponse(
         await _mem_rows_html(
-            repo, lang, q=q, mode=mode, tag=tag, type=type, client=client, status=status
+            repo, lang, q=q, mode=mode, tag=tag, type=type, client=client,
+            status=status, domain=domain,
         )
     )
 
