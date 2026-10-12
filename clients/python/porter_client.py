@@ -365,13 +365,13 @@ if __name__ == "__main__":
 
     # 4. Scoped search (server enforces memory.read.dietary tag filter).
     print("\n-- search --")
-    for r in client.search("我不吃什么", top_k=3, tags=["dietary"]):
+    for r in client.search("what do I avoid eating", top_k=3, tags=["dietary"]):
         print(f"[{r['score']:.2f}] {r['content'][:80]} tags={r['scope_tags']}")
 
     # 5. Write -> pending-review queue.
     print("\n-- add --")
     created = client.add(
-        "用户偏好用 pnpm 而不是 npm",
+        "User prefers pnpm over npm",
         type="preference",
         scope_tags=["coding_style"],
         confidence=0.9,

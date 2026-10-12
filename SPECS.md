@@ -1,3 +1,5 @@
+**English** | [中文](SPECS.zh-CN.md)
+
 # Porter Open Specification
 
 **Spec version: 1.0** · Authored 2026-10-11 from the Porter reference implementation

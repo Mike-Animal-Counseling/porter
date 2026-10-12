@@ -1,3 +1,5 @@
+**English** | [中文](SECURITY.zh-CN.md)
+
 # Security Policy — Porter v0.1.0
 
 Porter stores your personal AI memories. Security is a first-class
