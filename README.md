@@ -44,6 +44,13 @@ Connect a harness: copy its template from [`clients/`](clients/), paste in your 
 └─────────┘   approved memories    └────────┘
 ```
 
+**Two memory domains.** Porter keeps your *personal* memories (your
+preferences, health, finance, PII — sensitivity-gated, human-reviewed)
+separate from each *project's* working memory (conventions, decisions,
+codebase knowledge, task state — the luggage that follows you when you
+switch harnesses mid-project). Project memories auto-approve under a
+`project:<name>` scope; personal ones always queue. See SPECS.md §7.1.1.
+
 ## Docs
 
 | Doc | What's inside |

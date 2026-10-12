@@ -10,6 +10,38 @@ Porter 的所有重要变更都记录在此。格式遵循
 
 ### 新增
 
+**两个记忆域（核心产品定位）**——triage 把每次写入分到**个人域**
+（你自己的记忆——偏好、健康、金融、PII；敏感度把关、人工审核）或
+**项目域**（某个项目的**全部**工作记忆——指令、任务状态、决定、代
+码库知识、踩过的坑；你换 harness 时跟着走的行李）。规则：个人域→
+排队；项目域→在强制 `project:<name>` 作用域下自动批准（缺标签则
+`missing_project_scope`）；冲突按项目限定（跨项目相似不算冲突）。
+v1 的 `preference` 类型映射到个人域。（SPECS.md §7.1.1；README §原理）
+
+**ML triage 模型**（`porter/triage_model.py`）——规则之上的开源第二
+意见：`heuristic`（规则包装）、`zeroshot`
+（`MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`，中英多语言，每次写入
+CPU 约 100–500ms）、`finetuned`（本地 6 标签
+`microsoft/mdeberta-v3-base` 头）。`PORTER_TRIAGE_MODEL=auto` 默认
+（finetuned → zeroshot → heuristic）；模型命中以
+`ml_sensitive:<类别>` 排队。规则既是预过滤也是兜底（2s 超时→
+heuristic，审计记录）；E2EE 记忆永不进模型；分数按内容哈希 LRU 缓
+存。（docs/DEVELOPER.md §5a）
+
+**Triage 训练闭环**（预测 → 纠正 → 训练 → 部署）——
+`scripts/triage_label_batch.py`（输出可纠正的 JSONL：
+`{domain, project, sensitivity, predicted_by}`）、
+`scripts/finetune_triage.py`（6 标签微调，eval 集上每标签
+P/R/F1，`--dry-run`）、`PORTER_TRIAGE_MODEL_PATH` 部署（默认
+`models/triage-v1`）。几百条亲手纠正的标签就能超过 zero-shot。
+（docs/DEVELOPER.md §5b）
+
+**指令文件作为项目记忆入库**——Cursor `.cursorrules` +
+`.cursor/rules/*.mdc` 和新增 `WarpImporter`（`~/.warp/WARP.md` +
+`<project>/WARP.md`）加入既有的 AGENTS.md / CLAUDE.md / GEMINI.md /
+QWEN.md 种子，成为 `project` 域的 inbox 种子并带 `project:<目录>`
+标签（文档中明确：这只是项目域的来源之一，不是它的定义）。
+
 **自动化层（分级审批、自动合并、衰减、自动捕获、摘要）**
 - `porter/triage.py`：分级审批。低风险写入自动批准（审计，原因
   `low_risk`）；以下情况进入人工队列：基于内容的敏感检测

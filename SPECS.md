@@ -486,13 +486,68 @@ Every write (`POST /api/v1/memories`, `memory_add`, panel owner writes,
 
 | Condition | Disposition |
 |---|---|
+| Personal domain (`personal_domain`) | queue (see §7.1.1) |
 | Sensitive scope tag (after normalization) | queue (`sensitive_tag`) |
 | Sensitive content (NFKC-normalized pattern scan, EN/ZH; content-based, not tag-based) | queue (`sensitive_content`) |
-| Max similarity to an active memory in [0.70, 0.92) | queue (`possible_conflict`) |
+| ML model flags a sensitivity category | queue (`ml_sensitive:<category>`) |
+| Project domain without a `project:<name>` tag | queue (`missing_project_scope`) |
+| Max similarity to an active memory in [0.70, 0.92) with the same project tag (project domain) | queue (`possible_conflict`) |
+| Max similarity to an active memory in [0.70, 0.92) (personal/unknown domain) | queue (`possible_conflict`) |
 | Confidence < 0.6 | queue (`low_confidence`) |
 | Similarity in [0.92, 0.97) to an active memory | queue (`duplicate_candidate`) — existing dedup path |
 | Similarity ≥ 0.97 to an active memory | **auto-merge** into the target |
 | Otherwise | **auto-approve** (`low_risk`), audit-logged |
+
+#### 7.1.1 Two memory domains (normative)
+
+Porter stores two kinds of memory, and triage treats them differently.
+This is the core product framing — not a sub-feature of the classifier.
+
+- **Personal domain**: the user's own memories — preferences, health,
+  finance, PII, relationships. The sensitivity labels (health / finance /
+  pii / credentials) and the human-review queue apply HERE. A personal
+  memory always queues for human review (`personal_domain`), as does any
+  sensitivity hit regardless of domain.
+- **Project domain**: the agent harness's ENTIRE working memory for a
+  project/workspace — the "luggage that follows you when you switch from
+  Claude Code to Codex/Cursor mid-project". This covers instruction files
+  (AGENTS.md / CLAUDE.md / `.cursorrules` / WARP.md / GEMINI.md are just
+  examples — ONE source among many), plus task state, decisions made,
+  codebase understanding, pitfalls encountered, conventions, and ongoing
+  work context. Project memories auto-approve by default (audit-logged),
+  with two guardrails:
+  - they MUST carry a `project:<name>` tag (derived from the repo or
+    working-directory name at ingest). An untagged project memory queues
+    with `missing_project_scope` so a human scopes it;
+  - conflict detection is **per-project**: a new instruction contradicting
+    an existing memory with the SAME project tag queues side-by-side;
+    cross-project similarities are NOT conflicts.
+- The domain is resolved per write from the explicit `type` (`personal` /
+  `project`; v1 `preference` maps to `personal`) and, for rule-passed
+  writes, an ML second opinion (see §7.1.2). An unresolved (`unknown`)
+  domain triages like the pre-domain default: auto-approve eligible,
+  sensitivity/conflict/confidence gates still apply.
+
+#### 7.1.2 ML triage model (informative)
+
+`porter/triage_model.py` adds a learned second opinion on top of the
+rules. Backends: `heuristic` (wraps the existing rule patterns, no
+behavior change), `zeroshot` (HuggingFace `zero-shot-classification`
+with `MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`, ~280M params,
+multilingual zh/en, CPU-runnable; domain hypotheses first, then the 4
+sensitivity hypotheses, `multi_label=True`, threshold 0.65), `finetuned`
+(local `microsoft/mdeberta-v3-base` + 6-label head trained by
+`scripts/finetune_triage.py`). Selection via `PORTER_TRIAGE_MODEL`
+(`auto` default: finetuned-if-present → zeroshot → heuristic) and
+`PORTER_TRIAGE_MODEL_PATH` (default `models/triage-v1`).
+
+Rules stay the fast pre-filter AND the fallback: the model only ever
+runs on rule-passed writes, scores are LRU-cached per content hash,
+inference exceeding `PORTER_TRIAGE_TIMEOUT` (default 2s) falls back
+to the heuristic for that write (audit-logged), and E2EE memories never
+reach the model (ciphertext-blind, same as the rules). Expected CPU
+latency for the zero-shot model: ~100–500ms per write (first load
+downloads ~1GB of weights).
 
 Normative rules:
 - Queues are fail-closed: similarity/confidence gates cannot be forced by an

@@ -10,6 +10,40 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+**Two memory domains (core product framing)** — triage now classifies
+every write into the **personal** domain (your own memories —
+preferences, health, finance, PII; sensitivity-gated, human-reviewed)
+or the **project** domain (a project's ENTIRE working memory —
+instructions, task state, decisions, codebase knowledge, pitfalls; the
+luggage that follows you across harnesses). Rules: personal → queue;
+project → auto-approve under a mandatory `project:<name>` scope
+(`missing_project_scope` if absent); conflicts are per-project
+(cross-project similarities are not conflicts). v1 `preference` type
+maps to `personal`. (SPECS.md §7.1.1; README §How it works)
+
+**ML triage model** (`porter/triage_model.py`) — open-source second
+opinion over the rules: `heuristic` (rule wrapper), `zeroshot`
+(`MoritzLaurer/mDeBERTa-v3-base-mnli-xnli`, multilingual zh/en,
+~100–500ms CPU per write), `finetuned` (local 6-label
+`microsoft/mdeberta-v3-base` head). `PORTER_TRIAGE_MODEL=auto` default
+(finetuned → zeroshot → heuristic); model flags queue as
+`ml_sensitive:<category>`. Rules stay the pre-filter and the fallback
+(2s timeout → heuristic, audit-logged); E2EE memories never reach the
+model; scores LRU-cached per content hash. (docs/DEVELOPER.md §5a)
+
+**Triage training loop** (predict → correct → train → deploy) —
+`scripts/triage_label_batch.py` (emit correctable JSONL:
+`{domain, project, sensitivity, predicted_by}`), `scripts/finetune_triage.py`
+(6-label fine-tune, per-label P/R/F1 on eval split, `--dry-run`),
+deploy via `PORTER_TRIAGE_MODEL_PATH` (default `models/triage-v1`).
+A few hundred hand-corrected labels beat zero-shot. (docs/DEVELOPER.md §5b)
+
+**Instruction-file ingestion as project memories** — Cursor `.cursorrules`
++ `.cursor/rules/*.mdc` and new `WarpImporter` (`~/.warp/WARP.md` +
+`<project>/WARP.md`) join the existing AGENTS.md / CLAUDE.md / GEMINI.md /
+QWEN.md seeds as `project`-domain inbox seeds with `project:<dir>` tags
+(documented as one source among many for the project domain).
+
 **Automation layer (tiered approval, auto-merge, decay, auto-capture, digest)**
 - `porter/triage.py`: tiered approval. Low-risk writes auto-approve (audited,
   reason `low_risk`); queue for human review on content-based sensitive
