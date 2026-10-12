@@ -1,0 +1,134 @@
+"""Postgres connection pool + migration runner (asyncpg)."""
+from __future__ import annotations
+
+from pathlib import Path
+
+import asyncpg
+
+MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
+NO_TRANSACTION_MARKER = "-- porter:no-transaction"
+
+
+def _split_statements(sql: str) -> list[str]:
+    """Split SQL on semicolons outside $$...$$ blocks, strings and comments.
+
+    Needed for migrations that cannot run inside a transaction block
+    (e.g. ALTER TYPE ... ADD VALUE). Kept small and strict: dollar-quoting,
+    single-quoted strings ('' escapes), line comments (--), block comments.
+    """
+    stmts, buf = [], []
+    i, n = 0, len(sql)
+    in_dollar = False
+    in_squote = False
+    in_line_comment = False
+    in_block_comment = False
+    while i < n:
+        c = sql[i]
+        nxt = sql[i + 1] if i + 1 < n else ""
+        if in_line_comment:
+            buf.append(c)
+            if c == "\n":
+                in_line_comment = False
+            i += 1
+            continue
+        if in_block_comment:
+            buf.append(c)
+            if c == "*" and nxt == "/":
+                buf.append(nxt)
+                i += 2
+                in_block_comment = False
+                continue
+            i += 1
+            continue
+        if in_squote:
+            buf.append(c)
+            if c == "'":
+                if nxt == "'":
+                    buf.append(nxt)
+                    i += 2
+                    continue
+                in_squote = False
+            i += 1
+            continue
+        if in_dollar:
+            if c == "$" and nxt == "$":
+                buf.append("$$")
+                i += 2
+                in_dollar = False
+                continue
+            buf.append(c)
+            i += 1
+            continue
+        # normal mode
+        if c == "$" and nxt == "$":
+            buf.append("$$")
+            i += 2
+            in_dollar = True
+            continue
+        if c == "'":
+            buf.append(c)
+            in_squote = True
+            i += 1
+            continue
+        if c == "-" and nxt == "-":
+            buf.append("--")
+            i += 2
+            in_line_comment = True
+            continue
+        if c == "/" and nxt == "*":
+            buf.append("/*")
+            i += 2
+            in_block_comment = True
+            continue
+        if c == ";":
+            stmt = "".join(buf).strip()
+            if stmt:
+                stmts.append(stmt)
+            buf = []
+            i += 1
+            continue
+        buf.append(c)
+        i += 1
+    tail = "".join(buf).strip()
+    if tail:
+        stmts.append(tail)
+    return stmts
+
+
+async def create_pool(database_url: str, min_size: int = 2, max_size: int = 10) -> asyncpg.Pool:
+    return await asyncpg.create_pool(database_url, min_size=min_size, max_size=max_size)
+
+
+async def run_migrations(database_url: str) -> list[str]:
+    """Apply pending *.sql migrations in order. Idempotent via schema_migrations."""
+    applied: list[str] = []
+    con = await asyncpg.connect(database_url)
+    try:
+        await con.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migrations "
+            "(name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT now())"
+        )
+        done = {r["name"] for r in await con.fetch("SELECT name FROM schema_migrations")}
+        for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
+            if path.name in done:
+                continue
+            sql = path.read_text()
+            if NO_TRANSACTION_MARKER in sql.split("\n", 1)[0]:
+                # Statements that Postgres forbids inside a transaction block
+                # (ALTER TYPE ... ADD VALUE). Each runs in its own implicit
+                # transaction (autocommit).
+                for stmt in _split_statements(sql):
+                    await con.execute(stmt)
+                await con.execute(
+                    "INSERT INTO schema_migrations (name) VALUES ($1)", path.name
+                )
+            else:
+                async with con.transaction():
+                    await con.execute(sql)
+                    await con.execute(
+                        "INSERT INTO schema_migrations (name) VALUES ($1)", path.name
+                    )
+            applied.append(path.name)
+    finally:
+        await con.close()
+    return applied
