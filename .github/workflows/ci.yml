@@ -22,7 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           # Core deps only — ML extras (transformers/torch) are optional;
           # the test suite stubs them out.
-          pip install -r api/requirements-test.txt
+          pip install -r requirements-test.txt
 
       - name: Run tests
         run: python -m pytest -q
