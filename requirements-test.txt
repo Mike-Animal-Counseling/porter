@@ -1,0 +1,8 @@
+# Test-only dependencies (in addition to api/requirements.txt).
+# Used by .github/workflows/ci.yml. Keep this lightweight — no torch/transformers
+# (the test suite stubs those out).
+-r api/requirements.txt
+pytest>=8.0
+pyflakes
+requests
+pynacl
