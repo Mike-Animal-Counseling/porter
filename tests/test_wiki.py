@@ -237,6 +237,28 @@ def test_bge_m3_alias_registered():
         pytest.fail("bge-m3 alias not registered")
 
 
+def test_harrier_kind_registered_but_lazy():
+    """harrier must be a KNOWN kind (no ValueError); the model import
+    itself is lazy, so on a box without sentence-transformers this raises
+    ImportError — the eval script treats that as SKIP, not failure."""
+    try:
+        build_embedder("harrier")
+    except ImportError:
+        pass  # expected here: no torch/sentence-transformers on this VM
+    except ValueError:
+        pytest.fail("harrier kind not registered")
+
+
+def test_embeddinggemma_kind_registered_but_lazy():
+    """Same lazy-registration contract as harrier/qwen3."""
+    try:
+        build_embedder("embeddinggemma")
+    except ImportError:
+        pass  # expected here: no torch/sentence-transformers on this VM
+    except ValueError:
+        pytest.fail("embeddinggemma kind not registered")
+
+
 # ---------------------------------------------------------------- MCP: memory_graph
 
 

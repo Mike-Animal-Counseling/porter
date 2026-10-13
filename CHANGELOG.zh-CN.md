@@ -10,6 +10,15 @@ Porter 的所有重要变更都记录在此。格式遵循
 
 ### 新增
 
+**新的 embedding 候选模型** — `porter/embeddings.py` 新增
+`HarrierEmbedder`（`microsoft/harrier-oss-v1-0.6b`，MIT 协议，1024 维，
+与 BGE-M3/Qwen3 同维度，可直接 A/B，无需 pgvector 迁移）和
+`EmbeddingGemmaEmbedder`（`google/embeddinggemma-300m`，768 维，Gemma
+协议——需先过 license 审查 + 迁移，暂仅用于评测）。
+`PORTER_EMBEDDER=harrier|embeddinggemma`；两者都已接入
+`scripts/eval_embeddings.py`
+（`--embedders hash,qwen3,bge-m3,harrier,embeddinggemma`）。真实评测仍需
+真机（torch + 模型下载）。
 **项目级同步（"行李跟人走"）**——`GET /api/v1/sync/delta` 和 MCP
 `sync_delta` 工具接受 `project=<name>`：此时 delta 只携带该项目的
 工作记忆（带 `project:<name>` 标签的记录，归一化匹配）加上无标签/

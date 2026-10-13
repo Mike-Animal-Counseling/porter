@@ -81,6 +81,8 @@
 | 2 | BGE-M3 真实 embedding 质量 | 小 VM 跑不动大模型，测试用的是 HashEmbedder | 随便搜个语义相近的词，看召回准不准 |
 | 3 | 真实 harness MCP 握手 | 这环境没装 Codex/Cursor | 第 4 步接完后，在 harness 里调一次 `memory_search` |
 | 4 | Antigravity 的 Authorization 头 | 文档没写清 | 如果连不上，告诉我，我给它做免密本地模式 |
+| 5 | ML 分级模型（zero-shot）延迟/质量 | 需 `pip install transformers torch` + 约 1.1GB 下载；VM 跑不了 | 部署后：装依赖，设 `PORTER_TRIAGE_MODEL=zeroshot`，写条测试记忆看 triage reason |
+| 6 | Embedder A/B（qwen3/harrier vs bge-m3） | 需 CPU/GPU 时间 + 模型下载 | 跑 `python scripts/eval_embeddings.py --embedders qwen3,bge-m3,harrier,embeddinggemma` 对比 |
 
 ---
 

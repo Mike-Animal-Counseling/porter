@@ -10,6 +10,15 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Added
 
+**New embedding challengers** — `porter/embeddings.py` gains
+`HarrierEmbedder` (`microsoft/harrier-oss-v1-0.6b`, MIT, 1024 dim —
+drop-in A/B vs BGE-M3/Qwen3, no pgvector migration) and
+`EmbeddingGemmaEmbedder` (`google/embeddinggemma-300m`, 768 dim, Gemma
+license — eval only pending license review + migration).
+`PORTER_EMBEDDER=harrier|embeddinggemma`; both wired into
+`scripts/eval_embeddings.py`
+(`--embedders hash,qwen3,bge-m3,harrier,embeddinggemma`). Real benchmark
+still needs a real machine (torch + model download).
 **Project-scoped sync ("luggage follows you")** — `GET /api/v1/sync/delta`
 and the MCP `sync_delta` tool accept `project=<name>`: the delta then
 carries only that project's working memory (records tagged

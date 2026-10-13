@@ -89,6 +89,61 @@ class Qwen3Embedder(Embedder):
         return [list(map(float, v)) for v in vecs]
 
 
+class HarrierEmbedder(Embedder):
+    """Challenger embedder: Microsoft harrier-oss-v1-0.6B.
+
+    Why it is a challenger (researched 2026-10-13):
+    - #1 on MTEB Multilingual v2 (family); the 0.6B ranks 10th at 0.6901,
+      ten places above Qwen3-Embedding-0.6B at the same sub-billion size.
+    - 1024 dim == EMBEDDING_DIM, so the existing pgvector vector(1024)
+      schema needs NO migration to A/B it against BGE-M3/Qwen3.
+    - MIT license, 32k context, sentence-transformers compatible.
+
+    Model downloads once from HuggingFace on first use. Lazy import keeps
+    the API importable without torch installed. Select with
+    PORTER_EMBEDDER=harrier.
+    """
+
+    MODEL_ID = "microsoft/harrier-oss-v1-0.6b"
+
+    def __init__(self, model_id: str = MODEL_ID) -> None:
+        from sentence_transformers import SentenceTransformer
+
+        self._model = SentenceTransformer(model_id, trust_remote_code=True)
+        self.dim = self._model.get_sentence_embedding_dimension() or EMBEDDING_DIM
+
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        vecs = self._model.encode(list(texts), normalize_embeddings=True)
+        return [list(map(float, v)) for v in vecs]
+
+
+class EmbeddingGemmaEmbedder(Embedder):
+    """Challenger embedder: Google embeddinggemma-300m (308M params).
+
+    Compact open-weights multilingual embedder. NOTE the license: Gemma
+    Terms of Use (not MIT/Apache) — check it fits your deployment before
+    choosing this over harrier/qwen3. 768 dim != EMBEDDING_DIM, so
+    promoting it to default would need a pgvector migration; fine for
+    eval comparison as-is.
+
+    Model downloads once from HuggingFace on first use. Lazy import keeps
+    the API importable without torch installed. Select with
+    PORTER_EMBEDDER=embeddinggemma.
+    """
+
+    MODEL_ID = "google/embeddinggemma-300m"
+
+    def __init__(self, model_id: str = MODEL_ID) -> None:
+        from sentence_transformers import SentenceTransformer
+
+        self._model = SentenceTransformer(model_id, trust_remote_code=True)
+        self.dim = self._model.get_sentence_embedding_dimension() or EMBEDDING_DIM
+
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        vecs = self._model.encode(list(texts), normalize_embeddings=True)
+        return [list(map(float, v)) for v in vecs]
+
+
 class HashEmbedder(Embedder):
     """Deterministic dev/test stub.
 
@@ -191,6 +246,12 @@ def build_embedder(kind: str, **kwargs) -> Embedder:
         # Challenger (2026-10): Qwen3-Embedding-0.6B. Same 1024 dim as
         # BGE-M3, so no pgvector migration is needed to compare them.
         "qwen3": Qwen3Embedder,
+        # Challenger (2026-10): Microsoft harrier-oss-v1-0.6B (MIT).
+        # Same 1024 dim — drop-in A/B against BGE-M3/Qwen3.
+        "harrier": HarrierEmbedder,
+        # Challenger (2026-10): Google embeddinggemma-300m. 768 dim and
+        # Gemma license — eval only until a migration + license review.
+        "embeddinggemma": EmbeddingGemmaEmbedder,
         "http": HttpEmbedder,
         "openai": OpenAIEmbedder,
     }

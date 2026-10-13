@@ -81,6 +81,8 @@ Once this step works, Porter is officially managing your memory.
 | 2 | Real BGE-M3 embedding quality | The small VM can't run big models; tests used HashEmbedder | Search a semantically similar term and check whether recall is accurate |
 | 3 | Real harness MCP handshake | Codex/Cursor aren't installed in this environment | After step 4, call `memory_search` once from your harness |
 | 4 | Antigravity's Authorization header | The docs are unclear on it | If you can't connect, tell me and I'll build a passwordless local mode for it |
+| 5 | ML triage model (zero-shot) latency/quality | Needs `pip install transformers torch` + ~1.1 GB download; VM can't do it | After deploy: `pip install transformers torch`, set `PORTER_TRIAGE_MODEL=zeroshot`, write a test memory and check the triage reason |
+| 6 | Embedder A/B (qwen3/harrier vs bge-m3) | Needs GPU/CPU time + model downloads | Run `python scripts/eval_embeddings.py --embedders qwen3,bge-m3,harrier,embeddinggemma` and compare |
 
 ---
 

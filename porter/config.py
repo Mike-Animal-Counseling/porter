@@ -20,7 +20,7 @@ class Settings:
             "DATABASE_URL", "postgresql://porter:porter@localhost:5432/porter"
         )
     )
-    # hash | sentence-transformer | bge-m3 | qwen3 | http | openai
+    # hash | sentence-transformer | bge-m3 | qwen3 | harrier | embeddinggemma | http | openai
     # PORTER_EMBEDDER is the documented flag (EMBEDDER_KIND kept as alias).
     # Default stays "hash": real models load in Docker, never implicitly.
     embedder_kind: str = field(

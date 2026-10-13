@@ -1,7 +1,7 @@
 """Bilingual embedding eval for Porter memory retrieval.
 
-Compares embedder backends (hash stub, qwen3, bge-m3) on a small,
-hand-built zh/en memory set:
+Compares embedder backends (hash stub, qwen3, bge-m3, harrier,
+embeddinggemma) on a small, hand-built zh/en memory set:
 
   1. Dedup P/R at the 0.92 duplicate threshold — known-duplicate pairs
      (paraphrases, incl. cross-lingual zh<->en) vs known-distinct pairs
@@ -17,6 +17,7 @@ plumbing is verifiable everywhere.
 Usage:
     python scripts/eval_embeddings.py
     python scripts/eval_embeddings.py --embedders hash,qwen3
+    python scripts/eval_embeddings.py --embedders hash,qwen3,bge-m3,harrier,embeddinggemma
     python scripts/eval_embeddings.py --threshold 0.90 --top-k 1,3,5
 """
 from __future__ import annotations
@@ -157,7 +158,7 @@ def eval_recall(emb: Embedder, ks: list[int]) -> dict[int, float]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Porter bilingual embedding eval")
-    ap.add_argument("--embedders", default="hash,qwen3,bge-m3",
+    ap.add_argument("--embedders", default="hash,qwen3,bge-m3,harrier,embeddinggemma",
                     help="comma-separated embedder kinds")
     ap.add_argument("--threshold", type=float, default=0.92,
                     help="duplicate cosine threshold (default 0.92)")
@@ -188,7 +189,8 @@ def main() -> int:
     if ran == 0:
         print("\nNo embedder could run. On a real machine: "
               "pip install sentence-transformers torch, then re-run — "
-              "qwen3/bge-m3 download from HuggingFace on first use.")
+              "qwen3/bge-m3/harrier/embeddinggemma download from HuggingFace "
+              "on first use.")
         return 2
     return 0
 
