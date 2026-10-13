@@ -22,6 +22,7 @@ import sys
 import threading
 import time
 import uuid
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -144,9 +145,11 @@ class _StdioDriver:
     """
 
     def __init__(self, env: dict):
+        # Repo root relative to this test file — never a hardcoded path.
+        repo_root = Path(__file__).resolve().parent.parent
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "porter.mcp_stdio"],
-            cwd=os.path.expanduser("~/workspace/porter"),
+            cwd=repo_root,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, env=env,
         )
