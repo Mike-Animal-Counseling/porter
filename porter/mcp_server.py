@@ -36,8 +36,11 @@ from uuid import UUID
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
+from . import conflicts as conflicts_logic
 from . import oauth as oauth_logic
+from . import switch as switch_logic
 from . import sync as sync_logic
+from . import writeback as writeback_logic
 from .auth import ALL_KNOWN_SCOPES, AuthContext, RevocationCache, verify_bearer_token
 from .errors import PorterError
 from .repositories import MemoryRepository
@@ -782,6 +785,213 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
                       "adapter": auth.client_id},
             )
             return payload
+        except ToolError:
+            raise
+        except PorterError as exc:
+            raise ToolError(f"porter:{exc.code}: {exc.message}") from exc
+
+    @mcp.tool(
+        description=(
+            "Build a handoff payload for switching harnesses (seamless "
+            "switching). Returns the project's working memory plus the "
+            "user's personal memories, grouped into in_progress / decisions "
+            "/ conventions / pitfalls, plus a rendered briefing for the new "
+            "harness. Requires the memory.read scope. " + UNTRUSTED_NOTICE
+        )
+    )
+    async def switch_handoff(
+        ctx: Context,
+        project: str,
+        from_harness: str,
+        to_harness: str,
+        top_k: int = 10,
+    ) -> dict:
+        try:
+            auth = await _resolve_mcp_auth(ctx, deps)
+            _check_rate_limit(deps, auth)
+            _need_scope(auth, "memory.read")
+            repo = _ready_repo(deps)
+            payload = await switch_logic.build_handoff(
+                repo,
+                project=project,
+                from_harness=from_harness,
+                to_harness=to_harness,
+                top_k=max(1, min(200, int(top_k))),
+                actor_client_id=auth.client_pk,
+            )
+            payload["briefing"] = switch_logic.render_briefing(payload)
+            return payload
+        except ToolError:
+            raise
+        except PorterError as exc:
+            raise ToolError(f"porter:{exc.code}: {exc.message}") from exc
+
+    @mcp.tool(
+        description=(
+            "Write Porter memories back into a harness's native memory "
+            "format (write-back). Only writes inside porter-sync marked "
+            "zones; user-written content outside the markers is never "
+            "touched. Set dry_run=true to preview. Requires the memory.read "
+            "scope. " + UNTRUSTED_NOTICE
+        )
+    )
+    async def writeback_sync(
+        ctx: Context,
+        harness: str,
+        project: str | None = None,
+        dry_run: bool = False,
+        include_sensitive: bool = False,
+    ) -> dict:
+        try:
+            auth = await _resolve_mcp_auth(ctx, deps)
+            _check_rate_limit(deps, auth)
+            granted = _need_scope(auth, "memory.read")
+            repo = _ready_repo(deps)
+            records = await repo.list(status="active", limit=200)
+            memories = [
+                {
+                    "id": str(r.id),
+                    "content": r.content,
+                    "type": r.type,
+                    "status": r.status,
+                    "scope_tags": list(r.scope_tags or ()),
+                    "confidence": r.confidence,
+                    "source": dict(r.source or {}),
+                    "encrypted": bool(r.encrypted),
+                    "triage_reasons": list(
+                        getattr(r, "triage_reasons", None) or ()
+                    ),
+                }
+                for r in records
+            ]
+            writer = writeback_logic.get_writer(harness)
+            result = await writer.write(
+                memories,
+                project=project,
+                dry_run=bool(dry_run),
+                include_sensitive=bool(include_sensitive),
+            )
+            await repo.audit(
+                action="writeback",
+                memory_ids=[r.id for r in records[:50]],
+                scopes_used=granted,
+                client_id=auth.client_pk,
+                meta={"via": "mcp", "tool": "writeback_sync",
+                      "harness": harness, "dry_run": bool(dry_run)},
+            )
+            return result.to_dict()
+        except ToolError:
+            raise
+        except PorterError as exc:
+            raise ToolError(f"porter:{exc.code}: {exc.message}") from exc
+
+    @mcp.tool(
+        description=(
+            "Detect active memories that contradict the given memory "
+            "(negation flips, antonym swaps, numeric conflicts, status "
+            "reversals). Returns candidates with signals; encrypted memories "
+            "are never scanned. Requires the memory.read scope. "
+            + UNTRUSTED_NOTICE
+        )
+    )
+    async def memory_contradictions(
+        ctx: Context,
+        memory_id: str,
+    ) -> dict:
+        try:
+            auth = await _resolve_mcp_auth(ctx, deps)
+            _check_rate_limit(deps, auth)
+            _need_scope(auth, "memory.read")
+            repo = _ready_repo(deps)
+            try:
+                mid = UUID(memory_id)
+            except (TypeError, ValueError):
+                raise ToolError(
+                    "porter:invalid_input: memory_id must be a UUID"
+                )
+            rec = await repo.get(mid)
+            if rec is None:
+                raise ToolError("porter:not_found: memory not found")
+            return {
+                "memory_id": str(mid),
+                "contradictions": await (
+                    conflicts_logic.detect_contradictions(repo, mid)
+                ),
+            }
+        except ToolError:
+            raise
+        except PorterError as exc:
+            raise ToolError(f"porter:{exc.code}: {exc.message}") from exc
+
+    @mcp.tool(
+        description=(
+            "Semantically merge 2+ memories into one, archiving the sources "
+            "with full provenance (merges list). Strategies: newest_wins, "
+            "newest_wins_per_aspect (default), manual_pick (requires "
+            "content). Requires the memory.write scope."
+        )
+    )
+    async def memory_merge(
+        ctx: Context,
+        memory_ids: list[str],
+        strategy: str = "newest_wins_per_aspect",
+        content: str | None = None,
+    ) -> dict:
+        try:
+            auth = await _resolve_mcp_auth(ctx, deps)
+            _check_rate_limit(deps, auth)
+            _need_scope(auth, "memory.write")
+            repo = _ready_repo(deps)
+            try:
+                mids = [UUID(m) for m in memory_ids]
+            except (TypeError, ValueError):
+                raise ToolError(
+                    "porter:invalid_input: memory_ids must be UUIDs"
+                )
+            if strategy not in (
+                "newest_wins", "newest_wins_per_aspect", "manual_pick"
+            ):
+                raise ToolError(
+                    "porter:invalid_input: unknown strategy"
+                )
+            return await conflicts_logic.semantic_merge(
+                repo, mids, strategy=strategy, content=content,
+                actor_client_id=auth.client_pk,
+            )
+        except ToolError:
+            raise
+        except PorterError as exc:
+            raise ToolError(f"porter:{exc.code}: {exc.message}") from exc
+
+    @mcp.tool(
+        description=(
+            "Resolve a memory conflict: the winner stays active, losers are "
+            "archived with provenance recording the resolution. Idempotent. "
+            "Requires the memory.write scope."
+        )
+    )
+    async def memory_resolve(
+        ctx: Context,
+        winner_id: str,
+        loser_ids: list[str],
+        resolution: str,
+    ) -> dict:
+        try:
+            auth = await _resolve_mcp_auth(ctx, deps)
+            _check_rate_limit(deps, auth)
+            _need_scope(auth, "memory.write")
+            repo = _ready_repo(deps)
+            try:
+                wid = UUID(winner_id)
+                lids = [UUID(l) for l in loser_ids]
+            except (TypeError, ValueError):
+                raise ToolError(
+                    "porter:invalid_input: ids must be UUIDs"
+                )
+            return await conflicts_logic.resolve_conflict(
+                repo, wid, lids, resolution=resolution,
+                actor_client_id=auth.client_pk,
+            )
         except ToolError:
             raise
         except PorterError as exc:
