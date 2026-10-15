@@ -320,19 +320,36 @@ async def build_handoff(
 # ---------------------------------------------------------------------------
 # render_briefing — the "welcome back" moment
 
-_SECTION_TITLES: dict[str, str] = {
-    "in_progress": "🚧 进行中",
-    "decisions": "✅ 已经定下来的事",
-    "conventions": "📏 约定",
-    "pitfalls": "⚠️ 踩过的坑",
-    "personal": "👤 关于你的事",
+_SUPPORTED_LANGS = ("en", "zh")
+
+
+def _normalize_lang(lang: str | None) -> str:
+    """Unknown / missing language falls back to English (repo convention)."""
+    return lang if lang in _SUPPORTED_LANGS else "en"
+
+
+_SECTION_TITLES: dict[str, dict[str, str]] = {
+    "en": {
+        "in_progress": "🚧 In progress",
+        "decisions": "✅ Decisions",
+        "conventions": "📏 Conventions",
+        "pitfalls": "⚠️ Pitfalls",
+        "personal": "👤 About you",
+    },
+    "zh": {
+        "in_progress": "🚧 进行中",
+        "decisions": "✅ 已经定下来的事",
+        "conventions": "📏 约定",
+        "pitfalls": "⚠️ 踩过的坑",
+        "personal": "👤 关于你的事",
+    },
 }
 
 _MAX_ENTRY_CHARS = 400  # keep the briefing scannable, not a data dump
 
 
-def _rel_time(iso: str | None) -> str:
-    """Human relative time in Chinese ("3 天前更新"). Best-effort: any
+def _rel_time(iso: str | None, lang: str = "en") -> str:
+    """Human relative time ("3 days ago" / "3 天前更新"). Best-effort: any
     parse failure yields "" and the caller omits the suffix."""
     if not iso:
         return ""
@@ -345,75 +362,120 @@ def _rel_time(iso: str | None) -> str:
     secs = int((datetime.now(timezone.utc) - dt).total_seconds())
     if secs < 0:
         return ""
+    if lang == "zh":
+        if secs < 60:
+            return "刚刚"
+        if secs < 3600:
+            return f"{secs // 60} 分钟前"
+        if secs < 86400:
+            return f"{secs // 3600} 小时前"
+        days = secs // 86400
+        if days < 30:
+            return f"{days} 天前"
+        return f"{days // 30} 个月前"
     if secs < 60:
-        return "刚刚"
+        return "just now"
     if secs < 3600:
-        return f"{secs // 60} 分钟前"
+        return f"{secs // 60} min ago"
     if secs < 86400:
-        return f"{secs // 3600} 小时前"
+        return f"{secs // 3600} hr ago"
     days = secs // 86400
     if days < 30:
-        return f"{days} 天前"
-    return f"{days // 30} 个月前"
+        return f"{days} days ago"
+    return f"{days // 30} mo ago"
 
 
-def _render_entry(entry: dict[str, Any]) -> str:
+def _render_entry(entry: dict[str, Any], lang: str = "en") -> str:
     # Encrypted memories: never dump ciphertext into prose. The receiving
     # harness decrypts client-side; here we only signal that something
     # exists that Porter itself cannot read.
     if entry.get("encrypted"):
-        return "🔒 一条加密记忆（只有你能解密，Porter 看不到内容）"
+        if lang == "zh":
+            return "🔒 一条加密记忆（只有你能解密，Porter 看不到内容）"
+        return "🔒 An encrypted memory (only you can decrypt it — Porter can't see the contents)"
     content = (entry.get("content") or "").strip()
     if len(content) > _MAX_ENTRY_CHARS:
         content = content[:_MAX_ENTRY_CHARS].rstrip() + "…"
-    rel = _rel_time(entry.get("updated_at"))
-    suffix = f"（{rel}更新）" if rel else ""
+    rel = _rel_time(entry.get("updated_at"), lang)
+    if lang == "zh":
+        suffix = f"（{rel}更新）" if rel else ""
+    else:
+        suffix = f" (updated {rel})" if rel else ""
     return f"{content}{suffix}"
 
 
-def render_briefing(handoff: dict[str, Any]) -> str:
+def render_briefing(handoff: dict[str, Any], lang: str | None = "en") -> str:
     """Render a handoff payload as a human-feeling briefing for the new
-    harness (Chinese-first). Pure function — no repo access.
+    harness. English-first (repo convention); pass lang="zh" for Chinese.
+    Pure function — no repo access.
 
     The copy answers the three questions a switched-to agent actually has:
-    上次做到哪 / 卡在哪 / 有什么约定. Empty sections are skipped; a
-    project with no memories at all gets an honest "blank slate" opening
-    instead of a wall of empty headers."""
-    project = handoff.get("project") or "这个项目"
-    from_h = handoff.get("from_harness") or "上一个工具"
-    to_h = handoff.get("to_harness") or "这里"
+    where did we leave off / what's stuck / what are the conventions.
+    Empty sections are skipped; a project with no memories at all gets an
+    honest "blank slate" opening instead of a wall of empty headers."""
+    lang = _normalize_lang(lang)
+    zh = lang == "zh"
+    titles = _SECTION_TITLES[lang]
+    project = handoff.get("project") or ("这个项目" if zh else "this project")
+    from_h = handoff.get("from_harness") or ("上一个工具" if zh else "the previous harness")
+    to_h = handoff.get("to_harness") or ("这里" if zh else "here")
     sections = handoff.get("sections") or {}
 
-    lines = [
-        f"🔄 交接简报 · {project}",
-        f"{from_h} → {to_h}，行李已送达。",
-        "",
-    ]
+    if zh:
+        lines = [
+            f"🔄 交接简报 · {project}",
+            f"{from_h} → {to_h}，行李已送达。",
+            "",
+        ]
+    else:
+        lines = [
+            f"🔄 Handoff briefing · {project}",
+            f"{from_h} → {to_h} — your bags have arrived.",
+            "",
+        ]
 
     project_sections = [s for s in SECTIONS if s != "personal"]
     has_project_memories = any(sections.get(s) for s in project_sections)
     if has_project_memories:
-        lines.append(
-            f"欢迎回来！你上次在这个项目里用的是 {from_h}，"
-            "我把它的记忆打包带来了——先看一眼再开工："
-        )
+        if zh:
+            lines.append(
+                f"欢迎回来！你上次在这个项目里用的是 {from_h}，"
+                "我把它的记忆打包带来了——先看一眼再开工："
+            )
+        else:
+            lines.append(
+                f"Welcome back! Last time on this project you were using {from_h} — "
+                "I've packed up its memories. Skim this before you start:"
+            )
     else:
-        lines.append(
-            f"{project} 在 Porter 里还是白纸一张，{from_h} 没留下什么记录。"
-            "不过关于你的事我都带着，先从下面开始："
-        )
+        if zh:
+            lines.append(
+                f"{project} 在 Porter 里还是白纸一张，{from_h} 没留下什么记录。"
+                "不过关于你的事我都带着，先从下面开始："
+            )
+        else:
+            lines.append(
+                f"{project} is a blank slate in Porter — {from_h} left nothing behind. "
+                "But everything about you came along; start here:"
+            )
     lines.append("")
 
     for name in SECTIONS:
         entries = sections.get(name) or []
         if not entries:
             continue
-        lines.append(f"## {_SECTION_TITLES[name]}")
+        lines.append(f"## {titles[name]}")
         for e in entries:
-            lines.append(f"- {_render_entry(e)}")
+            lines.append(f"- {_render_entry(e, lang)}")
         lines.append("")
 
-    lines.append(
-        "💡 以上都是过去的记录转述，仅供参考——动手前还是按现状核实一下。"
-    )
+    if zh:
+        lines.append(
+            "💡 以上都是过去的记录转述，仅供参考——动手前还是按现状核实一下。"
+        )
+    else:
+        lines.append(
+            "💡 All of the above is retold from past records — "
+            "worth a quick sanity check against reality before you act."
+        )
     return "\n".join(lines).rstrip() + "\n"

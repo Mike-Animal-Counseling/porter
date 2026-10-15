@@ -227,11 +227,30 @@ def test_render_briefing_human_copy():
     assert "Refactoring auth module" in brief
     assert "Don't deploy on Friday" in brief
     # empty sections are skipped, not rendered as empty headers
-    assert "已经定下来的事" not in brief
-    assert "约定" not in brief
-    # human touch: not a dry list
-    assert "行李已送达" in brief
+    assert "Decisions" not in brief
+    assert "Conventions" not in brief
+    # human touch: not a dry list (English default)
+    assert "your bags have arrived" in brief
     assert brief.endswith("\n")
+
+
+def test_render_briefing_chinese_opt_in():
+    handoff = {
+        "project": "demo",
+        "from_harness": "claude-code",
+        "to_harness": "cursor",
+        "at": "2026-10-14T00:00:00+00:00",
+        "sections": {s: [] for s in switch.SECTIONS},
+    }
+    brief = switch.render_briefing(handoff, lang="zh")
+    assert "交接简报" in brief
+    assert "行李已送达" in brief
+    assert "白纸" in brief
+    assert brief.endswith("\n")
+    # unknown language falls back to English
+    brief_xx = switch.render_briefing(handoff, lang="xx")
+    assert "Handoff briefing" in brief_xx
+    assert "交接简报" not in brief_xx
 
 
 def test_render_briefing_blank_slate():
@@ -243,7 +262,7 @@ def test_render_briefing_blank_slate():
         "sections": {s: [] for s in switch.SECTIONS},
     }
     brief = switch.render_briefing(handoff)
-    assert "白纸" in brief
+    assert "blank slate" in brief
 
 
 # ------------------------------------------------------------ audit
