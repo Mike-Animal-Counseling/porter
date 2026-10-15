@@ -381,3 +381,93 @@ class ShareCreateOut(ShareOut):
     # stored in cleartext (only the share metadata lives in `shares`) and
     # never returned again.
     token: str
+
+
+# ------------------------------------------------------------------ switch (seamless harness switching)
+class SwitchHandoffIn(BaseModel):
+    """POST /api/v1/switch/handoff body. Builds the handoff payload for a
+    harness switch: the new harness gets the project's working memory +
+    the user's personal memories, grouped for handoff."""
+
+    project: str = Field(min_length=1, max_length=128)
+    from_harness: str = Field(min_length=1, max_length=64)
+    to_harness: str = Field(min_length=1, max_length=64)
+    top_k: int = Field(default=10, ge=1, le=200)
+
+
+# ------------------------------------------------------------------ writeback (Porter -> harness native formats)
+class WritebackIn(BaseModel):
+    """POST /api/v1/writeback/sync body. Renders Porter memories back into
+    a harness's native memory format (marked porter-sync zones only)."""
+
+    harness: str = Field(min_length=1, max_length=64)
+    project: str | None = Field(default=None, max_length=128)
+    dry_run: bool = False
+    include_sensitive: bool = False
+
+
+class WritebackOut(BaseModel):
+    written_files: list[str]
+    skipped: list[str]
+    backed_up: list[str]
+    note: str
+
+
+# ------------------------------------------------------------------ conflicts (contradiction detection + merge)
+class MemoryMergeIn(BaseModel):
+    """POST /api/v1/memories/merge body."""
+
+    memory_ids: list[UUID] = Field(min_length=2, max_length=20)
+    strategy: Literal["newest_wins", "newest_wins_per_aspect", "manual_pick"] = (
+        "newest_wins_per_aspect"
+    )
+    content: str | None = Field(default=None, max_length=MAX_CONTENT_LEN)
+
+
+class ConflictResolveIn(BaseModel):
+    """POST /api/v1/memories/resolve body."""
+
+    winner_id: UUID
+    loser_ids: list[UUID] = Field(min_length=1, max_length=20)
+    resolution: str = Field(min_length=1, max_length=128)
+
+
+# ------------------------------------------------------------------ e2ee hub (blind key exchange)
+class DeviceRegisterIn(BaseModel):
+    """POST /api/v1/e2ee/devices body. Registers a device's X25519 public
+    key with the hub. The hub can never derive the private key."""
+
+    device_id: str = Field(min_length=1, max_length=64)
+    public_key: str = Field(min_length=1, max_length=128)
+
+
+class EnvelopePostIn(BaseModel):
+    """POST /api/v1/e2ee/envelopes body. Posts a NaCl sealed-box envelope
+    for another device. The hub stores/forwards it blindly."""
+
+    to_device: str = Field(min_length=1, max_length=64)
+    from_device: str = Field(min_length=1, max_length=64)
+    sealed: str = Field(min_length=1, max_length=4096)
+
+
+# ------------------------------------------------------------------ teams (shared project workspaces)
+class WorkspaceCreateIn(BaseModel):
+    """POST /api/v1/workspaces body."""
+
+    name: str = Field(min_length=1, max_length=100)
+    project: str | None = Field(default=None, max_length=128)
+
+
+class WorkspaceOut(BaseModel):
+    id: UUID
+    name: str
+    project_tag: str
+    created_at: datetime
+
+
+class WorkspaceInviteIn(BaseModel):
+    """POST /api/v1/workspaces/{id}/members body. Only the workspace owner
+    may invite."""
+
+    client_id: UUID
+    role: Literal["editor", "viewer"] = "viewer"

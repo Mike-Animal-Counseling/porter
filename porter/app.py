@@ -38,19 +38,29 @@ from .oauth_store import OAuthStore
 from .origin import check_same_origin
 from .ratelimit import TokenBucket
 from .repositories import MemoryRepository
+from . import conflicts as conflicts_logic
+from . import lifecycle as lifecycle_logic
+from . import switch as switch_logic
+from . import teams as teams_logic
+from . import writeback as writeback_logic
+from .e2ee_hub import EnvelopeStore, InMemoryEnvelopeStore
 from .schemas import (
     ClientCreate,
     ClientCreateOut,
     ClientOut,
+    ConflictResolveIn,
     CursorIn,
     CursorOut,
     CustomTagCreate,
     CustomTagOut,
+    DeviceRegisterIn,
     DuplicateCandidate,
+    EnvelopePostIn,
     ErrorOut,
     HealthOut,
     MemoryCreate,
     MemoryCreateOut,
+    MemoryMergeIn,
     MemoryOut,
     MemoryPin,
     MemoryRevise,
@@ -66,8 +76,14 @@ from .schemas import (
     SnapshotCreate,
     _validate_tags as _validate_tag_list,
     SnapshotOut,
+    SwitchHandoffIn,
     SyncChange,
     SyncDeltaOut,
+    WorkspaceCreateIn,
+    WorkspaceInviteIn,
+    WorkspaceOut,
+    WritebackIn,
+    WritebackOut,
     TokenOut,
 )
 from . import snapshots as snapshots_logic
@@ -121,6 +137,8 @@ def create_app(
     snapshot_store: SnapshotStore | None = None,
     enable_mcp: bool = True,
     wiki_service=None,  # porter.wiki.WikiService | None; None = wiki layer off
+    envelope_store: EnvelopeStore | None = None,
+    team_store=None,  # porter.teams.TeamStore | None
 ) -> FastAPI:
     app = FastAPI(
         title="Porter",
@@ -158,6 +176,15 @@ def create_app(
     app.state.snapshot_store = (
         snapshot_store if snapshot_store is not None else InMemorySnapshotStore()
     )
+    # New subsystems (seamless-switching release): blind-hub key envelopes
+    # and team workspaces. In-memory by default; postgres variants are wired
+    # in main.lifespan when PORTER_REPO=postgres.
+    app.state.envelope_store = (
+        envelope_store if envelope_store is not None else InMemoryEnvelopeStore()
+    )
+    app.state.team_store = (
+        team_store if team_store is not None else teams_logic.InMemoryTeamStore()
+    )
     app.state.auth_enabled = (
         settings.auth_enabled if auth_enabled is None else auth_enabled
     )
@@ -192,6 +219,12 @@ def create_app(
 
     def get_snapshot_store() -> SnapshotStore:
         return app.state.snapshot_store
+
+    def get_envelope_store() -> EnvelopeStore:
+        return app.state.envelope_store
+
+    def get_team_store():
+        return app.state.team_store
 
     async def _custom_tag_map(store: OAuthStore) -> dict[str, str]:
         return {t["tag"]: t["label"] for t in await store.list_custom_tags()}
@@ -1200,6 +1233,316 @@ def create_app(
             cursor=row["cursor"],
             last_seen=row["last_seen"],
         )
+
+    # ------------------------------------------- seamless switching (v0.2.0)
+    @app.post(
+        f"{API_PREFIX}/switch/handoff",
+        responses={422: {"model": ErrorOut}},
+        summary="Build a handoff payload for switching harnesses",
+    )
+    async def switch_handoff(
+        body: SwitchHandoffIn,
+        request: Request,
+        request_repo: MemoryRepository = Depends(get_repo),
+        granted: list[str] = Depends(auth.require_scopes("memory.read")),
+    ):
+        # build_handoff records the harness_switch audit event itself —
+        # the endpoint MUST NOT record it again (see switch.py docstring).
+        payload = await switch_logic.build_handoff(
+            request_repo,
+            project=body.project,
+            from_harness=body.from_harness,
+            to_harness=body.to_harness,
+            top_k=body.top_k,
+            actor_client_id=_client_pk(request),
+        )
+        payload["briefing"] = switch_logic.render_briefing(payload)
+        return payload
+
+    @app.post(
+        f"{API_PREFIX}/writeback/sync",
+        response_model=WritebackOut,
+        responses={422: {"model": ErrorOut}},
+        summary="Write Porter memories back to a harness's native format",
+    )
+    async def writeback_sync(
+        body: WritebackIn,
+        request: Request,
+        request_repo: MemoryRepository = Depends(get_repo),
+        granted: list[str] = Depends(auth.require_scopes("memory.read")),
+    ):
+        # Gather active memories visible to the caller, then render them
+        # into the harness's native format (porter-sync marked zones only).
+        records = await request_repo.list(status="active", limit=200)
+        memories = [
+            {
+                "id": str(r.id),
+                "content": r.content,
+                "type": r.type,
+                "status": r.status,
+                "scope_tags": list(r.scope_tags or ()),
+                "confidence": r.confidence,
+                "source": dict(r.source or {}),
+                "encrypted": bool(r.encrypted),
+                "triage_reasons": list(getattr(r, "triage_reasons", None) or ()),
+            }
+            for r in records
+        ]
+        writer = writeback_logic.get_writer(body.harness)
+        result = await writer.write(
+            memories,
+            project=body.project,
+            dry_run=body.dry_run,
+            include_sensitive=body.include_sensitive,
+        )
+        await request_repo.audit(
+            action="writeback",
+            memory_ids=[r.id for r in records[:50]],
+            client_id=_client_pk(request),
+            scopes_used=granted,
+            meta={
+                "harness": body.harness,
+                "project": body.project,
+                "dry_run": body.dry_run,
+                "written": len(result.written_files),
+            },
+        )
+        return WritebackOut(**result.to_dict())
+
+    # ------------------------------------------------------- conflicts (v0.2.0)
+    @app.get(
+        f"{API_PREFIX}/memories/{{memory_id}}/contradictions",
+        responses={422: {"model": ErrorOut}},
+        summary="Detect memories contradicting the given one",
+    )
+    async def memory_contradictions(
+        memory_id: UUID,
+        request: Request,
+        request_repo: MemoryRepository = Depends(get_repo),
+        granted: list[str] = Depends(auth.require_scopes("memory.read")),
+    ):
+        rec = await request_repo.get(memory_id)
+        if rec is None:
+            raise NotFound("memory not found")
+        return {
+            "memory_id": str(memory_id),
+            "contradictions": await conflicts_logic.detect_contradictions(
+                request_repo, memory_id
+            ),
+        }
+
+    @app.post(
+        f"{API_PREFIX}/memories/merge",
+        responses={422: {"model": ErrorOut}},
+        summary="Semantically merge memories with provenance",
+    )
+    async def memory_merge(
+        body: MemoryMergeIn,
+        request: Request,
+        request_repo: MemoryRepository = Depends(get_repo),
+        granted: list[str] = Depends(auth.require_scopes("memory.write")),
+    ):
+        merged = await conflicts_logic.semantic_merge(
+            request_repo,
+            body.memory_ids,
+            strategy=body.strategy,
+            content=body.content,
+            actor_client_id=_client_pk(request),
+        )
+        return merged
+
+    @app.post(
+        f"{API_PREFIX}/memories/resolve",
+        responses={422: {"model": ErrorOut}},
+        summary="Resolve a conflict: winner stays, losers archived",
+    )
+    async def memory_resolve(
+        body: ConflictResolveIn,
+        request: Request,
+        request_repo: MemoryRepository = Depends(get_repo),
+        granted: list[str] = Depends(auth.require_scopes("memory.write")),
+    ):
+        result = await conflicts_logic.resolve_conflict(
+            request_repo,
+            body.winner_id,
+            body.loser_ids,
+            resolution=body.resolution,
+            actor_client_id=_client_pk(request),
+        )
+        return result
+
+    # ------------------------------------------------------- e2ee hub (v0.2.0)
+    @app.post(
+        f"{API_PREFIX}/e2ee/devices",
+        responses={422: {"model": ErrorOut}},
+        summary="Register a device's X25519 public key (blind hub)",
+    )
+    async def e2ee_register_device(
+        body: DeviceRegisterIn,
+        request: Request,
+        store: EnvelopeStore = Depends(get_envelope_store),
+        granted: list[str] = Depends(auth.require_scopes("memory.read")),
+    ):
+        # Anyone with a valid token may register a device; the public key
+        # alone is useless without the private key, which never leaves the
+        # device. The hub stays blind by construction.
+        rec = await store.register_device(body.device_id, body.public_key)
+        return {
+            "device_id": rec.device_id,
+            "public_key": rec.public_key,
+            "created_at": rec.created_at.isoformat(),
+        }
+
+    @app.post(
+        f"{API_PREFIX}/e2ee/envelopes",
+        responses={422: {"model": ErrorOut}},
+        summary="Post a sealed key envelope for another device",
+    )
+    async def e2ee_post_envelope(
+        body: EnvelopePostIn,
+        request: Request,
+        store: EnvelopeStore = Depends(get_envelope_store),
+        granted: list[str] = Depends(auth.require_scopes("memory.read")),
+    ):
+        env = await store.post_envelope(
+            body.to_device, body.from_device, body.sealed
+        )
+        return {
+            "id": str(env.id),
+            "to_device": env.to_device,
+            "from_device": env.from_device,
+            "created_at": env.created_at.isoformat(),
+        }
+
+    @app.get(
+        f"{API_PREFIX}/e2ee/envelopes",
+        responses={422: {"model": ErrorOut}},
+        summary="Claim pending sealed envelopes for a device",
+    )
+    async def e2ee_claim_envelopes(
+        request: Request,
+        device_id: str = Query(min_length=1, max_length=64),
+        store: EnvelopeStore = Depends(get_envelope_store),
+        granted: list[str] = Depends(auth.require_scopes("memory.read")),
+    ):
+        # Claiming is idempotent: envelopes are marked claimed atomically on
+        # first claim; repeats return [].
+        envs = await store.claim_envelopes(device_id)
+        return {
+            "device_id": device_id,
+            "envelopes": [
+                {
+                    "id": str(e.id),
+                    "from_device": e.from_device,
+                    "sealed": e.sealed,
+                    "created_at": e.created_at.isoformat(),
+                }
+                for e in envs
+            ],
+        }
+
+    # ---------------------------------------------------------- teams (v0.2.0)
+    @app.post(
+        f"{API_PREFIX}/workspaces",
+        response_model=WorkspaceOut,
+        responses={422: {"model": ErrorOut}},
+        summary="Create a shared project workspace",
+    )
+    async def workspace_create(
+        body: WorkspaceCreateIn,
+        request: Request,
+        request_repo: MemoryRepository = Depends(get_repo),
+        store=Depends(get_team_store),
+        granted: list[str] = Depends(auth.require_scopes("memory.write")),
+    ):
+        ws = await teams_logic.create_workspace(
+            store,
+            request_repo,
+            name=body.name,
+            owner_client_id=_client_pk(request),
+            project=body.project,
+        )
+        return WorkspaceOut(
+            id=ws["id"], name=ws["name"], project_tag=ws["project_tag"],
+            created_at=ws["created_at"],
+        )
+
+    @app.get(
+        f"{API_PREFIX}/workspaces",
+        responses={422: {"model": ErrorOut}},
+        summary="List my workspaces",
+    )
+    async def workspace_list(
+        request: Request,
+        store=Depends(get_team_store),
+        granted: list[str] = Depends(auth.require_scopes("memory.read")),
+    ):
+        client_id = _client_pk(request)
+        items = await store.list_workspaces_for_client(client_id)
+        return {
+            "workspaces": [
+                {
+                    "id": str(w.id),
+                    "name": w.name,
+                    "project_tag": w.project_tag,
+                    "created_at": w.created_at.isoformat(),
+                }
+                for w in items
+            ]
+        }
+
+    @app.post(
+        f"{API_PREFIX}/workspaces/{{workspace_id}}/members",
+        responses={422: {"model": ErrorOut}},
+        summary="Invite a member to a workspace (owner only)",
+    )
+    async def workspace_invite(
+        workspace_id: UUID,
+        body: WorkspaceInviteIn,
+        request: Request,
+        request_repo: MemoryRepository = Depends(get_repo),
+        store=Depends(get_team_store),
+        granted: list[str] = Depends(auth.require_scopes("memory.write")),
+    ):
+        member = await teams_logic.invite(
+            store,
+            request_repo,
+            workspace_id=workspace_id,
+            client_id=body.client_id,
+            role=body.role,
+            actor_client_id=_client_pk(request),
+        )
+        return member
+
+    # ------------------------------------------------------- lifecycle (v0.2.0)
+    @app.post(
+        f"{API_PREFIX}/admin/lifecycle/sweep",
+        responses={422: {"model": ErrorOut}},
+        summary="Run the memory lifecycle sweeper (admin)",
+    )
+    async def lifecycle_sweep(
+        request: Request,
+        request_repo: MemoryRepository = Depends(get_repo),
+        granted: list[str] = Depends(auth.require_scopes("memory.admin")),
+        batch_size: int = Query(default=500, ge=1, le=2000),
+    ):
+        # Archives active memories whose half-life-decayed confidence fell
+        # below ARCHIVE_CONFIDENCE. Idempotent: re-runs archive nothing new.
+        result = await lifecycle_logic.sweep(
+            request_repo, batch_size=batch_size, actor="lifecycle_sweeper"
+        )
+        result["archived_ids"] = [str(i) for i in result["archived_ids"]]
+        await request_repo.audit(
+            action="lifecycle_sweep",
+            memory_ids=[],
+            client_id=_client_pk(request),
+            scopes_used=granted,
+            meta={
+                "scanned": result["scanned"],
+                "archived": result["archived"],
+            },
+        )
+        return result
 
     # ------------------------------------------------------------- health
     @app.get("/healthz", response_model=HealthOut)
