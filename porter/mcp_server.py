@@ -805,6 +805,7 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
         from_harness: str,
         to_harness: str,
         top_k: int = 10,
+        lang: str = "en",
     ) -> dict:
         try:
             auth = await _resolve_mcp_auth(ctx, deps)
@@ -819,7 +820,7 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
                 top_k=max(1, min(200, int(top_k))),
                 actor_client_id=auth.client_pk,
             )
-            payload["briefing"] = switch_logic.render_briefing(payload)
+            payload["briefing"] = switch_logic.render_briefing(payload, lang=lang)
             return payload
         except ToolError:
             raise

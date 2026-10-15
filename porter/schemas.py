@@ -393,6 +393,8 @@ class SwitchHandoffIn(BaseModel):
     from_harness: str = Field(min_length=1, max_length=64)
     to_harness: str = Field(min_length=1, max_length=64)
     top_k: int = Field(default=10, ge=1, le=200)
+    lang: str = Field(default="en", max_length=8,
+                      description="Briefing language: 'en' (default) or 'zh'.")
 
 
 # ------------------------------------------------------------------ writeback (Porter -> harness native formats)

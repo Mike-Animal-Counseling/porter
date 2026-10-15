@@ -1256,7 +1256,7 @@ def create_app(
             top_k=body.top_k,
             actor_client_id=_client_pk(request),
         )
-        payload["briefing"] = switch_logic.render_briefing(payload)
+        payload["briefing"] = switch_logic.render_briefing(payload, lang=body.lang)
         return payload
 
     @app.post(
