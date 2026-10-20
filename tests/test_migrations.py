@@ -25,3 +25,13 @@ def test_oauth_migration_ends_with_sql_not_a_comment():
     statements = _split_statements((root / "migrations/002_oauth.sql").read_text(encoding="utf-8"))
     assert len(statements) == 7
     assert "ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'security'" in statements[-1]
+
+
+def test_migration_numbers_are_unique_and_legacy_names_are_not_reused():
+    from porter.db import LEGACY_MIGRATION_NAMES, MIGRATIONS_DIR
+
+    names = [path.name for path in MIGRATIONS_DIR.glob("*.sql")]
+    numbers = [name.split("_", 1)[0] for name in names]
+    assert len(numbers) == len(set(numbers))
+    assert set(LEGACY_MIGRATION_NAMES).issubset(names)
+    assert not set(LEGACY_MIGRATION_NAMES.values()).intersection(names)

@@ -77,7 +77,7 @@ docker compose up --build -d  # API + Postgres/pgvector + 网页面板
 
 ## 状态
 
-v0.1.0 · 2026-10-19 本地完整验证：447 项通过，无跳过项。真实 Postgres、Docker、OAuth、两种 MCP、快照恢复和容器重建均已验收；BGE-M3 已实际运行并做中英文小样本评估。Codex CLI 0.160.0 成功解析两种接入模板；各工具的对话使用和视觉验收仍待完成。详见 [检查与修复报告](docs/REVIEW.zh-CN.md)。
+v0.1.0 · 2026-10-19 本地完整验证：558 项通过，无跳过项。真实 Postgres、Docker、OAuth、两种 MCP、快照恢复和容器重建均已验收；BGE-M3 已实际运行并做中英文小样本评估。Codex CLI 0.160.0 成功解析两种接入模板；各工具的对话使用和视觉验收仍待完成。详见 [检查与修复报告](docs/REVIEW.zh-CN.md)。
 
 ## 许可
 

@@ -222,7 +222,9 @@ def test_stdio_full_handshake_and_tools():
         r = drv.request("tools/list", {}, 2)
         names = {t["name"] for t in r["result"]["tools"]}
         # PRD §11 set + memory_graph (LLM Wiki prototype; registered always,
-        # gated at call time via PORTER_WIKI_ENABLED).
+        # gated at call time via PORTER_WIKI_ENABLED) + seamless-switching
+        # tools (v0.2.0): switch_handoff, writeback_sync,
+        # memory_contradictions, memory_merge, memory_resolve.
         assert names == {
             "memory_search",
             "memory_add",
@@ -230,6 +232,11 @@ def test_stdio_full_handshake_and_tools():
             "sync_delta",
             "memory_graph",
             "memory_capture",
+            "switch_handoff",
+            "writeback_sync",
+            "memory_contradictions",
+            "memory_merge",
+            "memory_resolve",
         }, names
         descs = {t["name"]: t["description"] for t in r["result"]["tools"]}
         assert "UNTRUSTED" in descs["memory_search"]  # T3 notice present
@@ -595,7 +602,8 @@ def test_streamable_http_with_real_sdk_client():
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     listed = await session.list_tools()
-                    # PRD §11 set + memory_graph (LLM Wiki prototype).
+                    # PRD §11 set + memory_graph (LLM Wiki prototype) +
+                    # seamless-switching tools (v0.2.0).
                     assert {t.name for t in listed.tools} == {
                         "memory_search",
                         "memory_add",
@@ -603,6 +611,11 @@ def test_streamable_http_with_real_sdk_client():
                         "sync_delta",
                         "memory_graph",
                         "memory_capture",
+                        "switch_handoff",
+                        "writeback_sync",
+                        "memory_contradictions",
+                        "memory_merge",
+                        "memory_resolve",
                     }
                     res = await session.call_tool(
                         "memory_search", {"query": "cilantro", "top_k": 5}

@@ -12,6 +12,12 @@ MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
 if not MIGRATIONS_DIR.is_dir():
     MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 NO_TRANSACTION_MARKER = "-- porter:no-transaction"
+LEGACY_MIGRATION_NAMES = {
+    "010_memory_domains.sql": "008_memory_domains.sql",
+    "011_sync_visibility.sql": "009_sync_visibility.sql",
+    "012_automation_audit.sql": "010_automation_audit.sql",
+    "013_sync_commit_order.sql": "011_sync_commit_order.sql",
+}
 
 
 def json_object(value: Any) -> dict:
@@ -136,6 +142,14 @@ async def run_migrations(database_url: str) -> list[str]:
         done = {r["name"] for r in await con.fetch("SELECT name FROM schema_migrations")}
         for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
             if path.name in done:
+                continue
+            legacy = LEGACY_MIGRATION_NAMES.get(path.name)
+            if legacy in done:
+                # Adopt pre-integration review names without rerunning SQL.
+                await con.execute(
+                    "UPDATE schema_migrations SET name = $1 WHERE name = $2", path.name, legacy
+                )
+                done.add(path.name)
                 continue
             sql = path.read_text(encoding="utf-8")
             if NO_TRANSACTION_MARKER in sql.split("\n", 1)[0]:

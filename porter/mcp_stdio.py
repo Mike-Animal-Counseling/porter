@@ -53,12 +53,17 @@ async def _build_deps():
     rate_limiter = TokenBucket(int(os.getenv("PORTER_RATE_LIMIT_PER_MINUTE", "60")))
     revocation_cache = RevocationCache(ttl_seconds=30)
 
+    from .teams import InMemoryTeamStore, PostgresTeamStore
+
+    team_store = PostgresTeamStore(pool) if pool is not None else InMemoryTeamStore()
+
     deps = MCPDeps(
         repo_fn=lambda: repo,
         oauth_store_fn=lambda: store,
         revocation_cache_fn=lambda: revocation_cache,
         rate_limiter_fn=lambda: rate_limiter,
         auth_enabled_fn=lambda: auth_enabled,
+        team_store_fn=lambda: team_store,
         llm_extractor_kind_fn=lambda: os.getenv("PORTER_LLM_EXTRACTOR", "stub"),
     )
     return deps, pool

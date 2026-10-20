@@ -74,6 +74,13 @@ async def verify_mcp(base, token, project, memory_id):
             await session.initialize()
             tools = {tool.name for tool in (await session.list_tools()).tools}
             assert {"memory_search", "memory_add", "sync_delta"} <= tools
+            assert {
+                "switch_handoff",
+                "writeback_sync",
+                "memory_contradictions",
+                "memory_merge",
+                "memory_resolve",
+            } <= tools
             result = await session.call_tool(
                 "memory_search", {"query": "pytest", "tags": ["project:" + project]}
             )
@@ -142,6 +149,65 @@ def test_deployed_oauth_memory_mcp_snapshot_and_recreation():
         reader = mint(owner, project + "-reader", "memory.read")
         auth = {"Authorization": "Bearer " + admin["access_token"]}
         read_auth = {"Authorization": "Bearer " + reader["access_token"]}
+        # Exercise upstream routes against the real production stores.
+        handoff = owner.post(
+            "/api/v1/switch/handoff",
+            headers=read_auth,
+            json={"project": project, "from_harness": "codex", "to_harness": "cursor"},
+        )
+        assert handoff.status_code == 200
+        preview = owner.post("/api/v1/writeback/sync", headers=read_auth, json={"harness": "codex"})
+        assert preview.status_code == 200
+        assert (
+            owner.post(
+                "/api/v1/writeback/sync",
+                headers=read_auth,
+                json={"harness": "codex", "dry_run": False},
+            ).status_code
+            == 403
+        )
+        workspace = owner.post("/api/v1/workspaces", headers=auth, json={"name": project})
+        assert workspace.status_code == 200
+        assert workspace.json()["id"] in {
+            w["id"] for w in owner.get("/api/v1/workspaces", headers=auth).json()["workspaces"]
+        }
+        from porter.e2ee_hub import generate_device_keypair, open_sealed_key, seal_key_for
+
+        private_key, public_key = generate_device_keypair()
+        device_id = project + "-device"
+        assert (
+            owner.post(
+                "/api/v1/e2ee/devices",
+                headers=auth,
+                json={"device_id": device_id, "public_key": public_key},
+            ).status_code
+            == 200
+        )
+        sealed = seal_key_for(b"d" * 32, public_key)
+        assert (
+            owner.post(
+                "/api/v1/e2ee/envelopes",
+                headers=auth,
+                json={"to_device": device_id, "from_device": device_id, "sealed": sealed},
+            ).status_code
+            == 200
+        )
+        claim = owner.get("/api/v1/e2ee/envelopes", headers=auth, params={"device_id": device_id})
+        assert claim.status_code == 200
+        assert open_sealed_key(claim.json()["envelopes"][0]["sealed"], private_key) == b"d" * 32
+        assert (
+            owner.get(
+                "/api/v1/e2ee/envelopes", headers=auth, params={"device_id": device_id}
+            ).json()["envelopes"]
+            == []
+        )
+        assert (
+            owner.get(
+                "/api/v1/e2ee/envelopes", headers=read_auth, params={"device_id": device_id}
+            ).status_code
+            == 403
+        )
+        assert owner.post("/api/v1/admin/lifecycle/sweep", headers=auth).status_code == 200
         response = owner.post(
             "/api/v1/memories",
             headers=auth,

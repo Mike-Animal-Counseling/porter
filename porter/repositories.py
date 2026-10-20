@@ -14,6 +14,8 @@ import asyncio
 import json
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -79,6 +81,11 @@ class ScoredMemory:
 class MemoryRepository(ABC):
     def __init__(self, embedder: Embedder) -> None:
         self.embedder = embedder
+
+    @asynccontextmanager
+    async def atomic(self, memory_ids):
+        """Production backends override this for compound memory operations."""
+        yield
 
     @abstractmethod
     async def create_pending(
@@ -203,7 +210,12 @@ class MemoryRepository(ABC):
 
     @abstractmethod
     async def archive(
-        self, memory_id: UUID, *, actor_client_id: UUID | None = None
+        self,
+        memory_id: UUID,
+        *,
+        actor_client_id: UUID | None = None,
+        superseded_by: UUID | None = None,
+        source: dict | None = None,
     ) -> MemoryRecord | None:
         """Soft-archive: status -> 'archived' (restorable, never deleted).
         Logs an 'archive' change; the caller audits the reason
@@ -383,6 +395,9 @@ class InMemoryMemoryRepository(MemoryRepository):
         # must not see plaintext, so there is nothing to embed), and
         # duplicate detection is skipped (ciphertext is not comparable —
         # even identical plaintexts encrypt differently under random nonces).
+        from .teams import validate_workspace_memory
+
+        validate_workspace_memory(type, scope_tags)
         vec = None if encrypted else await self.embedder.aembed_one(content)
         dups: list[ScoredMemory] = []
         if not encrypted:
@@ -429,6 +444,9 @@ class InMemoryMemoryRepository(MemoryRepository):
         actor_client_id=None,
         triage_reasons=(),
     ):
+        from .teams import validate_workspace_memory
+
+        validate_workspace_memory(type, scope_tags)
         vec = await self.embedder.aembed_one(content)
         dups: list[ScoredMemory] = [
             s
@@ -463,11 +481,15 @@ class InMemoryMemoryRepository(MemoryRepository):
         await self.log_change(memory_id=rec.id, op="revise", actor_client_id=actor_client_id)
         return rec
 
-    async def archive(self, memory_id, *, actor_client_id=None):
+    async def archive(self, memory_id, *, actor_client_id=None, superseded_by=None, source=None):
         rec = self._memories.get(memory_id)
         if rec is None or rec.status == "archived":
             return rec
         rec.status = "archived"
+        if superseded_by is not None:
+            rec.superseded_by = superseded_by
+        if source is not None:
+            rec.source = dict(source)
         rec.updated_at = _now()
         await self.log_change(memory_id=rec.id, op="archive", actor_client_id=actor_client_id)
         return rec
@@ -755,6 +777,27 @@ def _parse_vector(text: str | None) -> list[float] | None:
     return [float(x) for x in text.strip("[]").split(",") if x]
 
 
+class _TransactionalPool:
+    """Route compound repository operations through their current connection."""
+
+    def __init__(self, pool):
+        self.raw = pool
+        self.connection = ContextVar("memory_transaction_connection", default=None)
+
+    @asynccontextmanager
+    async def acquire(self):
+        current = self.connection.get()
+        if current is not None:
+            yield current
+        else:
+            async with self.raw.acquire() as connection:
+                yield connection
+
+    def __getattr__(self, name):
+        current = self.connection.get()
+        return getattr(current if current is not None else self.raw, name)
+
+
 class PostgresMemoryRepository(MemoryRepository):
     """Production implementation over asyncpg + pgvector.
 
@@ -763,7 +806,21 @@ class PostgresMemoryRepository(MemoryRepository):
 
     def __init__(self, embedder: Embedder, pool) -> None:  # pool: asyncpg.Pool
         super().__init__(embedder)
-        self.pool = pool
+        self.pool = _TransactionalPool(pool)
+
+    @asynccontextmanager
+    async def atomic(self, memory_ids):
+        async with self.pool.acquire() as connection:
+            async with connection.transaction():
+                token = self.pool.connection.set(connection)
+                try:
+                    await connection.fetch(
+                        "SELECT id FROM memories WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE",
+                        list(set(memory_ids)),
+                    )
+                    yield
+                finally:
+                    self.pool.connection.reset(token)
 
     @staticmethod
     def _vec_literal(vec: Sequence[float]) -> str:
@@ -785,6 +842,9 @@ class PostgresMemoryRepository(MemoryRepository):
         # E2EE (P2): ciphertext stored as-is, embedding NULL (the server must
         # not see plaintext), duplicate detection skipped (ciphertext is not
         # comparable — identical plaintexts differ under random nonces).
+        from .teams import validate_workspace_memory
+
+        validate_workspace_memory(type, scope_tags)
         vec = None if encrypted else await self.embedder.aembed_one(content)
         async with self.pool.acquire() as con:
             async with con.transaction():
@@ -885,6 +945,9 @@ class PostgresMemoryRepository(MemoryRepository):
         actor_client_id=None,
         triage_reasons=(),
     ):
+        from .teams import validate_workspace_memory
+
+        validate_workspace_memory(type, scope_tags)
         vec = await self.embedder.aembed_one(content)
         async with self.pool.acquire() as con:
             async with con.transaction():
@@ -968,17 +1031,21 @@ class PostgresMemoryRepository(MemoryRepository):
                 )
         return _row_to_record(row)
 
-    async def archive(self, memory_id, *, actor_client_id=None):
+    async def archive(self, memory_id, *, actor_client_id=None, superseded_by=None, source=None):
         async with self.pool.acquire() as con:
             async with con.transaction():
                 row = await con.fetchrow(
                     f"""
                     UPDATE memories
-                    SET status = 'archived', updated_at = now()
+                    SET status = 'archived', updated_at = now(),
+                        superseded_by = COALESCE($2, superseded_by),
+                        source = COALESCE($3::jsonb, source)
                     WHERE id = $1 AND status != 'archived'
                     {_PG_RETURNING}
                     """,
                     memory_id,
+                    superseded_by,
+                    _json(source) if source is not None else None,
                 )
                 if row is None:
                     # Already archived or missing: return current state.

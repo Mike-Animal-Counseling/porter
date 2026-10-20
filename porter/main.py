@@ -59,6 +59,8 @@ async def lifespan(app):
     """Startup: migrations + pool (postgres) or nothing (in-memory)."""
     if _use_postgres():
         from .db import create_pool, run_migrations
+        from .e2ee_hub import PostgresEnvelopeStore
+        from .teams import PostgresTeamStore
 
         await run_migrations(settings.database_url)
         pool = await create_pool(settings.database_url)
@@ -66,6 +68,8 @@ async def lifespan(app):
         app.state.oauth_store = PostgresOAuthStore(pool)
         app.state.snapshot_store = PostgresSnapshotStore(pool)
         app.state.wiki_service = build_wiki_from_settings(pool)
+        app.state.envelope_store = PostgresEnvelopeStore(pool)
+        app.state.team_store = PostgresTeamStore(pool)
         try:
             yield
         finally:
@@ -75,16 +79,23 @@ async def lifespan(app):
 
 
 def build_app():
+    from .e2ee_hub import InMemoryEnvelopeStore
+    from .teams import InMemoryTeamStore
+
     repo = None if _use_postgres() else InMemoryMemoryRepository(build_embedder_from_settings())
     oauth_store = None if _use_postgres() else InMemoryOAuthStore()
     snapshot_store = None if _use_postgres() else InMemorySnapshotStore()
     wiki_service = None if _use_postgres() else build_wiki_from_settings()
+    envelope_store = None if _use_postgres() else InMemoryEnvelopeStore()
+    team_store = None if _use_postgres() else InMemoryTeamStore()
     return create_app(
         repo,
         oauth_store,
         lifespan=lifespan,
         snapshot_store=snapshot_store,
         wiki_service=wiki_service,
+        envelope_store=envelope_store,
+        team_store=team_store,
     )
 
 

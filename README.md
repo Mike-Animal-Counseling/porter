@@ -78,7 +78,7 @@ Connect a harness: merge its template from [`clients/`](clients/), fill in the t
 
 ## Status
 
-v0.1.0 · 447 tests passed with real Postgres and the running Docker acceptance stack (2026-10-19). OAuth, HTTP/stdio MCP, encrypted restore and container recreation were verified. BGE-M3 passed live service checks and a small bilingual retrieval evaluation. Codex CLI 0.160.0 parsed both connection templates; individual harness conversations and visual QA remain — see [DEPLOY.md](DEPLOY.md).
+v0.1.0 · 558 tests passed with real Postgres and the running Docker acceptance stack (2026-10-19). OAuth, HTTP/stdio MCP, encrypted restore and container recreation were verified. BGE-M3 passed live service checks and a small bilingual retrieval evaluation. Codex CLI 0.160.0 parsed both connection templates; individual harness conversations and visual QA remain — see [DEPLOY.md](DEPLOY.md).
 
 ## License
 

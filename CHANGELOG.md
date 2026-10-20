@@ -8,6 +8,17 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Switching integration (2026-10-19)
+
+- Integrate upstream through `4000dd5`, retaining its workspace/key migrations
+  and upgrading earlier review databases without deleting data.
+- Filter handoff, contradictions and writeback by scopes; default to preview
+  and require owner permissions for filesystem writes, merge and key management.
+- Enforce workspace write roles and reject personal memories in workspaces.
+- Persist archive provenance and make PostgreSQL merge/resolve transactional.
+  Repair envelope-claim SQL, install API crypto dependencies and preserve
+  Windows writeback files through atomic replacement.
+
 ### Runtime hardening (2026-10-19)
 
 - Render inbox duplicate hints from stored vectors without model requests,

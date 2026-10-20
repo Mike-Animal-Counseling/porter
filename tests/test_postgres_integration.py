@@ -3,12 +3,12 @@
 import asyncio
 import os
 from urllib.parse import urlsplit, urlunsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import asyncpg
 import pytest
 
-from porter.db import create_pool, run_migrations
+from porter.db import LEGACY_MIGRATION_NAMES, create_pool, run_migrations
 from porter.embeddings import HashEmbedder
 from porter.repositories import PostgresMemoryRepository
 from porter.snapshots import (
@@ -143,6 +143,130 @@ def test_persistent_memory_snapshot_and_scoped_sync(tmp_path):
                         await asyncio.gather(waiting, return_exceptions=True)
                     if not committed:
                         await tx.rollback()
+            # Adopt migration names used by the earlier local review while
+            # preserving all rows and without executing the migrations again.
+            for canonical, legacy in LEGACY_MIGRATION_NAMES.items():
+                await pool.execute(
+                    "UPDATE schema_migrations SET name = $1 WHERE name = $2", legacy, canonical
+                )
+            assert await run_migrations(isolated_url) == []
+            assert await pool.fetchval("SELECT count(*) FROM schema_migrations") == 14
+
+            from porter import conflicts, lifecycle, switch, teams
+            from porter.e2ee_hub import (
+                PostgresEnvelopeStore,
+                generate_device_keypair,
+                open_sealed_key,
+                seal_key_for,
+            )
+            from porter.oauth_store import PostgresOAuthStore
+
+            owner = await PostgresOAuthStore(pool).create_client(
+                name="workspace-owner",
+                client_id="owner-" + uuid4().hex,
+                secret_hash="test-only-unused",
+                redirect_uris=[],
+            )
+            team_store = teams.PostgresTeamStore(pool)
+            workspace = await teams.create_workspace(
+                team_store, repo, name="Persistent team", owner_client_id=owner.id
+            )
+            assert (
+                await team_store.get_workspace_by_tag(workspace["project_tag"])
+            ).name == "Persistent team"
+            workspace_id = UUID(workspace["id"])
+            member_id = uuid4()
+            await teams.invite(
+                team_store,
+                repo,
+                workspace_id=workspace_id,
+                client_id=member_id,
+                role="editor",
+                actor_client_id=owner.id,
+            )
+            assert await teams.check_access(
+                team_store, workspace_id=workspace_id, client_id=owner.id, need="admin"
+            )
+            assert await teams.check_access(
+                team_store, workspace_id=workspace_id, client_id=member_id, need="write"
+            )
+
+            envelope_store = PostgresEnvelopeStore(pool)
+            private, public = generate_device_keypair()
+            await envelope_store.register_device("recipient", public)
+            sealed = seal_key_for(b"k" * 32, public)
+            await envelope_store.post_envelope("recipient", "sender", sealed)
+            claimed = await envelope_store.claim_envelopes("recipient")
+            assert len(claimed) == 1 and open_sealed_key(claimed[0].sealed, private) == b"k" * 32
+            assert await envelope_store.claim_envelopes("recipient") == []
+
+            records = []
+            for content in ("Use stable formatting", "Prefer stable formatting"):
+                record, _ = await repo.create_active(
+                    content=content,
+                    type="project",
+                    scope_tags=["project:handoff"],
+                    confidence=1,
+                    source={},
+                )
+                records.append(record)
+            handoff = await switch.build_handoff(
+                repo,
+                project="handoff",
+                from_harness="codex",
+                to_harness="cursor",
+                actor_client_id=owner.id,
+            )
+            assert handoff["sections"]["in_progress"] or handoff["sections"]["conventions"]
+            # An error after the first archive must roll back the merged row,
+            # source changes, audit events and sync cursor together.
+            before_count = await pool.fetchval("SELECT count(*) FROM memories")
+            before_cursor = (await repo.get_changes(0, 10000))[1]
+            original_archive = repo.archive
+
+            async def fail_after_archive(*args, **kwargs):
+                await original_archive(*args, **kwargs)
+                raise RuntimeError("simulated interrupted merge")
+
+            repo.archive = fail_after_archive
+            try:
+                with pytest.raises(RuntimeError, match="interrupted merge"):
+                    await conflicts.semantic_merge(repo, [r.id for r in records])
+            finally:
+                repo.archive = original_archive
+            assert await pool.fetchval("SELECT count(*) FROM memories") == before_count
+            assert (await repo.get_changes(0, 10000))[1] == before_cursor
+            for record in records:
+                assert (await repo.get(record.id)).status == "active"
+            merged = await conflicts.semantic_merge(
+                repo, [r.id for r in records], actor_client_id=owner.id
+            )
+            for record in records:
+                archived = await repo.get(record.id)
+                assert archived.superseded_by == merged["id"]
+                assert archived.source["porter_provenance"]["conflicts"]
+            loser, _ = await repo.create_active(
+                content="Old formatting decision",
+                type="project",
+                scope_tags=["project:handoff"],
+                confidence=1,
+                source={},
+            )
+            await conflicts.resolve_conflict(
+                repo, merged["id"], [loser.id], resolution="updated", actor_client_id=owner.id
+            )
+            assert (await repo.get(loser.id)).superseded_by == merged["id"]
+            stale, _ = await repo.create_active(
+                content="Expired task state",
+                type="project",
+                scope_tags=["project:handoff"],
+                confidence=0.1,
+                source={},
+            )
+            assert stale.id in (await lifecycle.sweep(repo))["archived_ids"]
+            await repo.audit(action="lifecycle_sweep", client_id=owner.id)
+            await repo.audit(action="writeback", client_id=owner.id)
+            await repo.audit(action="contradiction_flag", client_id=owner.id)
         finally:
             if pool is not None:
                 await pool.close()
