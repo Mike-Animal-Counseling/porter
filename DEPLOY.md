@@ -8,34 +8,31 @@ Qwen Code, OpenCode, Amp, Kilo Code, Kimi CLI, Copilot CLI, Aider —
 see the support matrix in §3).
 Estimated time: ~20 minutes (mostly Docker image pulls).
 
-> What was verified where: everything below except steps 7–8 was tested
-> end-to-end locally (`tests/test_e2e.py`, 10/10 green) using the real MCP
-> protocol, real OAuth tokens, and real scope enforcement. Steps 7–8 run
-> inside YOUR Codex/Zed/Cursor and can only be verified on your machine.
-> The stdio wire framing itself was verified byte-for-byte in
-> `tests/test_mcp.py`.
+> Verified locally on 2026-10-18: real Postgres/pgvector with all 11
+> migrations, Docker persistence, OAuth, HTTP/stdio MCP, encrypted snapshots,
+> revocation and BGE-M3 CPU inference. The small embedding benchmark is in
+> `docs/embedding-eval.2026-10-18.json`; it is not a general quality guarantee.
+> Individual installed harnesses and visual browser acceptance remain unverified.
 
 ---
 
 ## 0. Prerequisites
 
-- Docker + Docker Compose (for Postgres/pgvector + the embedding service)
-- Python 3.11+ (for the Porter package / MCP stdio server)
+- Docker + Docker Compose 2.24.4+ (for Postgres/pgvector + the embedding service)
+- Python 3.12+ (for the Porter package / MCP stdio server)
 - One of: Codex CLI, Zed, Cursor (any order — this guide does Codex first)
 
 ## 1. Start the stack
 
 ```bash
 cd /path/to/porter
-cp .env.example .env
-# IMPORTANT: set strong values in .env:
-#   PORTER_JWT_SECRET=<random 32+ chars>   (signs access tokens)
-#   PORTER_SETUP_TOKEN=<random 32+ chars>  (one-time bootstrap token)
-#   POSTGRES_PASSWORD=<strong password>
+python scripts/setup_local.py  # preserves an existing .env; never prints secrets
 docker compose up --build -d
 ```
 
-Watch the embedder: it downloads BGE-M3 (~2.3 GB) on first start. The API
+The embedder image installs CPU-only PyTorch by default, with tested model
+constraints in `requirements-embedder-lock.txt`. BGE-M3 weights download on
+first start (about 3.8 GB total cache in the acceptance run). The API
 waits for the embedder healthcheck before serving, so give it a few minutes:
 
 ```bash
@@ -44,6 +41,11 @@ curl http://localhost:8000/healthz
 ```
 
 ## 2. Register the owner client (one-time bootstrap)
+
+First open `http://127.0.0.1:8000/panel` in your browser. Docker gateway
+connections are redirected to `/owner/login`; unlock with `PORTER_SETUP_TOKEN`
+from `.env`. The owner session lasts 12 hours and also protects OAuth consent.
+Native loopback connections retain local owner access.
 
 ```bash
 SETUP=$(grep PORTER_SETUP_TOKEN .env | cut -d= -f2)
@@ -72,7 +74,7 @@ export PORTER_TOKEN=<access_token>
 ```
 
 The panel is at `http://localhost:8000/panel` (owner context, localhost only).
-Default language is Chinese; switch to English anytime on the **Settings**
+Default language is English; switch to English anytime on the **Settings**
 page (preference persists in `~/.porter/settings.json`).
 
 ## 3. Import your existing harness memories (read-only on your files)
@@ -190,15 +192,22 @@ Then open the panel's **Inbox** and approve what you want searchable.
 
 ## 4. Connect Codex (first client)
 
+Prefer the [HTTP setup](#recommended-codex-connection-http) when the API is
+already running. The following instructions are the stdio alternative.
+
 ```bash
 # make the porter package importable for the stdio server:
-pip install -e /path/to/porter/api
+pip install -c /path/to/porter/requirements-lock.txt -e /path/to/porter
 # (or set PYTHONPATH in the config instead)
 ```
 
 Merge `clients/codex-config.toml` into `~/.codex/config.toml`:
 replace `{{PORTER_TOKEN}}` with your token and `/path/to/porter` with the
-real repo path. Then restart Codex and check it sees the tools:
+real repo path. Replace `{{PORTER_JWT_SECRET}}` with the SAME value from
+`.env`, and copy its `DATABASE_URL` (including the generated password). On
+Windows, set `command` to your Python executable or `python` instead of
+`python3`. All stdio clients need these shared settings; HTTP clients need
+only a bearer token. Then restart Codex and check it sees the tools:
 
 ```
 # in a Codex session:
@@ -210,7 +219,8 @@ real repo path. Then restart Codex and check it sees the tools:
 
 All harnesses below consume the same Porter MCP server — merge the
 indicated block from `clients/`, replacing `{{PORTER_TOKEN}}` with your
-token, then restart the harness:
+token, the shared signing secret, matching database URL and real repository
+path (as in step 4), then restart the harness:
 
 | Harness | Config file | Merge into |
 |---|---|---|
@@ -269,17 +279,110 @@ current docs and tell us.
 | Embedder never becomes healthy | Needs ~2.3 GB download + ~3 GB RAM. Check `docker compose logs embedder`. On small machines set `EMBEDDER_KIND` appropriately or use the OpenAI embedding opt-in (see README — note the privacy tradeoff). |
 | Import finds nothing for Codex | Codex only writes `~/.codex/memories/` when it actually saves memories. Empty dir = nothing to migrate; going forward it writes to Porter via MCP. Override with `--codex-dir`. |
 | `401 invalid_token` on `/api/v1/*` | Same as MCP token above — refresh it. |
-| Panel shows nothing at `/panel` | The panel binds localhost only by design. Access it from the same machine (or SSH port-forward). |
+| Panel shows nothing at `/panel` | Open `/panel` from the published localhost port. If Docker forwards the peer address, unlock at `/owner/login` with the setup token. |
 
 ## What still needs YOUR machine to verify
 
-- Real MCP handshakes for all 27 harnesses (config formats were validated
+- Real MCP handshakes for all 27 harness templates (config formats were validated
   as TOML/JSON/YAML and against each vendor's docs in
   `tests/test_harness12.py`, but only your installed versions can complete
   the handshake; Copilot CLI's config path especially needs confirming).
-- Real BGE-M3 embeddings + real Postgres/pgvector (this build was verified
-  with the HashEmbedder stub + in-memory repo; interfaces are identical,
-  but the model download and pgvector index only run in Docker).
 - Real `~/.codex/memories/`, `~/.claude/projects/`, etc. (importers were
   tested against fixture trees only).
-- The cilantro + revoke tests above (steps 6–7).
+- The cilantro + revoke tests above in your installed harness (steps 6–7).
+  The equivalent independent MCP process and HTTP transport checks passed locally.
+
+## Persistence and sync behavior
+
+The `porter-data` volume keeps language settings, snapshots and signing keys
+across container recreation. `porter-db` keeps the memory database. The
+database and embedder are published on localhost only for stdio clients.
+Do not run `docker compose down -v` if you want to retain this data.
+
+`sync_delta` supplies an incremental feed; consuming it and injecting context
+into a harness is the adapter/client responsibility. Merely installing an MCP
+template does not make a harness capture every conversation automatically.
+Sample Python/TypeScript polling loops drain all pages before waiting and
+acknowledge filtered pages too. Access tokens expire after one hour; use the
+refresh flow and update static client tokens as described above.
+
+Only the regex `stub` fact extractor is implemented in this release.
+`ollama`/`openai` extractor settings are extension points and cannot be selected
+until those backends are implemented. ML triage is optional and separate.
+
+
+## Repeatable isolated acceptance
+
+Install the lightweight test dependencies, then run:
+
+```bash
+python -m pip install -c requirements-lock.txt -r requirements-test.txt
+python scripts/verify_deployment.py --keep-running
+```
+
+This uses the `porter-review` Compose project, generates private `.env.review`
+credentials, publishes ports 55432/18001/18000 and checks the complete API/MCP
+flow with deterministic hash embeddings. It does not require downloading a
+model. The panel is at `http://127.0.0.1:18000/panel`; unlock using the setup
+token in `.env.review`. Without `--keep-running`, containers stop after the
+check and named volumes remain.
+
+Real-model quality is a separate check. Against a running BGE-M3 embedder:
+
+```bash
+python scripts/eval_embeddings.py --embedders hash,http --http-url http://127.0.0.1:8001
+```
+
+Use a separate database for a different embedder, or regenerate every stored
+vector before switching. Equal vector dimensions do not make embeddings from
+different models compatible. The recorded small fixture found imperfect BGE
+recall and duplicate detection; review the results before changing thresholds.
+
+
+## Host validation and reverse proxies
+
+The API accepts `localhost`, `127.0.0.1` and `[::1]` by default. Requests with
+other Host headers are rejected with HTTP 400 before owner/auth routing.
+For a custom domain, set exact hostnames (no scheme, port or wildcard):
+
+```dotenv
+PORTER_ALLOWED_HOSTS=localhost,127.0.0.1,[::1],memory.example.com
+PORTER_PUBLIC_ORIGIN=https://memory.example.com
+```
+
+Set the public origin when an authenticated reverse proxy terminates TLS.
+It must be the browser-facing scheme/host/port, without a path or credentials.
+The proxy must preserve the original Host header and handle TLS. Bundled
+launch commands disable forwarded-header trust; custom domains require owner
+login even when the proxy connects from loopback. HTTPS public origins mark
+the owner cookie Secure. Native loopback URLs retain local owner access.
+
+`AUTH_ENABLED` and `PORTER_WIKI_ENABLED` accept 1/0, true/false, yes/no and
+on/off, case-insensitively. Invalid values stop startup rather than silently
+changing authentication behavior. `PORTER_REPO` accepts only memory/postgres;
+a typo must not turn persistent storage into an empty temporary repository.
+
+## Recommended Codex connection: HTTP
+
+With the API running, prefer `clients/codex-http-config.toml`. It needs only a
+scoped access token for that client; database credentials and the server JWT
+signing secret stay on the server. Merge its `[mcp_servers.porter]` block into
+your Codex configuration, choosing HTTP or stdio for that server name.
+
+Set the access token in the environment used to launch Codex:
+
+```powershell
+$env:PORTER_TOKEN = '{{PORTER_TOKEN}}'
+codex mcp get porter --json
+```
+
+In Bash, use `export PORTER_TOKEN='{{PORTER_TOKEN}}'`. Replace the placeholder
+with an OAuth access token, then launch/restart Codex from that environment.
+The template defaults to port 8000; use 18010 for the retained local BGE review
+preview. Tokens still expire after one hour and require the OAuth refresh flow.
+
+Both templates were accepted by the installed Codex CLI 0.160.0 on 2026-10-19.
+`mcp get` verifies configuration parsing, not tool execution. Independent
+HTTP/stdio MCP clients have passed live acceptance; a Codex conversation using
+the tools remains a separate user acceptance check. See the
+[official MCP configuration documentation](https://developers.openai.com/codex/mcp/).

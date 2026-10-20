@@ -17,12 +17,23 @@
 
 ```bash
 git clone https://github.com/Mike-Animal-Counseling/porter.git && cd porter
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
-python -m pytest -q          # 全量测试，必须全绿
+python -m venv .venv
+source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install -c requirements-lock.txt -e ".[dev]"
+python -m pre_commit install
+python -m ruff check .
+python -m ruff format --check --quiet .
+python -m pytest -q
+python -m build
 ```
 
-测试默认跑 SQLite，并 **stub 掉** 重型可选依赖（`transformers`、`torch`、BGE-M3/Qwen3）。贡献代码不需要 GPU，也不需要下载模型。Docker/Postgres 路径用 `docker compose up` 验证（见 `docs/USER_SETUP_CHECKLIST.md`）。
+使用 Python 3.12（`.python-version` 与 CI 的基准版本）。默认测试使用**内存仓库**，重型模型后端使用桩替代，不需要 GPU 或下载模型。开发依赖只含测试、代码检查、提交钩子和打包工具；大型模型需显式安装 `.[ml]`。Docker 默认使用 CPU 版 PyTorch。
+
+运行 `python scripts/verify_deployment.py` 可执行隔离的 Docker 验收（要求 Compose 2.24.4+），覆盖真实 Postgres 迁移、OAuth、HTTP/stdio MCP、快照与 API 容器重建后的持久化。它使用 `.env.review`、独立端口和 `porter-review` 项目，保留命名卷；加 `--keep-running` 可保留 18000 端口的面板。常规测试在没有相应 `PORTER_TEST_*` 环境变量时跳过外部服务测试。
+
+Ruff 和 pytest 配置统一放在 `pyproject.toml`，包版本以 `VERSION` 为准。用 `python -m ruff check . --fix` 与 `python -m ruff format .` 自动整理代码；提交钩子和 CI 使用同样的检查命令。CI 还构建源码包和 wheel，并在仓库目录外验证安装后的迁移与静态资源。
+
+`requirements-lock.txt` 与 `requirements-embedder-lock.txt` 是已测试的版本约束，不是带哈希的通用锁文件。依赖更新后，在干净的 Python 3.12 环境解析依赖，运行 `pip check`、单元/集成测试和 Docker 验收，再更新对应约束；未执行的检查不能标为通过。
 
 ## 协作流程
 
@@ -31,7 +42,7 @@ python -m pytest -q          # 全量测试，必须全绿
 3. PR 保持聚焦；一个 PR 只做一件事。
 4. 每个 PR 必须：
    - `python -m pytest -q` 全绿（新行为要有测试），
-   - `python -m pyflakes porter scripts` 干净，
+   - `python -m ruff check .` 与 `python -m ruff format --check --quiet .` 通过，
    - 文档中英双语同步更新（README / SPECS / DEVELOPER / CHANGELOG，按需），
    - 填好 PR 模板，包括安全说明部分。
 

@@ -20,12 +20,15 @@ the MCP `sync_delta` tool so both enforce identical visibility rules:
   NEVER advances its cursor — the cursor moves only on an explicit
   POST /api/v1/sync/cursor ack.
 """
+
 from __future__ import annotations
 
 from typing import Any
 
 from . import oauth as oauth_logic
+from .errors import InvalidInput
 from .repositories import MemoryRepository
+from .schemas import _validate_tags
 
 
 def _record_to_dict(rec) -> dict[str, Any]:
@@ -72,24 +75,33 @@ async def build_sync_delta(
     personal memories, nothing from project Y. It is a convenience filter,
     NOT a security boundary — OAuth tag scopes still gate visibility first.
 
-    Returns {"changes": [...], "cursor": head_seq}. Each change:
+    Returns {"changes": [...], "cursor": scanned_seq}. Each change:
     {seq, memory_id, op, status, at, actor_client_id, memory}.
     """
     from .triage import has_project_tag, project_names, project_tag
 
     want: str | None = None
-    if project:
+    if project is not None:
         try:
-            want = next(iter(project_names([project_tag(project)])))
-        except (ValueError, TypeError, AttributeError):
-            want = None  # empty/garbled project name -> no filtering
-    raw, head = await repo.get_changes(since, limit)
+            tag = _validate_tags([project_tag(project)])[0]
+            want = next(iter(project_names([tag])))
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise InvalidInput("invalid project name") from exc
+    raw, _head = await repo.get_changes(since, limit)
     is_admin = "memory.admin" in granted
     allowed = oauth_logic.effective_tag_filter(granted)
 
     changes: list[dict[str, Any]] = []
     for c in raw:
         rec = None
+        if c["op"] == "delete":
+            tags = c.get("scope_tags")
+            if allowed is not None and (tags is None or not set(allowed).intersection(tags)):
+                continue
+            if want is not None and (
+                tags is None or (has_project_tag(tags) and want not in project_names(tags))
+            ):
+                continue
         if c["op"] != "delete":
             # The subject of create/approve/revise changes is the record as
             # it exists NOW (e.g. a create change later approved carries the
@@ -109,12 +121,10 @@ async def build_sync_delta(
             # Non-admin adapters see currently-active memories only. This
             # also enforces the inbox rule: a pending create change whose
             # record is still pending is invisible here entirely.
-            if rec is None or rec.status != "active":
+            if rec is None or (rec.status != "active" and c["op"] != "archive"):
                 continue
         memory = None
-        if c["op"] != "delete" and rec is not None and (
-            is_admin or rec.status == "active"
-        ):
+        if c["op"] != "delete" and rec is not None and (is_admin or rec.status == "active"):
             memory = _record_to_dict(rec)
         changes.append(
             {
@@ -124,14 +134,15 @@ async def build_sync_delta(
                 "status": rec.status if rec is not None else None,
                 "at": c["at"].isoformat(),
                 "actor_client_id": (
-                    str(c["actor_client_id"])
-                    if c["actor_client_id"] is not None
-                    else None
+                    str(c["actor_client_id"]) if c["actor_client_id"] is not None else None
                 ),
                 "memory": memory,
             }
         )
-    return {"changes": changes, "cursor": head}
+    # Only acknowledge the raw page actually scanned, including filtered
+    # rows. The global head would skip later pages and lose memories.
+    cursor = raw[-1]["seq"] if raw else since
+    return {"changes": changes, "cursor": cursor}
 
 
 async def touch_cursor(repo: MemoryRepository, adapter_id: str) -> None:

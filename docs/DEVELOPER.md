@@ -2,6 +2,13 @@
 
 # Porter — Developer Integration Guide
 
+For Codex connecting to an already running API, prefer
+[`clients/codex-http-config.toml`](../clients/codex-http-config.toml): it uses
+Streamable HTTP and a scoped token from the launch environment. The stdio
+alternative requires shared database access and the server JWT signing key,
+so keep it within the same trusted machine. Both configurations were parsed
+by Codex CLI 0.160.0; this is separate from a conversation invoking tools.
+
 ## 1. What Porter is
 
 Porter is a **user-owned memory and state layer** for AI coding harnesses (Claude Code, Codex, Cursor, Zed, …).
@@ -511,3 +518,23 @@ PRD §11 also names `duplicate_memory` and `snapshot_conflict` — v1 reports ne
 - TypeScript (`fetch` + `libsodium-wrappers`): [`../clients/typescript/porter-client.ts`](../clients/typescript/porter-client.ts)
 
 Both cover OAuth token use, search/add/update, E2EE helpers, and the 60-second sync poll loop.
+
+## Deployment corrections (2026-10-14)
+
+Install the editable package from the repository root with
+`pip install -c requirements-lock.txt -e .`. Stdio clients share the API
+`DATABASE_URL`, `PORTER_JWT_SECRET`, and embedding endpoint; templates
+include these fields. Docker owner browsers authenticate at `/owner/login`
+using the setup token before approving OAuth consent.
+
+Sync cursors acknowledge the last raw row scanned on a page, including
+filtered rows. Drain further pages until the cursor stops advancing.
+Process `archive` with a null memory by removing the old ID from local
+context. Delete tombstones preserve scope metadata. Migration 011 serializes
+sequence assignment through transaction commit.
+
+Run `python -m pytest -q` and `python -m pyflakes porter scripts`. For real
+Postgres validation set `PORTER_TEST_DATABASE_URL` to a dedicated database
+whose name ends in `_test`, then run `tests/test_postgres_integration.py`.
+The integration test applies migrations and writes data; use a disposable
+test database. The `stub` extractor is the only implemented LLM extractor.

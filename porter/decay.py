@@ -12,9 +12,10 @@ confidence drops below ARCHIVE_CONFIDENCE the memory is auto-archived
 - Touching: any read that returns a memory resets its idle clock
   (last_retrieved_at), so frequently used memories never decay.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .triage import (
     ARCHIVE_CONFIDENCE,
@@ -22,8 +23,9 @@ from .triage import (
     DECAY_PERIOD_DAYS,
 )
 
+
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def effective_confidence(record, at: datetime | None = None) -> float:
@@ -57,8 +59,10 @@ async def apply_on_read(repo, records: list, *, actor: str = "decay") -> list:
         if eff < ARCHIVE_CONFIDENCE:
             await repo.archive(rec.id, actor_client_id=None)
             await repo.audit(
-                action="auto_archive", memory_ids=[rec.id],
-                client_id=None, scopes_used=(),
+                action="auto_archive",
+                memory_ids=[rec.id],
+                client_id=None,
+                scopes_used=(),
                 meta={
                     "reason": "confidence_decay",
                     "effective_confidence": round(eff, 4),

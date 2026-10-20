@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directories: ["/", "/api"]
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      python-patch-minor:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /api
+    schedule:
+      interval: monthly

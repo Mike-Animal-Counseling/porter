@@ -1,4 +1,6 @@
 # Porter MCP server — Codex CLI config template.
+# For a running API, prefer codex-http-config.toml: only a scoped access
+# token is needed; no database password or server signing key is shared.
 #
 # HOW TO USE (see DEPLOY.md for the full walkthrough):
 #   1. Copy the [mcp_servers.porter] block below into ~/.codex/config.toml
@@ -6,11 +8,13 @@
 #   2. Replace {{PORTER_TOKEN}} with a real Porter access token minted via
 #      the OAuth flow (needs `memory.read` + `memory.write`; prefer
 #      `memory.read.<tag>` tags for least privilege).
-#   3. Make the `porter` package importable: either `pip install -e <repo>/api`
+#   3. Make the `porter` package importable: either `pip install -e <repo>`
 #      or set PYTHONPATH to your porter repo checkout (see below).
 #   4. PORTER_REPO=postgres + DATABASE_URL point the MCP server at the SAME
 #      Postgres the Porter API uses. Without this, memories would live in a
 #      separate ephemeral store and nothing would sync.
+#   5. Copy the SAME PORTER_JWT_SECRET from the server's .env. The access
+#      token is signed by the API and verified in this separate process.
 #
 # Docs: https://developers.openai.com/codex/mcp/
 
@@ -22,7 +26,8 @@ args = ["-m", "porter.mcp_stdio"]
 PORTER_TOKEN = "{{PORTER_TOKEN}}"
 PORTER_REPO = "postgres"
 DATABASE_URL = "postgresql://porter:porter@localhost:5432/porter"
-EMBEDDER_KIND = "http"
+PORTER_JWT_SECRET = "{{PORTER_JWT_SECRET}}"
+PORTER_EMBEDDER = "http"
 EMBEDDER_URL = "http://localhost:8001"
 # Point at your porter checkout so `python3 -m porter.mcp_stdio` resolves:
 PYTHONPATH = "/path/to/porter"

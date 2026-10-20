@@ -355,12 +355,15 @@ MCP `sync_delta` tool, panel `/panel/sync`); migration `004_sync.sql`.
     filter, NOT a security boundary — OAuth tag scopes (§1.3) gate
     visibility first, and synced content is always marked `untrusted_data`.
   - `op`: `create` | `approve` | `revise` (subject = the NEW record) |
-    `delete`. `status` is the record's current status, `null` for delete
+    `delete` | `archive`. `status` is the record's current status, `null` for delete
     tombstones (the row no longer exists).
   - `memory` is the full memory record, `null` for delete tombstones and for
     `create` of a still-pending record when the caller lacks `memory.admin`
     (inbox rule: unapproved content never leaks to adapters). Non-admin
-    callers see only currently-active memories + delete tombstones.
+    callers see active memories plus scope-filtered delete/archive tombstones.
+    Archives carry no content to non-admin callers. A revision archives the
+    old ID before publishing its replacement. Unknown legacy deleted scopes
+    fail closed for project/tag-scoped consumers.
   - Requires `memory.read` (or any `memory.read.<tag>` — results tag-filtered
     server-side per §1.3). Fetches are audited as `action='read'` with
     `meta={"via":"sync"}` and refresh the adapter's `last_seen` WITHOUT
@@ -378,7 +381,7 @@ MCP `sync_delta` tool, panel `/panel/sync`); migration `004_sync.sql`.
 |---|---|---|---|
 | `seq` | int64 | yes | monotonically increasing change sequence number; also the cursor |
 | `memory_id` | UUID | yes | affected record (the NEW record for `revise`) |
-| `op` | enum | yes | `create` \| `approve` \| `revise` \| `delete` |
+| `op` | enum | yes | `create` \| `approve` \| `revise` \| `delete` \| `archive` |
 | `status` | enum \| null | yes | record's current status; `null` for delete tombstones |
 | `at` | ISO-8601 | yes | server time the change was committed |
 | `actor_client_id` | string \| null | no | which client caused it (`clients.id`; null = owner/panel) |
@@ -388,11 +391,13 @@ MCP `sync_delta` tool, panel `/panel/sync`); migration `004_sync.sql`.
 
 - Cursors are **int64 sequence numbers**, strictly monotonic per server.
 - `since` is exclusive: the response contains changes with `seq > since`.
-- The response's `cursor` is the current feed **head** (not the newest
-  delivered change): adapters persist it only after applying what they
-  consumed, and ack via `POST /sync/cursor` (at-least-once delivery;
-  adapters must be idempotent). Delta fetches never advance the stored
-  cursor — only explicit acks do.
+- The response's `cursor` is the last **raw sequence scanned on this page**,
+  including rows removed by visibility filters. It never skips to the global
+  feed head while later pages remain. An empty raw page preserves `since`.
+  Apply the page, persist/ack its cursor, and request another page even when
+  the visible `changes` array is empty. Fetches never advance the stored
+  cursor; only explicit acks do. Sequence publication is serialized through
+  transaction commit so concurrent writers cannot skip an uncommitted row.
 
 ### 5.4 Conflict rule (normative)
 

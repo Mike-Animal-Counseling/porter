@@ -6,21 +6,26 @@ W2: OAuth + scope enforcement live here. Auth state per app:
   app.state.rate_limiter     TokenBucket (T5)
   app.state.revocation_cache RevocationCache (T2: revoked jtis die < 60s)
 """
+
 from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from hmac import compare_digest
 from urllib.parse import urlencode
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Form, Query, Request, UploadFile, File
+from fastapi import Depends, FastAPI, File, Form, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import auth, oauth as oauth_logic
+from . import __version__, auth
+from . import oauth as oauth_logic
+from . import snapshots as snapshots_logic
+from . import sync as sync_logic
 from .auth import RevocationCache
 from .config import settings
 from .errors import (
@@ -30,12 +35,21 @@ from .errors import (
     InvalidScope,
     NotFound,
     PorterError,
+    RateLimited,
     ServiceNotReady,
     Unauthorized,
     porter_error_handler,
 )
+from .exporter import build_export_payload
 from .oauth_store import OAuthStore
-from .origin import check_same_origin
+from .origin import (
+    OWNER_COOKIE,
+    OWNER_SESSION_SECONDS,
+    check_same_origin,
+    has_owner_access,
+    owner_only,
+    owner_session,
+)
 from .ratelimit import TokenBucket
 from .repositories import MemoryRepository
 from .schemas import (
@@ -64,16 +78,15 @@ from .schemas import (
     ShareCreateOut,
     ShareOut,
     SnapshotCreate,
-    _validate_tags as _validate_tag_list,
     SnapshotOut,
     SyncChange,
     SyncDeltaOut,
     TokenOut,
 )
-from . import snapshots as snapshots_logic
-from . import sync as sync_logic
-from .snapshots import SnapshotStore, InMemorySnapshotStore
-from .exporter import build_export_payload
+from .schemas import (
+    _validate_tags as _validate_tag_list,
+)
+from .snapshots import InMemorySnapshotStore, SnapshotStore
 
 API_PREFIX = "/api/v1"
 
@@ -82,10 +95,15 @@ log = logging.getLogger("porter.app")
 
 def _to_out(rec) -> MemoryOut:
     return MemoryOut(
-        id=rec.id, content=rec.content, type=rec.type,
-        scope_tags=rec.scope_tags, source=rec.source,
-        confidence=rec.confidence, status=rec.status,
-        created_at=rec.created_at, updated_at=rec.updated_at,
+        id=rec.id,
+        content=rec.content,
+        type=rec.type,
+        scope_tags=rec.scope_tags,
+        source=rec.source,
+        confidence=rec.confidence,
+        status=rec.status,
+        created_at=rec.created_at,
+        updated_at=rec.updated_at,
         superseded_by=rec.superseded_by,
         version=rec.version,
         # E2EE (P2): content IS the ciphertext here; the server never decrypts.
@@ -125,7 +143,7 @@ def create_app(
     app = FastAPI(
         title="Porter",
         description="Personal AI memory + state layer (PRD v2.0). W2: OAuth enforced.",
-        version="0.2.0",
+        version=__version__,
         lifespan=lifespan,
     )
     app.state.wiki_service = wiki_service
@@ -158,9 +176,7 @@ def create_app(
     app.state.snapshot_store = (
         snapshot_store if snapshot_store is not None else InMemorySnapshotStore()
     )
-    app.state.auth_enabled = (
-        settings.auth_enabled if auth_enabled is None else auth_enabled
-    )
+    app.state.auth_enabled = settings.auth_enabled if auth_enabled is None else auth_enabled
     app.state.rate_limiter = TokenBucket(
         rate_limit_per_minute
         if rate_limit_per_minute is not None
@@ -260,9 +276,7 @@ def create_app(
 
         if body.content_ciphertext is not None:
             if body.encryption is None:
-                raise InvalidInput(
-                    "encryption is required with content_ciphertext"
-                )
+                raise InvalidInput("encryption is required with content_ciphertext")
             rec, decision = await create_with_triage(
                 request_repo,
                 content=body.content_ciphertext,
@@ -358,7 +372,9 @@ def create_app(
             # Fail closed: the client asked only for tags outside its grant.
             # An empty intersection must NOT become "no filter".
             await request_repo.audit(
-                action="read", memory_ids=[], scopes_used=granted,
+                action="read",
+                memory_ids=[],
+                scopes_used=granted,
                 client_id=_client_pk(request),
                 meta={"top_k": body.top_k, "hits": 0, "note": "tag_filter_empty"},
             )
@@ -376,9 +392,13 @@ def create_app(
         return SearchOut(
             results=[
                 SearchResult(
-                    id=s.record.id, content=s.record.content, type=s.record.type,
-                    scope_tags=s.record.scope_tags, confidence=s.record.confidence,
-                    source=s.record.source, score=round(s.score, 4),
+                    id=s.record.id,
+                    content=s.record.content,
+                    type=s.record.type,
+                    scope_tags=s.record.scope_tags,
+                    confidence=s.record.confidence,
+                    source=s.record.source,
+                    score=round(s.score, 4),
                     untrusted_data=True,
                 )
                 for s in scored
@@ -397,9 +417,7 @@ def create_app(
         request_repo: MemoryRepository = Depends(get_repo),
         granted: list[str] = Depends(auth.require_scopes("memory.admin")),
     ):
-        rec = await request_repo.approve(
-            memory_id, actor_client_id=_client_pk(request)
-        )
+        rec = await request_repo.approve(memory_id, actor_client_id=_client_pk(request))
         if rec is None:
             raise NotFound(f"memory {memory_id} not found")
         # LLM Wiki layer (prototype, flag-gated): index entities on approve.
@@ -459,13 +477,13 @@ def create_app(
         request_repo: MemoryRepository = Depends(get_repo),
         granted: list[str] = Depends(auth.require_scopes("memory.admin")),
     ):
-        ok = await request_repo.delete(
-            memory_id, actor_client_id=_client_pk(request)
-        )
+        ok = await request_repo.delete(memory_id, actor_client_id=_client_pk(request))
         if not ok:
             raise NotFound(f"memory {memory_id} not found")
         await request_repo.audit(
-            action="delete", memory_ids=[memory_id], scopes_used=granted,
+            action="delete",
+            memory_ids=[memory_id],
+            scopes_used=granted,
             client_id=_client_pk(request),
         )
         return None
@@ -490,9 +508,7 @@ def create_app(
         # loser's content was preserved in the pending inbox).
         if body.expected_version is not None:
             if body.content is None:
-                raise InvalidInput(
-                    "expected_version requires a new content value"
-                )
+                raise InvalidInput("expected_version requires a new content value")
             new, loser = await request_repo.update_with_version(
                 memory_id,
                 expected_version=body.expected_version,
@@ -502,7 +518,9 @@ def create_app(
             if new is None:
                 raise NotFound(f"memory {memory_id} not found")
             await request_repo.audit(
-                action="write", memory_ids=[new.id], scopes_used=granted,
+                action="write",
+                memory_ids=[new.id],
+                scopes_used=granted,
                 client_id=_client_pk(request),
                 meta={
                     "revised_from": str(memory_id),
@@ -515,10 +533,7 @@ def create_app(
                 conflict=loser is not None,
                 loser_pending_id=loser.id if loser is not None else None,
             )
-        if all(
-            v is None
-            for v in (body.content, body.type, body.scope_tags, body.confidence)
-        ):
+        if all(v is None for v in (body.content, body.type, body.scope_tags, body.confidence)):
             raise InvalidInput("nothing to revise")
         rec = await request_repo.revise(
             memory_id,
@@ -531,7 +546,9 @@ def create_app(
         if rec is None:
             raise NotFound(f"memory {memory_id} not found")
         await request_repo.audit(
-            action="write", memory_ids=[rec.id], scopes_used=granted,
+            action="write",
+            memory_ids=[rec.id],
+            scopes_used=granted,
             client_id=_client_pk(request),
             meta={"revised_from": str(memory_id)},
         )
@@ -565,9 +582,7 @@ def create_app(
             if ctx is None:
                 raise Unauthorized("missing or invalid bearer token")
             if "memory.admin" not in ctx.scopes:
-                raise InsufficientScope(
-                    "client registration requires memory.admin"
-                )
+                raise InsufficientScope("client registration requires memory.admin")
         secret = oauth_logic.new_client_secret()
         rec = await store.create_client(
             name=body.name,
@@ -576,8 +591,11 @@ def create_app(
             redirect_uris=body.redirect_uris,
         )
         return ClientCreateOut(
-            id=rec.id, client_id=rec.client_id, name=rec.name,
-            redirect_uris=rec.redirect_uris, created_at=rec.created_at,
+            id=rec.id,
+            client_id=rec.client_id,
+            name=rec.name,
+            redirect_uris=rec.redirect_uris,
+            created_at=rec.created_at,
             client_secret=secret,
         )
 
@@ -592,8 +610,11 @@ def create_app(
     ):
         return [
             ClientOut(
-                id=c.id, client_id=c.client_id, name=c.name,
-                redirect_uris=c.redirect_uris, created_at=c.created_at,
+                id=c.id,
+                client_id=c.client_id,
+                name=c.name,
+                redirect_uris=c.redirect_uris,
+                created_at=c.created_at,
             )
             for c in await store.list_clients()
         ]
@@ -641,9 +662,13 @@ def create_app(
             },
         )
         return ShareCreateOut(
-            id=share.id, name=share.name, scopes=share.scopes,
-            created_at=share.created_at, expires_at=share.expires_at,
-            revoked=share.revoked, token=token,
+            id=share.id,
+            name=share.name,
+            scopes=share.scopes,
+            created_at=share.created_at,
+            expires_at=share.expires_at,
+            revoked=share.revoked,
+            token=token,
         )
 
     @app.get(
@@ -657,8 +682,11 @@ def create_app(
     ):
         return [
             ShareOut(
-                id=s.id, name=s.name, scopes=s.scopes,
-                created_at=s.created_at, expires_at=s.expires_at,
+                id=s.id,
+                name=s.name,
+                scopes=s.scopes,
+                created_at=s.created_at,
+                expires_at=s.expires_at,
                 revoked=s.revoked,
             )
             for s in await store.list_shares()
@@ -686,7 +714,8 @@ def create_app(
         # in auth._resolve_share_identity is the backstop.
         request.app.state.revocation_cache.invalidate(str(share_id))
         await request_repo.audit(
-            action="revoke", scopes_used=granted,
+            action="revoke",
+            scopes_used=granted,
             client_id=_client_pk(request),
             meta={
                 "via": "shares_api",
@@ -709,8 +738,7 @@ def create_app(
         return ScopeTagsOut(
             preset=dict(oauth_logic.PRESET_SCOPE_TAGS),
             custom=[
-                CustomTagOut(tag=t["tag"], label=t["label"])
-                for t in await store.list_custom_tags()
+                CustomTagOut(tag=t["tag"], label=t["label"]) for t in await store.list_custom_tags()
             ],
         )
 
@@ -763,17 +791,15 @@ def create_app(
         payload = await build_export_payload(request_repo)
         body = _json.dumps(payload, ensure_ascii=False).encode("utf-8")
         await request_repo.audit(
-            action="export", memory_ids=[], scopes_used=granted,
+            action="export",
+            memory_ids=[],
+            scopes_used=granted,
             client_id=_client_pk(request),
-            meta={"format": "porter-export/v1",
-                  "memory_count": payload["memory_count"]},
+            meta={"format": "porter-export/v1", "memory_count": payload["memory_count"]},
         )
         return JSONResponse(
             content=_json.loads(body.decode("utf-8")),
-            headers={
-                "Content-Disposition":
-                    "attachment; filename=porter-export-v1.json"
-            },
+            headers={"Content-Disposition": "attachment; filename=porter-export-v1.json"},
         )
 
     # ------------------------------------------------------------- snapshots
@@ -790,13 +816,18 @@ def create_app(
         granted: list[str] = Depends(auth.require_scopes("state.export")),
     ):
         rec, _path = await snapshots_logic.create_snapshot(
-            request_repo, snap_store,
-            tags=body.tags, password=body.password,
+            request_repo,
+            snap_store,
+            tags=body.tags,
+            password=body.password,
             storage_dir=settings.snapshot_dir,
         )
         return SnapshotOut(
-            id=rec.id, manifest=rec.manifest, storage_path=rec.storage_path,
-            signature_ok=rec.signature_ok, created_at=rec.created_at,
+            id=rec.id,
+            manifest=rec.manifest,
+            storage_path=rec.storage_path,
+            signature_ok=rec.signature_ok,
+            created_at=rec.created_at,
         )
 
     @app.get(
@@ -811,8 +842,11 @@ def create_app(
     ):
         return [
             SnapshotOut(
-                id=r.id, manifest=r.manifest, storage_path=r.storage_path,
-                signature_ok=r.signature_ok, created_at=r.created_at,
+                id=r.id,
+                manifest=r.manifest,
+                storage_path=r.storage_path,
+                signature_ok=r.signature_ok,
+                created_at=r.created_at,
             )
             for r in await snap_store.list(limit=limit)
         ]
@@ -869,8 +903,10 @@ def create_app(
                 return {"dry_run": True, **summary}
             try:
                 report = await snapshots_logic.apply_snapshot_file(
-                    request_repo, request_repo.audit,
-                    path=tmp_path, password=password,
+                    request_repo,
+                    request_repo.audit,
+                    path=tmp_path,
+                    password=password,
                 )
             except ValueError as exc:
                 raise InvalidInput(str(exc))
@@ -880,6 +916,55 @@ def create_app(
                 os.unlink(tmp_path)
             except OSError:
                 pass
+
+    # Docker gateway peers need an owner session for the panel/consent UI.
+    @app.middleware("http")
+    async def owner_entry(request: Request, call_next):
+        if request.url.path in ("/panel", "/panel/") and not has_owner_access(request):
+            return RedirectResponse("/owner/login", status_code=303)
+        return await call_next(request)
+
+    @app.get("/owner/login", response_class=HTMLResponse)
+    async def owner_login_page():
+        return HTMLResponse("""<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Unlock Porter / 解锁 Porter</title>
+<link rel="stylesheet" href="/panel/static/css/tokens.css">
+<link rel="stylesheet" href="/panel/static/css/app.css"></head><body>
+<main class="owner-login"><div class="card"><h1>Porter</h1>
+<p>Unlock your memory library / 解锁你的记忆库</p>
+<form method="post" action="/owner/login"><label class="f" for="owner-token">Setup token / 初始访问密钥</label>
+<input id="owner-token" name="token" type="password" autocomplete="current-password" required>
+<p class="muted">Use PORTER_SETUP_TOKEN from your .env file / 使用 .env 中的 PORTER_SETUP_TOKEN</p>
+<button class="btn btn--primary" type="submit">Unlock / 解锁</button></form></div></main>
+</body></html>""")
+
+    @app.post("/owner/login")
+    async def owner_login(request: Request, token: str = Form(...)):
+        check_same_origin(request)
+        peer = request.client.host if request.client else "unknown"
+        if not request.app.state.rate_limiter.allow("owner-login:" + peer):
+            raise RateLimited("too many login attempts")
+        if not compare_digest(token.encode(), settings.setup_token.encode()):
+            raise Unauthorized("invalid setup token")
+        response = RedirectResponse("/panel/", status_code=303)
+        response.set_cookie(
+            OWNER_COOKIE,
+            owner_session(),
+            max_age=OWNER_SESSION_SECONDS,
+            httponly=True,
+            samesite="strict",
+            secure=request.url.scheme == "https"
+            or settings.public_origin.lower().startswith("https://"),
+        )
+        return response
+
+    @app.post("/owner/logout")
+    async def owner_logout(request: Request):
+        check_same_origin(request)
+        response = RedirectResponse("/owner/login", status_code=303)
+        response.delete_cookie(OWNER_COOKIE)
+        return response
 
     # ------------------------------------------------------------- OAuth
     @app.get(
@@ -894,6 +979,7 @@ def create_app(
         state: str = Query(default=""),
         response_type: str = Query(default="code"),
         store: OAuthStore = Depends(get_oauth_store),
+        _owner=Depends(owner_only),
     ):
         if response_type != "code":
             raise InvalidGrant("only response_type=code is supported")
@@ -912,15 +998,17 @@ def create_app(
         except InvalidScope:
             # redirect_uri is trusted now: redirect with the OAuth2 error.
             return RedirectResponse(
-                _redirect_with_params(
-                    redirect_uri, {"error": "invalid_scope", "state": state}
-                ),
+                _redirect_with_params(redirect_uri, {"error": "invalid_scope", "state": state}),
                 status_code=302,
             )
         return HTMLResponse(
             oauth_logic.render_consent_screen(
-                client_name=client.name, scopes=scopes, client_id=client_id,
-                redirect_uri=redirect_uri, state=state, requested=scopes,
+                client_name=client.name,
+                scopes=scopes,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                state=state,
+                requested=scopes,
                 custom_tags=custom,
             )
         )
@@ -936,6 +1024,7 @@ def create_app(
         requested_scopes: list[str] = Form(default=[]),
         store: OAuthStore = Depends(get_oauth_store),
         request_repo: MemoryRepository = Depends(get_repo),
+        _owner=Depends(owner_only),
     ):
         # CSRF guard (T1): without this, a malicious website could forge a
         # cross-origin form POST that approves scopes for an attacker's
@@ -947,9 +1036,7 @@ def create_app(
             raise InvalidGrant("invalid client or redirect_uri")
         if decision != "approve":
             return RedirectResponse(
-                _redirect_with_params(
-                    redirect_uri, {"error": "access_denied", "state": state}
-                ),
+                _redirect_with_params(redirect_uri, {"error": "access_denied", "state": state}),
                 status_code=302,
             )
         # Only scopes that were actually requested can be granted; the owner
@@ -957,24 +1044,25 @@ def create_app(
         granted = [s for s in granted_scopes if s in requested_scopes]
         if not granted:
             return RedirectResponse(
-                _redirect_with_params(
-                    redirect_uri, {"error": "invalid_scope", "state": state}
-                ),
+                _redirect_with_params(redirect_uri, {"error": "invalid_scope", "state": state}),
                 status_code=302,
             )
-        oauth_logic.validate_scopes(granted, await _custom_tag_map(store))  # 400 on tampered form values
+        oauth_logic.validate_scopes(
+            granted, await _custom_tag_map(store)
+        )  # 400 on tampered form values
         code = oauth_logic.new_auth_code()
         await store.create_auth_code(
             code_hash=oauth_logic.sha256_hex(code),
             client_id=client.id,
             scopes=granted,
             redirect_uri=redirect_uri,
-            expires_at=datetime.now(timezone.utc)
-            + timedelta(minutes=settings.auth_code_ttl_minutes),
+            expires_at=datetime.now(UTC) + timedelta(minutes=settings.auth_code_ttl_minutes),
         )
         await store.create_grant(client_id=client.id, scopes=granted)
         await request_repo.audit(
-            action="grant", client_id=client.id, scopes_used=granted,
+            action="grant",
+            client_id=client.id,
+            scopes_used=granted,
             meta={"via": "consent_screen"},
         )
         return RedirectResponse(
@@ -1001,15 +1089,22 @@ def create_app(
             if not code or not redirect_uri:
                 raise InvalidGrant("code and redirect_uri are required")
             pair = await oauth_logic.exchange_code(
-                store, request_repo.audit, code=code, redirect_uri=redirect_uri,
-                client_id=client_id, client_secret=client_secret,
+                store,
+                request_repo.audit,
+                code=code,
+                redirect_uri=redirect_uri,
+                client_id=client_id,
+                client_secret=client_secret,
             )
         elif grant_type == "refresh_token":
             if not refresh_token:
                 raise InvalidGrant("refresh_token is required")
             pair = await oauth_logic.refresh_token_grant(
-                store, request_repo.audit, refresh_token=refresh_token,
-                client_id=client_id, client_secret=client_secret,
+                store,
+                request_repo.audit,
+                refresh_token=refresh_token,
+                client_id=client_id,
+                client_secret=client_secret,
             )
         else:
             raise InvalidGrant(f"unsupported grant_type: {grant_type}")
@@ -1057,14 +1152,15 @@ def create_app(
         request_repo: MemoryRepository = Depends(get_repo),
         granted: list[str] = Depends(auth.require_scopes("memory.admin")),
     ):
-        rows = await request_repo.audit_list(
-            limit=limit, client_id=client_id, since=since
-        )
+        rows = await request_repo.audit_list(limit=limit, client_id=client_id, since=since)
         return [
             {
-                "id": str(r.id), "client_id": str(r.client_id) if r.client_id else None,
-                "action": r.action, "memory_ids": [str(m) for m in r.memory_ids],
-                "scopes_used": r.scopes_used, "meta": r.meta,
+                "id": str(r.id),
+                "client_id": str(r.client_id) if r.client_id else None,
+                "action": r.action,
+                "memory_ids": [str(m) for m in r.memory_ids],
+                "scopes_used": r.scopes_used,
+                "meta": r.meta,
                 "created_at": r.created_at.isoformat(),
             }
             for r in rows
@@ -1096,7 +1192,7 @@ def create_app(
         for m in pendings:
             if not _visible(m):
                 continue
-            for r in (m.triage_reasons or ["unknown"]):
+            for r in m.triage_reasons or ["unknown"]:
                 by_reason[r] = by_reason.get(r, 0) + 1
         visible_pending = sum(1 for m in pendings if _visible(m))
 
@@ -1104,11 +1200,13 @@ def create_app(
         if is_admin:
             for m in pendings:
                 if "possible_conflict" in (m.triage_reasons or []):
-                    conflicts.append({
-                        "id": str(m.id),
-                        "content_preview": m.content[:160],
-                        "created_at": m.created_at.isoformat(),
-                    })
+                    conflicts.append(
+                        {
+                            "id": str(m.id),
+                            "content_preview": m.content[:160],
+                            "created_at": m.created_at.isoformat(),
+                        }
+                    )
                     if len(conflicts) >= 20:
                         break
 
@@ -1123,11 +1221,13 @@ def create_app(
                 # get() applied decay above; skip if it just got archived.
                 if m.status != "active":
                     continue
-                recent_auto.append({
-                    "id": str(m.id),
-                    "content_preview": m.content[:160],
-                    "created_at": m.created_at.isoformat(),
-                })
+                recent_auto.append(
+                    {
+                        "id": str(m.id),
+                        "content_preview": m.content[:160],
+                        "created_at": m.created_at.isoformat(),
+                    }
+                )
                 if len(recent_auto) >= 10:
                     break
 
@@ -1158,14 +1258,15 @@ def create_app(
         # Visibility rules (tag-scope filtering, inbox rule, non-admin
         # active-only) live in porter/sync.py, shared with the MCP tool.
         payload = await sync_logic.build_sync_delta(
-            request_repo, since=since, limit=limit, granted=granted,
+            request_repo,
+            since=since,
+            limit=limit,
+            granted=granted,
             project=project,
         )
         # Online-status bookkeeping: refresh last_seen, but NEVER advance
         # the cursor on a fetch — the adapter acks explicitly via POST.
-        await sync_logic.touch_cursor(
-            request_repo, _adapter_id(request)
-        )
+        await sync_logic.touch_cursor(request_repo, _adapter_id(request))
         await request_repo.audit(
             action="read",
             memory_ids=[UUID(c["memory_id"]) for c in payload["changes"]],
@@ -1204,8 +1305,6 @@ def create_app(
     # ------------------------------------------------------------- health
     @app.get("/healthz", response_model=HealthOut)
     async def healthz():
-        from . import __version__
-
         return HealthOut(status="ok", version=__version__)
 
     # ------------------------------------------------------------- panel (PRD §8 F4)
@@ -1217,11 +1316,11 @@ def create_app(
     _static_dir = _pathlib.Path(__file__).parent / "static"
     if _static_dir.is_dir():
         app.mount(
-            "/panel/static", StaticFiles(directory=str(_static_dir)),
+            "/panel/static",
+            StaticFiles(directory=str(_static_dir)),
             name="panel-static",
         )
     app.include_router(panel_router)
-
 
     # ------------------------------------------------------------- MCP (PRD §8 F3)
     # Mounted LAST: mounts are matched in registration order, so /api/v1/*
@@ -1243,5 +1342,9 @@ def create_app(
             path="/mcp",
         )
 
+    # Last added means outermost: reject an attacker-controlled Host before
+    # owner access, authentication or URL construction inspect the request.
+    app.add_middleware(
+        TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts, www_redirect=False
+    )
     return app
-

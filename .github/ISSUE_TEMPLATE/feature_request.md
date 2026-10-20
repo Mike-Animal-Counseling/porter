@@ -1,6 +1,6 @@
 ---
 name: Feature request
-description: Suggest an idea for Porter
+about: Suggest an idea for Porter
 labels: [enhancement]
 ---
 

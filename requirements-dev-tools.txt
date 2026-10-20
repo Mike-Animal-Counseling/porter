@@ -1,0 +1,8 @@
+# Shared by the dev package extra and requirements-dev.txt; no model downloads.
+pytest>=8
+requests>=2
+pynacl>=1.5
+PyYAML>=6
+ruff==0.17.1
+pre-commit==4.7.0
+build>=1.2

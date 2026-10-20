@@ -17,6 +17,7 @@ against:
 - MCP sync_delta tool + memory_update expected_version mirror the REST rules.
 - Panel /panel/sync renders the adapter table with the nav entry.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -60,15 +61,19 @@ def _register(client: TestClient, name: str = "sync-cli", admin_token=None):
 def _authorize(client: TestClient, cid: str, scopes: str) -> str:
     r = client.get(
         "/oauth/authorize",
-        params={"client_id": cid, "redirect_uri": REDIRECT,
-                "scope": scopes, "state": "s1"},
+        params={"client_id": cid, "redirect_uri": REDIRECT, "scope": scopes, "state": "s1"},
     )
     assert r.status_code == 200, r.text
     r = client.post(
         "/oauth/authorize",
-        data={"client_id": cid, "redirect_uri": REDIRECT, "state": "s1",
-              "decision": "approve", "granted_scopes": scopes.split(),
-              "requested_scopes": scopes.split()},
+        data={
+            "client_id": cid,
+            "redirect_uri": REDIRECT,
+            "state": "s1",
+            "decision": "approve",
+            "granted_scopes": scopes.split(),
+            "requested_scopes": scopes.split(),
+        },
         follow_redirects=False,
     )
     assert r.status_code == 302, r.text
@@ -78,9 +83,13 @@ def _authorize(client: TestClient, cid: str, scopes: str) -> str:
 def _token(client: TestClient, code: str, cid: str, secret: str) -> str:
     r = client.post(
         "/oauth/token",
-        data={"grant_type": "authorization_code", "code": code,
-              "redirect_uri": REDIRECT, "client_id": cid,
-              "client_secret": secret},
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": REDIRECT,
+            "client_id": cid,
+            "client_secret": secret,
+        },
     )
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
@@ -107,7 +116,10 @@ def sapp():
     client = TestClient(app)
     admin_token, _, _ = _mint(client, "memory.admin")
     return {
-        "app": app, "client": client, "repo": repo, "store": store,
+        "app": app,
+        "client": client,
+        "repo": repo,
+        "store": store,
         "admin_token": admin_token,
     }
 
@@ -134,16 +146,18 @@ def test_delta_two_adapters_see_approve_with_content(sapp):
     # and approves; adapter B (read-only) polls and promptly sees the
     # change with full content (the simulated 60s window: assert now).
     token_a, cid_a, _ = _mint(
-        sapp["client"], "memory.read memory.write memory.admin",
-        admin_token=sapp["admin_token"], name="adapter-a")
+        sapp["client"],
+        "memory.read memory.write memory.admin",
+        admin_token=sapp["admin_token"],
+        name="adapter-a",
+    )
     token_b, cid_b, _ = _mint(
-        sapp["client"], "memory.read",
-        admin_token=sapp["admin_token"], name="adapter-b")
+        sapp["client"], "memory.read", admin_token=sapp["admin_token"], name="adapter-b"
+    )
 
     mid = _write_approve(sapp, token_a, "user prefers dark mode", ["workflow"])
 
-    r = sapp["client"].get("/api/v1/sync/delta?since=0",
-                           headers=_bearer(token_b))
+    r = sapp["client"].get("/api/v1/sync/delta?since=0", headers=_bearer(token_b))
     assert r.status_code == 200, r.text
     body = r.json()
     assert set(body) == {"changes", "cursor"}
@@ -151,8 +165,7 @@ def test_delta_two_adapters_see_approve_with_content(sapp):
     approves = [c for c in body["changes"] if c["op"] == "approve"]
     assert len(approves) == 1
     ch = approves[0]
-    assert set(ch) == {"seq", "memory_id", "op", "status",
-                       "at", "actor_client_id", "memory"}
+    assert set(ch) == {"seq", "memory_id", "op", "status", "at", "actor_client_id", "memory"}
     assert ch["memory_id"] == mid
     assert ch["status"] == "active"
     assert ch["actor_client_id"] is not None  # A's client pk
@@ -162,8 +175,9 @@ def test_delta_two_adapters_see_approve_with_content(sapp):
     assert ch["memory"]["version"] == 1
 
     # Cursor is NOT auto-advanced by the fetch: B acks explicitly.
-    r = sapp["client"].post("/api/v1/sync/cursor", json={"cursor": body["cursor"]},
-                            headers=_bearer(token_b))
+    r = sapp["client"].post(
+        "/api/v1/sync/cursor", json={"cursor": body["cursor"]}, headers=_bearer(token_b)
+    )
     assert r.status_code == 200, r.text
     ack = r.json()
     assert set(ack) == {"adapter_id", "cursor", "last_seen"}
@@ -172,8 +186,7 @@ def test_delta_two_adapters_see_approve_with_content(sapp):
     assert ack["last_seen"]  # ISO timestamp present
 
     # After the ack, no changes remain.
-    r = sapp["client"].get(f"/api/v1/sync/delta?since={body['cursor']}",
-                           headers=_bearer(token_b))
+    r = sapp["client"].get(f"/api/v1/sync/delta?since={body['cursor']}", headers=_bearer(token_b))
     assert r.status_code == 200
     assert r.json()["changes"] == []
     assert r.json()["cursor"] == body["cursor"]
@@ -181,15 +194,13 @@ def test_delta_two_adapters_see_approve_with_content(sapp):
 
 def test_cursor_upsert_overwrites_and_returns_last_seen(sapp):
     token_b, cid_b, _ = _mint(
-        sapp["client"], "memory.read",
-        admin_token=sapp["admin_token"], name="adapter-b")
+        sapp["client"], "memory.read", admin_token=sapp["admin_token"], name="adapter-b"
+    )
     c = sapp["client"]
-    r = c.post("/api/v1/sync/cursor", json={"cursor": 0},
-               headers=_bearer(token_b))
+    r = c.post("/api/v1/sync/cursor", json={"cursor": 0}, headers=_bearer(token_b))
     assert r.status_code == 200
     first_seen = r.json()["last_seen"]
-    r = c.post("/api/v1/sync/cursor", json={"cursor": 41},
-               headers=_bearer(token_b))
+    r = c.post("/api/v1/sync/cursor", json={"cursor": 41}, headers=_bearer(token_b))
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["adapter_id"] == cid_b
@@ -198,10 +209,9 @@ def test_cursor_upsert_overwrites_and_returns_last_seen(sapp):
 
     # No special scope needed: a write-only token can also ack its cursor.
     token_w, cid_w, _ = _mint(
-        sapp["client"], "memory.write",
-        admin_token=sapp["admin_token"], name="adapter-w")
-    r = c.post("/api/v1/sync/cursor", json={"cursor": 3},
-               headers=_bearer(token_w))
+        sapp["client"], "memory.write", admin_token=sapp["admin_token"], name="adapter-w"
+    )
+    r = c.post("/api/v1/sync/cursor", json={"cursor": 3}, headers=_bearer(token_w))
     assert r.status_code == 200, r.text
     assert r.json()["adapter_id"] == cid_w
 
@@ -212,18 +222,17 @@ def test_cursor_upsert_overwrites_and_returns_last_seen(sapp):
 
 def test_cursor_rejects_negative(sapp):
     token_b, _, _ = _mint(
-        sapp["client"], "memory.read",
-        admin_token=sapp["admin_token"], name="adapter-b")
-    r = sapp["client"].post("/api/v1/sync/cursor", json={"cursor": -1},
-                            headers=_bearer(token_b))
+        sapp["client"], "memory.read", admin_token=sapp["admin_token"], name="adapter-b"
+    )
+    r = sapp["client"].post("/api/v1/sync/cursor", json={"cursor": -1}, headers=_bearer(token_b))
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "invalid_input"
 
 
 def test_delta_since_validation(sapp):
     token_b, _, _ = _mint(
-        sapp["client"], "memory.read",
-        admin_token=sapp["admin_token"], name="adapter-b")
+        sapp["client"], "memory.read", admin_token=sapp["admin_token"], name="adapter-b"
+    )
     c = sapp["client"]
     r = c.get("/api/v1/sync/delta?since=-1", headers=_bearer(token_b))
     assert r.status_code == 422, r.text
@@ -237,10 +246,9 @@ def test_delta_since_validation(sapp):
 
 def test_delta_requires_memory_read_scope(sapp):
     token_w, _, _ = _mint(
-        sapp["client"], "memory.write",
-        admin_token=sapp["admin_token"], name="adapter-w")
-    r = sapp["client"].get("/api/v1/sync/delta?since=0",
-                           headers=_bearer(token_w))
+        sapp["client"], "memory.write", admin_token=sapp["admin_token"], name="adapter-w"
+    )
+    r = sapp["client"].get("/api/v1/sync/delta?since=0", headers=_bearer(token_w))
     assert r.status_code == 403
     assert r.json()["error"]["code"] == "insufficient_scope"
     r = sapp["client"].get("/api/v1/sync/delta?since=0")
@@ -249,20 +257,22 @@ def test_delta_requires_memory_read_scope(sapp):
 
 def test_sync_fetch_is_audited(sapp):
     token_a, _, _ = _mint(
-        sapp["client"], "memory.read memory.write memory.admin",
-        admin_token=sapp["admin_token"], name="adapter-a")
+        sapp["client"],
+        "memory.read memory.write memory.admin",
+        admin_token=sapp["admin_token"],
+        name="adapter-a",
+    )
     token_b, _, _ = _mint(
-        sapp["client"], "memory.read",
-        admin_token=sapp["admin_token"], name="adapter-b")
+        sapp["client"], "memory.read", admin_token=sapp["admin_token"], name="adapter-b"
+    )
     _write_approve(sapp, token_a, "audited sync fetch", ["general"])
-    r = sapp["client"].get("/api/v1/sync/delta?since=0",
-                           headers=_bearer(token_b))
+    r = sapp["client"].get("/api/v1/sync/delta?since=0", headers=_bearer(token_b))
     assert r.status_code == 200
 
     async def check():
         rows = await sapp["repo"].audit_list(limit=10)
-        return [a for a in rows
-                if a.action == "read" and a.meta.get("via") == "sync"]
+        return [a for a in rows if a.action == "read" and a.meta.get("via") == "sync"]
+
     hits = asyncio.run(check())
     assert len(hits) == 1
     assert hits[0].meta["via"] == "sync"
@@ -270,16 +280,16 @@ def test_sync_fetch_is_audited(sapp):
 
 def test_delta_fetch_touches_last_seen_not_cursor(sapp):
     token_b, cid_b, _ = _mint(
-        sapp["client"], "memory.read",
-        admin_token=sapp["admin_token"], name="adapter-b")
+        sapp["client"], "memory.read", admin_token=sapp["admin_token"], name="adapter-b"
+    )
     c = sapp["client"]
-    c.post("/api/v1/sync/cursor", json={"cursor": 0},
-           headers=_bearer(token_b))
+    c.post("/api/v1/sync/cursor", json={"cursor": 0}, headers=_bearer(token_b))
     c.get("/api/v1/sync/delta?since=0", headers=_bearer(token_b))
 
     async def check():
         rows = await sapp["repo"].list_cursors()
         return [x for x in rows if x["adapter_id"] == cid_b]
+
     rows = asyncio.run(check())
     assert len(rows) == 1
     assert rows[0]["cursor"] == 0  # NOT auto-advanced
@@ -289,56 +299,60 @@ def test_delta_fetch_touches_last_seen_not_cursor(sapp):
 # ------------------------------------------------------------ visibility rules
 def test_pending_create_invisible_to_non_admin_delta(sapp):
     token_a, _, _ = _mint(
-        sapp["client"], "memory.read memory.write memory.admin",
-        admin_token=sapp["admin_token"], name="adapter-a")
+        sapp["client"],
+        "memory.read memory.write memory.admin",
+        admin_token=sapp["admin_token"],
+        name="adapter-a",
+    )
     token_b, _, _ = _mint(
-        sapp["client"], "memory.read",
-        admin_token=sapp["admin_token"], name="adapter-b")
+        sapp["client"], "memory.read", admin_token=sapp["admin_token"], name="adapter-b"
+    )
     # A writes but does NOT approve: unapproved content must never leak.
     # (Sensitive content forces the triage queue even in tiered mode.)
     r = sapp["client"].post(
         "/api/v1/memories",
-        json={"content": "secret pending thought: my medication is lisinopril",
-              "type": "fact", "scope_tags": ["general"]},
+        json={
+            "content": "secret pending thought: my medication is lisinopril",
+            "type": "fact",
+            "scope_tags": ["general"],
+        },
         headers=_bearer(token_a),
     )
     assert r.status_code == 202
     assert r.json()["status"] == "pending_review"
-    r = sapp["client"].get("/api/v1/sync/delta?since=0",
-                           headers=_bearer(token_b))
+    r = sapp["client"].get("/api/v1/sync/delta?since=0", headers=_bearer(token_b))
     assert r.status_code == 200
-    assert all(c["op"] != "create" or c["memory"] is not None
-               for c in r.json()["changes"])
-    assert not any("secret pending thought" in json.dumps(c)
-                   for c in r.json()["changes"])
+    assert all(c["op"] != "create" or c["memory"] is not None for c in r.json()["changes"])
+    assert not any("secret pending thought" in json.dumps(c) for c in r.json()["changes"])
     # The admin token sees the pending create with content attached.
-    r = sapp["client"].get("/api/v1/sync/delta?since=0",
-                           headers=_bearer(token_a))
+    r = sapp["client"].get("/api/v1/sync/delta?since=0", headers=_bearer(token_a))
     assert r.status_code == 200
     creates = [c for c in r.json()["changes"] if c["op"] == "create"]
-    assert any(c["memory"] is not None
-               and c["memory"]["content"] == "secret pending thought: my medication is lisinopril"
-               and c["memory"]["status"] == "pending"
-               for c in creates)
+    assert any(
+        c["memory"] is not None
+        and c["memory"]["content"] == "secret pending thought: my medication is lisinopril"
+        and c["memory"]["status"] == "pending"
+        for c in creates
+    )
 
 
 def test_delete_tombstone_visible_to_non_admin(sapp):
     token_a, _, _ = _mint(
-        sapp["client"], "memory.read memory.write memory.admin",
-        admin_token=sapp["admin_token"], name="adapter-a")
+        sapp["client"],
+        "memory.read memory.write memory.admin",
+        admin_token=sapp["admin_token"],
+        name="adapter-a",
+    )
     token_b, _, _ = _mint(
-        sapp["client"], "memory.read",
-        admin_token=sapp["admin_token"], name="adapter-b")
+        sapp["client"], "memory.read", admin_token=sapp["admin_token"], name="adapter-b"
+    )
     mid = _write_approve(sapp, token_a, "doomed memory", ["general"])
     # B consumes everything first.
-    r = sapp["client"].get("/api/v1/sync/delta?since=0",
-                           headers=_bearer(token_b))
+    r = sapp["client"].get("/api/v1/sync/delta?since=0", headers=_bearer(token_b))
     head = r.json()["cursor"]
-    r = sapp["client"].delete(f"/api/v1/memories/{mid}",
-                              headers=_bearer(token_a))
+    r = sapp["client"].delete(f"/api/v1/memories/{mid}", headers=_bearer(token_a))
     assert r.status_code == 204
-    r = sapp["client"].get(f"/api/v1/sync/delta?since={head}",
-                           headers=_bearer(token_b))
+    r = sapp["client"].get(f"/api/v1/sync/delta?since={head}", headers=_bearer(token_b))
     assert r.status_code == 200
     changes = r.json()["changes"]
     assert len(changes) == 1
@@ -351,15 +365,17 @@ def test_delete_tombstone_visible_to_non_admin(sapp):
 
 def test_tag_scoped_token_sees_only_its_tags_changes(sapp):
     token_a, _, _ = _mint(
-        sapp["client"], "memory.read memory.write memory.admin",
-        admin_token=sapp["admin_token"], name="adapter-a")
+        sapp["client"],
+        "memory.read memory.write memory.admin",
+        admin_token=sapp["admin_token"],
+        name="adapter-a",
+    )
     token_diet, _, _ = _mint(
-        sapp["client"], "memory.read.dietary",
-        admin_token=sapp["admin_token"], name="adapter-diet")
+        sapp["client"], "memory.read.dietary", admin_token=sapp["admin_token"], name="adapter-diet"
+    )
     _write_approve(sapp, token_a, "avoids cilantro", ["dietary"])
     _write_approve(sapp, token_a, "uses pnpm", ["coding_style"])
-    r = sapp["client"].get("/api/v1/sync/delta?since=0",
-                           headers=_bearer(token_diet))
+    r = sapp["client"].get("/api/v1/sync/delta?since=0", headers=_bearer(token_diet))
     assert r.status_code == 200
     changes = r.json()["changes"]
     assert changes, "expected the dietary changes to be visible"
@@ -371,20 +387,22 @@ def test_tag_scoped_token_sees_only_its_tags_changes(sapp):
 
 def test_revise_change_subject_is_new_record(sapp):
     token_a, _, _ = _mint(
-        sapp["client"], "memory.read memory.write memory.admin",
-        admin_token=sapp["admin_token"], name="adapter-a")
+        sapp["client"],
+        "memory.read memory.write memory.admin",
+        admin_token=sapp["admin_token"],
+        name="adapter-a",
+    )
     token_b, _, _ = _mint(
-        sapp["client"], "memory.read",
-        admin_token=sapp["admin_token"], name="adapter-b")
+        sapp["client"], "memory.read", admin_token=sapp["admin_token"], name="adapter-b"
+    )
     mid = _write_approve(sapp, token_a, "old content", ["general"])
-    r = sapp["client"].patch(f"/api/v1/memories/{mid}",
-                             json={"content": "new content"},
-                             headers=_bearer(token_a))
+    r = sapp["client"].patch(
+        f"/api/v1/memories/{mid}", json={"content": "new content"}, headers=_bearer(token_a)
+    )
     assert r.status_code == 200
     new_id = r.json()["memory"]["id"]
     assert r.json()["memory"]["version"] == 2
-    r = sapp["client"].get("/api/v1/sync/delta?since=0",
-                           headers=_bearer(token_b))
+    r = sapp["client"].get("/api/v1/sync/delta?since=0", headers=_bearer(token_b))
     revises = [c for c in r.json()["changes"] if c["op"] == "revise"]
     assert len(revises) == 1
     assert revises[0]["memory_id"] == new_id
@@ -398,26 +416,36 @@ def test_conflict_lww_loser_preserved_in_pending_inbox(sapp):
     # B updates (expected_version=1) -> 200 conflict=true; the loser's
     # (A's) content lands in the pending inbox, nothing silently dropped.
     token_a, _, _ = _mint(
-        sapp["client"], "memory.read memory.write memory.admin",
-        admin_token=sapp["admin_token"], name="adapter-a")
+        sapp["client"],
+        "memory.read memory.write memory.admin",
+        admin_token=sapp["admin_token"],
+        name="adapter-a",
+    )
     token_b, _, _ = _mint(
-        sapp["client"], "memory.read memory.write memory.admin",
-        admin_token=sapp["admin_token"], name="adapter-b")
+        sapp["client"],
+        "memory.read memory.write memory.admin",
+        admin_token=sapp["admin_token"],
+        name="adapter-b",
+    )
     mid = _write_approve(sapp, token_a, "v1 content", ["general"])
 
     c = sapp["client"]
-    r = c.patch(f"/api/v1/memories/{mid}",
-                json={"content": "A's edit", "expected_version": 1},
-                headers=_bearer(token_a))
+    r = c.patch(
+        f"/api/v1/memories/{mid}",
+        json={"content": "A's edit", "expected_version": 1},
+        headers=_bearer(token_a),
+    )
     assert r.status_code == 200, r.text
     assert r.json()["conflict"] is False
     assert r.json()["loser_pending_id"] is None
     assert r.json()["memory"]["content"] == "A's edit"
     assert r.json()["memory"]["version"] == 2
 
-    r = c.patch(f"/api/v1/memories/{mid}",
-                json={"content": "B's edit", "expected_version": 1},
-                headers=_bearer(token_b))
+    r = c.patch(
+        f"/api/v1/memories/{mid}",
+        json={"content": "B's edit", "expected_version": 1},
+        headers=_bearer(token_b),
+    )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["conflict"] is True
@@ -427,8 +455,7 @@ def test_conflict_lww_loser_preserved_in_pending_inbox(sapp):
 
     # The loser's content (A's edit) is preserved as a NEW pending record.
     loser_id = body["loser_pending_id"]
-    r = c.get("/api/v1/memories?status=pending",
-              headers=_bearer(token_a))
+    r = c.get("/api/v1/memories?status=pending", headers=_bearer(token_a))
     assert r.status_code == 200
     pendings = {m["id"]: m for m in r.json()}
     assert loser_id in pendings
@@ -439,27 +466,31 @@ def test_conflict_lww_loser_preserved_in_pending_inbox(sapp):
 
     # B's sync feed shows the revise + the conflict create for the loser.
     r = c.get("/api/v1/sync/delta?since=0", headers=_bearer(token_b))
-    ops = [(x["op"], x["memory"]["content"] if x["memory"] else None)
-           for x in r.json()["changes"]]
+    ops = [(x["op"], x["memory"]["content"] if x["memory"] else None) for x in r.json()["changes"]]
     assert ("revise", "B's edit") in ops
 
 
 def test_expected_version_match_is_plain_revise(sapp):
     token_a, _, _ = _mint(
-        sapp["client"], "memory.read memory.write memory.admin",
-        admin_token=sapp["admin_token"], name="adapter-a")
+        sapp["client"],
+        "memory.read memory.write memory.admin",
+        admin_token=sapp["admin_token"],
+        name="adapter-a",
+    )
     mid = _write_approve(sapp, token_a, "v1", ["general"])
     r = sapp["client"].patch(
         f"/api/v1/memories/{mid}",
         json={"content": "v2", "expected_version": 1},
-        headers=_bearer(token_a))
+        headers=_bearer(token_a),
+    )
     assert r.status_code == 200, r.text
     assert r.json()["conflict"] is False
     assert r.json()["memory"]["version"] == 2
     r = sapp["client"].patch(
         f"/api/v1/memories/{r.json()['memory']['id']}",
         json={"content": "v3", "expected_version": 2},
-        headers=_bearer(token_a))
+        headers=_bearer(token_a),
+    )
     assert r.status_code == 200
     assert r.json()["conflict"] is False
     assert r.json()["memory"]["version"] == 3
@@ -467,17 +498,21 @@ def test_expected_version_match_is_plain_revise(sapp):
     async def check():
         pendings = await sapp["repo"].list(status="pending")
         return pendings
+
     assert asyncio.run(check()) == []  # no loser records created
 
 
 def test_revise_without_expected_version_unchanged(sapp):
     token_a, _, _ = _mint(
-        sapp["client"], "memory.read memory.write memory.admin",
-        admin_token=sapp["admin_token"], name="adapter-a")
+        sapp["client"],
+        "memory.read memory.write memory.admin",
+        admin_token=sapp["admin_token"],
+        name="adapter-a",
+    )
     mid = _write_approve(sapp, token_a, "plain", ["general"])
-    r = sapp["client"].patch(f"/api/v1/memories/{mid}",
-                             json={"content": "plain v2"},
-                             headers=_bearer(token_a))
+    r = sapp["client"].patch(
+        f"/api/v1/memories/{mid}", json={"content": "plain v2"}, headers=_bearer(token_a)
+    )
     assert r.status_code == 200
     assert r.json()["conflict"] is False
     assert r.json()["memory"]["version"] == 2
@@ -485,33 +520,34 @@ def test_revise_without_expected_version_unchanged(sapp):
 
 def test_expected_version_requires_content(sapp):
     token_a, _, _ = _mint(
-        sapp["client"], "memory.read memory.write memory.admin",
-        admin_token=sapp["admin_token"], name="adapter-a")
+        sapp["client"],
+        "memory.read memory.write memory.admin",
+        admin_token=sapp["admin_token"],
+        name="adapter-a",
+    )
     mid = _write_approve(sapp, token_a, "x", ["general"])
-    r = sapp["client"].patch(f"/api/v1/memories/{mid}",
-                             json={"expected_version": 1},
-                             headers=_bearer(token_a))
+    r = sapp["client"].patch(
+        f"/api/v1/memories/{mid}", json={"expected_version": 1}, headers=_bearer(token_a)
+    )
     assert r.status_code == 422
 
 
 def test_repo_update_with_version_unit():
     """Repository-level contract: (new, loser) tuples."""
+
     async def run():
         repo = InMemoryMemoryRepository(HashEmbedder())
         rec, _ = await repo.create_pending(
-            content="v1", type="fact", scope_tags=[], confidence=0.8,
-            source={})
+            content="v1", type="fact", scope_tags=[], confidence=0.8, source={}
+        )
         # expected_version None -> plain revise, loser None
-        new, loser = await repo.update_with_version(
-            rec.id, expected_version=None, content="v2")
+        new, loser = await repo.update_with_version(rec.id, expected_version=None, content="v2")
         assert loser is None and new.version == 2
         # matching version -> plain revise
-        new2, loser2 = await repo.update_with_version(
-            new.id, expected_version=2, content="v3")
+        new2, loser2 = await repo.update_with_version(new.id, expected_version=2, content="v3")
         assert loser2 is None and new2.version == 3
         # mismatch -> LWW + loser pending record
-        new3, loser3 = await repo.update_with_version(
-            new2.id, expected_version=2, content="v4")
+        new3, loser3 = await repo.update_with_version(new2.id, expected_version=2, content="v4")
         assert new3.version == 4 and new3.content == "v4"
         assert loser3 is not None
         assert loser3.status == "pending"
@@ -520,8 +556,12 @@ def test_repo_update_with_version_unit():
         assert loser3.source["conflict_of"] == str(new3.id)
         # missing id -> (None, None)
         from uuid import uuid4
-        assert await repo.update_with_version(
-            uuid4(), expected_version=1, content="z") == (None, None)
+
+        assert await repo.update_with_version(uuid4(), expected_version=1, content="z") == (
+            None,
+            None,
+        )
+
     asyncio.run(run())
 
 
@@ -543,11 +583,17 @@ def test_mcp_sync_delta_tool(sapp, monkeypatch):
     async def run():
         repo = sapp["repo"]
         token_a, _, _ = _mint(
-            sapp["client"], "memory.read memory.write memory.admin",
-            admin_token=sapp["admin_token"], name="adapter-a")
+            sapp["client"],
+            "memory.read memory.write memory.admin",
+            admin_token=sapp["admin_token"],
+            name="adapter-a",
+        )
         token_diet, _, _ = _mint(
-            sapp["client"], "memory.read.dietary",
-            admin_token=sapp["admin_token"], name="adapter-diet")
+            sapp["client"],
+            "memory.read.dietary",
+            admin_token=sapp["admin_token"],
+            name="adapter-diet",
+        )
         _write_approve(sapp, token_a, "avoids cilantro", ["dietary"])
         _write_approve(sapp, token_a, "uses pnpm", ["coding_style"])
 
@@ -569,32 +615,37 @@ def test_mcp_sync_delta_tool(sapp, monkeypatch):
         # cursor was NOT auto-advanced by the fetch
         cursors = await repo.list_cursors()
         assert all(c["cursor"] == 0 for c in cursors)
+
     asyncio.run(run())
 
 
 def test_mcp_memory_update_expected_version_conflict(sapp, monkeypatch):
     async def run():
         token_a, _, _ = _mint(
-            sapp["client"], "memory.read memory.write memory.admin",
-            admin_token=sapp["admin_token"], name="adapter-a")
+            sapp["client"],
+            "memory.read memory.write memory.admin",
+            admin_token=sapp["admin_token"],
+            name="adapter-a",
+        )
         mid = _write_approve(sapp, token_a, "v1", ["general"])
         server = _mcp_server_for(sapp)
         monkeypatch.setenv("PORTER_TOKEN", token_a)
 
         r = await server.call_tool(
-            "memory_update",
-            {"id": mid, "content": "A edit", "expected_version": 1})
+            "memory_update", {"id": mid, "content": "A edit", "expected_version": 1}
+        )
         p = json.loads(r.content[0].text)
         assert p["conflict"] is False
         assert p["version"] == 2
 
         r = await server.call_tool(
-            "memory_update",
-            {"id": mid, "content": "B edit", "expected_version": 1})
+            "memory_update", {"id": mid, "content": "B edit", "expected_version": 1}
+        )
         p = json.loads(r.content[0].text)
         assert p["conflict"] is True
         assert p["loser_pending_id"] is not None
         assert p["version"] == 3
+
     asyncio.run(run())
 
 
@@ -612,6 +663,7 @@ def test_panel_sync_page_renders(sapp):
 
     async def seed():
         await repo.upsert_cursor("adapter-x", 7)
+
     asyncio.run(seed())
     r = pclient.get("/panel/sync")
     assert r.status_code == 200

@@ -4,12 +4,14 @@ PRD §13.1: v1 uses local sentence-transformers + BGE-M3 (1024 dim), zero
 external calls. The interface lets us swap in OpenAI (or any provider) later
 without touching the repository or API layers.
 """
+
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import math
 from abc import ABC, abstractmethod
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -27,6 +29,10 @@ class Embedder(ABC):
 
     def embed_one(self, text: str) -> list[float]:
         return self.embed([text])[0]
+
+    async def aembed_one(self, text: str) -> list[float]:
+        """Keep model inference and HTTP requests off the API event loop."""
+        return await asyncio.to_thread(self.embed_one, text)
 
     @staticmethod
     def cosine(a: Sequence[float], b: Sequence[float]) -> float:
@@ -199,6 +205,7 @@ class HttpEmbedder(Embedder):
         )
         resp.raise_for_status()
         data = resp.json()
+        self.model_id = data.get("model", "unknown")
         return data["vectors"]
 
 

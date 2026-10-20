@@ -9,7 +9,10 @@
 ## How it was verified
 
 - [ ] `python -m pytest -q` passes
-- [ ] `python -m pyflakes porter scripts` clean
+- [ ] `python -m ruff check .` passes
+- [ ] `python -m ruff format --check --quiet .` passes
+- [ ] `python -m build` succeeds (if packaging/dependencies changed)
+- [ ] Relevant Postgres / Docker acceptance run (if persistence/auth/deployment changed)
 - [ ] New behavior covered by tests (or: no new behavior)
 
 ## Docs

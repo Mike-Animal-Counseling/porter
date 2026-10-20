@@ -7,6 +7,8 @@ services:
       POSTGRES_DB: porter
     volumes:
       - porter-db:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U porter"]
       interval: 5s
@@ -21,10 +23,14 @@ services:
         REQ_FILE: requirements-embedder.txt
     command: uvicorn porter.embed_server:app --host 0.0.0.0 --port 8001
     environment:
-      EMBEDDER_KIND: sentence-transformer  # or: qwen3 | harrier (challengers, 1024 dim, ~1.2 GB)
+      EMBEDDER_KIND: ${PORTER_EMBEDDER:-bge-m3}
       HF_HOME: /home/porter/models
+      OMP_NUM_THREADS: ${PORTER_EMBED_THREADS:-2}
+      MKL_NUM_THREADS: ${PORTER_EMBED_THREADS:-2}
     volumes:
       - porter-models:/home/porter/models   # BGE-M3 cached here (~2.3 GB first run)
+    ports:
+      - "127.0.0.1:8001:8001"
     healthcheck:
       # Model download can take minutes on first boot; start_period covers it.
       test: ["CMD-SHELL", "python -c \"import httpx; httpx.get('http://localhost:8001/healthz', timeout=5).raise_for_status()\""]
@@ -43,16 +49,27 @@ services:
       dockerfile: api/Dockerfile
     # Migrations + pool run inside the FastAPI lifespan (porter.main); no
     # separate migrate step needed (scripts/migrate.py stays for manual use).
-    command: uvicorn porter.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn porter.main:app --host 0.0.0.0 --port 8000 --no-proxy-headers
     environment:
       DATABASE_URL: postgresql://porter:${POSTGRES_PASSWORD:-porter}@db:5432/porter
       PORTER_REPO: postgres
       EMBEDDER_KIND: http
       EMBEDDER_URL: http://embedder:8001
+      PORTER_JWT_SECRET: ${PORTER_JWT_SECRET:-}
+      PORTER_SETUP_TOKEN: ${PORTER_SETUP_TOKEN:-}
+      PORTER_ALLOWED_HOSTS: ${PORTER_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
+      PORTER_PUBLIC_ORIGIN: ${PORTER_PUBLIC_ORIGIN:-}
+      PORTER_APPROVAL_MODE: ${PORTER_APPROVAL_MODE:-tiered}
+      PORTER_TRIAGE_MODEL: ${PORTER_TRIAGE_MODEL:-heuristic}
+      PORTER_LLM_EXTRACTOR: ${PORTER_LLM_EXTRACTOR:-stub}
+      PORTER_WIKI_ENABLED: ${PORTER_WIKI_ENABLED:-0}
+      PORTER_SETTINGS_PATH: /home/porter/data/settings.json
+      PORTER_SNAPSHOT_DIR: /home/porter/data/snapshots
+    volumes:
+      - porter-data:/home/porter/data
     ports:
-      # P0: bind localhost only. The consent screen has no owner session, so
-      # /oauth/* must not be exposed to a network without a reverse-proxy
-      # auth layer in front. Change deliberately if you know what you do.
+      # Publish the owner app on localhost. Container-forwarded browsers
+      # unlock with the setup token at /owner/login.
       - "127.0.0.1:8000:8000"
     depends_on:
       db:
@@ -63,3 +80,4 @@ services:
 volumes:
   porter-db:
   porter-models:
+  porter-data:

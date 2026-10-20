@@ -21,7 +21,9 @@ Porter 存储你的个人 AI 记忆。安全是一等需求，不是 backlog：
 
 ## 信任假设（部署前必读）
 
-1. **网络访问 ≈ owner（v1）。**同意屏和面板在 v0.1.0 中无登录。
+1. **Owner 访问。**本机 loopback 连接受信任；容器转发的浏览器在
+   `/owner/login` 使用 `PORTER_SETUP_TOKEN` 解锁。签名 HttpOnly 会话有效
+   12 小时，用于面板和 OAuth 同意页；伪造转发头不会获得访问权限。
    服务器**默认绑定 `127.0.0.1`**，首次 client 注册需要一次性
    setup token（`X-Porter-Setup-Token`，未设置则每进程自动生成）。
    不要把 API 端口暴露到不可信网络，除非前面加了鉴权。
@@ -31,34 +33,43 @@ Porter 存储你的个人 AI 记忆。安全是一等需求，不是 backlog：
    会把你的记忆文本发给 OpenAI。默认（小机器 `hash` 桩、
    Docker 中 `sentence-transformer`/BGE-M3）全部本地。
 4. **限流器按进程。**多 worker 部署需要共享存储（Redis）——P2。
+5. **HTTP 域名信任。**默认只接受 localhost、127.0.0.1 与 [::1]，
+   域名校验先于 owner/认证中间件执行。自定义域名即使由本机反向代理转发，
+   也必须使用 owner 会话。TLS 在代理终止时设置 `PORTER_PUBLIC_ORIGIN`，
+   并保留 Host；内置启动命令禁用转发头信任。畸形来源地址直接拒绝。
+6. **配置必须明确。**无效的布尔开关和存储模式阻止启动；
+   `AUTH_ENABLED=true` 在 HTTP 与 stdio 中均保持认证开启。仅本地开发可设为 `0`。
+7. **客户端优先使用 HTTP。**Streamable HTTP 只需要该客户端的访问令牌。
+   stdio/Postgres 模板需要直接访问数据库与服务端签名密钥，仅适合同一受信任机器，
+   不应把这些凭据复制到不受信任的 harness。
 
 ## 已验证 vs. 明确残留缺口
 
-**本环境已验证**（89/89 测试 + 对抗性探测）：
+**自动化回归测试覆盖**（最新结果见 README）：
 scope fail-closed 行为、JWT 篡改/重放拒绝、撤销即时性、
 refresh 复用全量吊销、限流绕过关闭、审计 append-only
-（in-memory 镜像 + trigger SQL 检查）、true-delete
+（内存仓库与真实 Postgres trigger 拒绝修改）、true-delete
 （行 + 向量消失、审计无内容）、快照签名验证、导入器只读行为。
 
-**此处未验证——必须在 CI / 首次真实部署时验证：**
-- Migration SQL（`001`–`003`）和审计 trigger 对真实
-  `pgvector/pg16` Postgres（构建环境无 Docker；SQL 用解析器校验 +
-  trigger 逻辑在测试中镜像）。
-- BGE-M3 embedding 质量/延迟（构建 VM 剩余内存 <300MB；
-  接口 + HTTP 链路已测，模型下载推迟到 Docker）。
+**2026-10-18 另已在本机验证：**真实 Postgres/pgvector 新建数据库重复
+执行全部 11 个迁移、并发事务的同步提交顺序、Docker 启动与 API 重建持久化、
+BGE-M3 CPU 真实推理、OAuth 同意、独立 HTTP/stdio MCP 客户端、加密快照
+与即时吊销。小样本 embedding 评测见 `docs/embedding-eval.2026-10-18.json`，
+不能据此保证模型在所有数据上的效果。
+
+**仍未验证：**
 - 真实 harness 握手（Codex/Zed/Cursor 配置按 MCP 规范编写，
   但未对真实 CLI 测试）。
-- `docker compose up` 端到端（compose YAML 已校验，Dockerfile
-  已评审，此处未执行）。
+- 浏览器视觉验收、真实用户记忆导入（fixture 导入已通过）。
+- 可选 ML 分级的质量/延迟与其他 embedding 模型。
 
 ## 报告漏洞
 
 这是个人自托管项目。如果你发现安全问题：
 
 - **不要**开公开 issue 贴 exploit 细节。
-- 联系：`[security contact — maintainer to fill in]`（维护者待填写），
-  附描述和（如可能）最小复现。
-- 目标：7 天内确认；修复 + 发布 + CHANGELOG 条目。
+- 若维护者已开启，可使用 [GitHub 私密漏洞报告](https://github.com/Mike-Animal-Counseling/porter/security/advisories/new)。
+  若不可用，请向维护者请求私密报告渠道，避免公开敏感细节。目前尚未设立专用安全邮箱或响应时限承诺。
 
 ## 运维者加固清单（见 DEPLOY.md）
 

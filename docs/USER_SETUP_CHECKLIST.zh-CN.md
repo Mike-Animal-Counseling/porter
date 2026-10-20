@@ -2,7 +2,7 @@
 
 # Porter 上线检查清单 — 需要你亲手做的事
 
-> 代码 100% 写完了（273 个测试全绿），但有几件事必须在**你的机器**上做，我做不了。
+> 核心实现已纳入自动化测试；完整部署、模型效果和各工具的真实连接仍需验收。
 > 按顺序走完，Porter 就跑起来了。预计 30–60 分钟。
 
 ---
@@ -21,22 +21,18 @@
 
 - [ ] 一条命令拉起全部（API + Postgres + pgvector + 面板 + embedding）：
   ```bash
-  docker compose up -d
+  python scripts/setup_local.py
+  docker compose up --build -d
   ```
-- [ ] 看日志拿一次性 setup token（只显示一次）：
-  ```bash
-  docker compose logs porter | grep PORTER_SETUP_TOKEN
-  ```
-- [ ] 生产环境务必设置 JWT 签名密钥（不设的话重启后所有 token 失效）：
-  ```bash
-  # .env 文件里加一行（.env 已在 .gitignore，不会进 git）
-  PORTER_JWT_SECRET=<openssl rand -hex 32 的输出>
-  ```
-  然后 `docker compose up -d` 重启。
+- [ ] 从 `.env` 读取 `PORTER_SETUP_TOKEN`。启动辅助脚本会同时生成稳定的
+  JWT 签名密钥和数据库密码；已有 `.env` 不会覆盖，需要自行补齐缺失值。
+- [ ] 使用 `docker compose logs api` 查看启动状态。
 
 ## 3. 打开面板，熟悉一下（5 分钟）
 
 - [ ] 浏览器打开 http://127.0.0.1:8000/panel
+- [ ] 如果跳转到 `/owner/login`，使用 `.env` 中的 `PORTER_SETUP_TOKEN` 解锁。
+- [ ] 安装本地包：`python -m pip install -c requirements-lock.txt -e .`。
 - [ ] 设置页：确认语言（中文/English）、看看 scope tag 列表
 - [ ] 记住：面板只能本机访问，这是设计（外网打不开是正常的）
 
@@ -44,7 +40,9 @@
 
 - [ ] 到 `clients/` 目录找对应模板（文件名即 harness 名）
 - [ ] 复制到模板头部注释里写的**目标路径**（如 Codex 的 `~/.codex/config.toml`）
-- [ ] 把 `{{PORTER_TOKEN}}` 换成真实 token（面板 → 授权页 → 新建 client 拿）
+- [ ] 面板新建 client 后，按 [DEPLOY.md](../DEPLOY.md) 完成 OAuth 授权和 code 交换，取得 access token；client secret 不是 access token。
+- [ ] Codex 优先使用 `clients/codex-http-config.toml`，在启动环境设置 `PORTER_TOKEN`；不需要数据库密码或服务端签名密钥。
+- [ ] stdio 模板填写 `{{PORTER_TOKEN}}`、`{{PORTER_JWT_SECRET}}`、`DATABASE_URL` 和 `PYTHONPATH`；密钥和数据库密码必须与 `.env` 一致。Windows 的 `command` 使用 `python` 或 Python 可执行文件路径。
 - [ ] 重启那个 harness（Windsurf/Tabnine 必须完全重启才加载 MCP）
 
 > 建议顺序：Codex → Claude Code → Cursor（你最常用的先）
@@ -77,11 +75,11 @@
 
 | # | 事项 | 为什么没验 | 你要做的 |
 |---|------|-----------|---------|
-| 1 | 真实 Postgres migration（004/005） | 我的环境没 Docker/PG | `docker compose up` 后看 migration 日志无报错 |
-| 2 | BGE-M3 真实 embedding 质量 | 小 VM 跑不动大模型，测试用的是 HashEmbedder | 随便搜个语义相近的词，看召回准不准 |
-| 3 | 真实 harness MCP 握手 | 这环境没装 Codex/Cursor | 第 4 步接完后，在 harness 里调一次 `memory_search` |
-| 4 | Antigravity 的 Authorization 头 | 文档没写清 | 如果连不上，告诉我，我给它做免密本地模式 |
-| 5 | ML 分级模型（zero-shot）延迟/质量 | 需 `pip install transformers torch` + 约 1.1GB 下载；VM 跑不了 | 部署后：装依赖，设 `PORTER_TRIAGE_MODEL=zeroshot`，写条测试记忆看 triage reason |
+| 1 | 你的部署与数据 | 2026-10-18 本机已通过全部 11 个迁移与隔离 Docker 验收 | 运行 `python scripts/verify_deployment.py`，再检查正式部署 |
+| 2 | BGE-M3 对你个人数据的质量 | 已实测 CPU 推理与小型中英样本，效果并不完美 | 查看 `docs/embedding-eval.2026-10-18.json`，用自己的检索词复测 |
+| 3 | 真实 harness 的工具使用 | Codex 0.160.0 已解析两种模板，尚未运行各工具的实际对话 | 第 4 步接完后，在 harness 里调一次 `memory_search` |
+| 4 | Antigravity 的 Authorization 头 | 未在真实安装环境中验证 | 确认客户端支持发送 bearer 头后再使用模板 |
+| 5 | ML 分级模型（zero-shot）延迟/质量 | 本轮未评测该可选后端 | 安装 `.[ml]`，设 `PORTER_TRIAGE_MODEL=zeroshot`，用代表性记忆检查 triage reason |
 | 6 | Embedder A/B（qwen3/harrier vs bge-m3） | 需 CPU/GPU 时间 + 模型下载 | 跑 `python scripts/eval_embeddings.py --embedders qwen3,bge-m3,harrier,embeddinggemma` 对比 |
 
 ---
@@ -90,4 +88,4 @@
 
 - 部署问题：看 `DEPLOY.md`
 - 接入开发：看 `docs/DEVELOPER.md`
-- 报错贴给我：`docker compose logs porter` 的最后 50 行
+- 排错查看：`docker compose logs api` 的最后 50 行，分享前去除密钥。

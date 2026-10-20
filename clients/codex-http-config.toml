@@ -1,0 +1,14 @@
+# Porter MCP — recommended Codex Streamable HTTP connection.
+# Merge this block into ~/.codex/config.toml; choose HTTP OR the stdio
+# alternative in codex-config.toml, not both under the same server name.
+# Set PORTER_TOKEN={{PORTER_TOKEN}} in the environment used to launch Codex.
+# Use a scoped Porter access token, not a client secret or server signing key.
+# Start/restart Codex from that environment; refresh expired Porter tokens
+# using the OAuth flow in DEPLOY.md. Adjust the port for your deployment.
+# Official reference: https://developers.openai.com/codex/mcp/
+
+[mcp_servers.porter]
+url = "http://127.0.0.1:8000/mcp"
+bearer_token_env_var = "PORTER_TOKEN"
+startup_timeout_sec = 30
+tool_timeout_sec = 60

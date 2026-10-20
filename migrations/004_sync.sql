@@ -30,6 +30,9 @@ ALTER TABLE memories ADD COLUMN IF NOT EXISTS version INT NOT NULL DEFAULT 1;
 
 -- ---------------------------------------------------------------- sync_cursors
 ALTER TABLE sync_cursors RENAME COLUMN device_id TO adapter_id;
+-- The old default is an empty TEXT value. Drop it before changing the
+-- column type; USING casts stored rows but does not cast the default.
+ALTER TABLE sync_cursors ALTER COLUMN cursor DROP DEFAULT;
 ALTER TABLE sync_cursors
     ALTER COLUMN cursor TYPE BIGINT
     USING (CASE WHEN cursor ~ '^[0-9]+$' THEN cursor::BIGINT ELSE 0 END);

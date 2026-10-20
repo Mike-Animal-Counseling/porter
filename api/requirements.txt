@@ -1,4 +1,6 @@
 fastapi>=0.115
+# Host validation needs the IPv6-aware middleware/parser in Starlette 1.8+.
+starlette>=1.8
 uvicorn[standard]>=0.30
 asyncpg>=0.29
 pydantic>=2.7

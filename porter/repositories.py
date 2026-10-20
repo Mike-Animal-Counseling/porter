@@ -7,24 +7,27 @@ Two implementations share one interface:
 
 Both enforce the same domain rules (duplicate threshold, append-only audit).
 """
+
 from __future__ import annotations
 
 import asyncio
 import json
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Sequence
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from .config import settings
+from .db import json_object
 from .embeddings import Embedder
 
 DUPLICATE_THRESHOLD = settings.duplicate_threshold  # PRD §8 F1; single source of truth
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -153,9 +156,7 @@ class MemoryRepository(ABC):
         if the memory does not exist."""
 
     @abstractmethod
-    async def delete(
-        self, memory_id: UUID, *, actor_client_id: UUID | None = None
-    ) -> bool:
+    async def delete(self, memory_id: UUID, *, actor_client_id: UUID | None = None) -> bool:
         """Hard delete: row AND vector gone (PRD US5). Logs a 'delete'
         change (a tombstone: the row no longer exists, so sync consumers
         only get the id + op)."""
@@ -240,11 +241,7 @@ class MemoryRepository(ABC):
         """
         seen: set[UUID] = set()
         cur = await self.get(memory_id)
-        while (
-            cur is not None
-            and cur.superseded_by is not None
-            and cur.superseded_by not in seen
-        ):
+        while cur is not None and cur.superseded_by is not None and cur.superseded_by not in seen:
             seen.add(cur.id)
             cur = await self.get(cur.superseded_by)
         return cur
@@ -286,9 +283,7 @@ class MemoryRepository(ABC):
         {seq, memory_id, op, actor_client_id, at}."""
 
     @abstractmethod
-    async def get_changes(
-        self, since: int, limit: int
-    ) -> tuple[list[dict[str, Any]], int]:
+    async def get_changes(self, since: int, limit: int) -> tuple[list[dict[str, Any]], int]:
         """Changes with seq > since, oldest first, at most limit.
         Returns (changes, head_seq) where head_seq is the current feed head
         (0 when empty) regardless of limit."""
@@ -371,66 +366,93 @@ class InMemoryMemoryRepository(MemoryRepository):
             out.append(m)
         return out
 
-    async def create_pending(self, *, content, type, scope_tags, confidence,
-                             source, actor_client_id=None,
-                             encrypted=False, key_id=None,
-                             triage_reasons=()):
+    async def create_pending(
+        self,
+        *,
+        content,
+        type,
+        scope_tags,
+        confidence,
+        source,
+        actor_client_id=None,
+        encrypted=False,
+        key_id=None,
+        triage_reasons=(),
+    ):
         # E2EE (P2): ciphertext is stored as-is, embedding=None (the server
         # must not see plaintext, so there is nothing to embed), and
         # duplicate detection is skipped (ciphertext is not comparable —
         # even identical plaintexts encrypt differently under random nonces).
-        vec = None if encrypted else self.embedder.embed_one(content)
+        vec = None if encrypted else await self.embedder.aembed_one(content)
         dups: list[ScoredMemory] = []
         if not encrypted:
             dups = [
-                s for s in self._similar(vec, list(self._memories.values()), 5)
+                s
+                for s in self._similar(vec, list(self._memories.values()), 5)
                 if s.score > DUPLICATE_THRESHOLD
             ]
         rec = MemoryRecord(
-            id=uuid4(), content=content, type=type,
-            scope_tags=list(scope_tags), source=dict(source),
-            confidence=confidence, status="pending", embedding=vec,
-            created_at=_now(), updated_at=_now(),
-            encrypted=bool(encrypted), key_id=key_id,
+            id=uuid4(),
+            content=content,
+            type=type,
+            scope_tags=list(scope_tags),
+            source=dict(source),
+            confidence=confidence,
+            status="pending",
+            embedding=vec,
+            created_at=_now(),
+            updated_at=_now(),
+            encrypted=bool(encrypted),
+            key_id=key_id,
             triage_reasons=list(triage_reasons),
         )
         self._memories[rec.id] = rec
-        await self.log_change(
-            memory_id=rec.id, op="create", actor_client_id=actor_client_id
-        )
+        await self.log_change(memory_id=rec.id, op="create", actor_client_id=actor_client_id)
         return rec, dups
 
     async def find_similar_active(self, vec, *, threshold=0.70, limit=5):
         cands = [
-            m for m in self._memories.values()
+            m
+            for m in self._memories.values()
             if m.status == "active" and not m.encrypted and m.embedding
         ]
-        return [
-            s for s in self._similar(vec, cands, limit) if s.score >= threshold
-        ]
+        return [s for s in self._similar(vec, cands, limit) if s.score >= threshold]
 
-    async def create_active(self, *, content, type, scope_tags, confidence,
-                            source, actor_client_id=None, triage_reasons=()):
-        vec = self.embedder.embed_one(content)
+    async def create_active(
+        self,
+        *,
+        content,
+        type,
+        scope_tags,
+        confidence,
+        source,
+        actor_client_id=None,
+        triage_reasons=(),
+    ):
+        vec = await self.embedder.aembed_one(content)
         dups: list[ScoredMemory] = [
-            s for s in self._similar(vec, list(self._memories.values()), 5)
+            s
+            for s in self._similar(vec, list(self._memories.values()), 5)
             if s.score > DUPLICATE_THRESHOLD
         ]
         rec = MemoryRecord(
-            id=uuid4(), content=content, type=type,
-            scope_tags=list(scope_tags), source=dict(source),
-            confidence=confidence, status="active", embedding=vec,
-            created_at=_now(), updated_at=_now(),
+            id=uuid4(),
+            content=content,
+            type=type,
+            scope_tags=list(scope_tags),
+            source=dict(source),
+            confidence=confidence,
+            status="active",
+            embedding=vec,
+            created_at=_now(),
+            updated_at=_now(),
             triage_reasons=list(triage_reasons),
         )
         self._memories[rec.id] = rec
-        await self.log_change(
-            memory_id=rec.id, op="create", actor_client_id=actor_client_id
-        )
+        await self.log_change(memory_id=rec.id, op="create", actor_client_id=actor_client_id)
         return rec, dups
 
-    async def auto_merge(self, target_id, *, content, confidence,
-                         actor_client_id=None):
+    async def auto_merge(self, target_id, *, content, confidence, actor_client_id=None):
         # See the abstract docstring: tags are deliberately NOT unioned (T1).
         rec = self._memories.get(target_id)
         if rec is None or rec.status != "active" or rec.encrypted:
@@ -438,9 +460,7 @@ class InMemoryMemoryRepository(MemoryRepository):
         rec.confidence = max(rec.confidence, confidence)
         rec.updated_at = _now()
         rec.last_retrieved_at = rec.updated_at
-        await self.log_change(
-            memory_id=rec.id, op="revise", actor_client_id=actor_client_id
-        )
+        await self.log_change(memory_id=rec.id, op="revise", actor_client_id=actor_client_id)
         return rec
 
     async def archive(self, memory_id, *, actor_client_id=None):
@@ -449,9 +469,7 @@ class InMemoryMemoryRepository(MemoryRepository):
             return rec
         rec.status = "archived"
         rec.updated_at = _now()
-        await self.log_change(
-            memory_id=rec.id, op="archive", actor_client_id=actor_client_id
-        )
+        await self.log_change(memory_id=rec.id, op="archive", actor_client_id=actor_client_id)
         return rec
 
     async def touch_retrieved(self, memory_ids, *, at=None):
@@ -467,9 +485,7 @@ class InMemoryMemoryRepository(MemoryRepository):
             return None
         rec.pinned = bool(pinned)
         rec.updated_at = _now()
-        await self.log_change(
-            memory_id=rec.id, op="revise", actor_client_id=actor_client_id
-        )
+        await self.log_change(memory_id=rec.id, op="revise", actor_client_id=actor_client_id)
         return rec
 
     async def get(self, memory_id):
@@ -481,8 +497,9 @@ class InMemoryMemoryRepository(MemoryRepository):
         alive = await apply_on_read(self, [rec])
         return alive[0] if alive else rec
 
-    async def list(self, *, status=None, tags=(), type=None, limit=50, offset=0,
-                 query=None, source_client=None):
+    async def list(
+        self, *, status=None, tags=(), type=None, limit=50, offset=0, query=None, source_client=None
+    ):
         rows = list(self._memories.values())
         if status:
             rows = [m for m in rows if m.status == status]
@@ -505,11 +522,10 @@ class InMemoryMemoryRepository(MemoryRepository):
         # The explicit filter — not just the `embedding is None` guard in
         # _similar — keeps this true even if a future change ever backfills
         # embeddings, and documents the guarantee at the decision point.
-        vec = self.embedder.embed_one(query)
+        vec = await self.embedder.aembed_one(query)
         cands = [
-            m for m in self._filter(
-                list(self._memories.values()), tags, types, active_only
-            )
+            m
+            for m in self._filter(list(self._memories.values()), tags, types, active_only)
             if not m.encrypted
         ]
         scored = self._similar(vec, cands, top_k)
@@ -528,13 +544,19 @@ class InMemoryMemoryRepository(MemoryRepository):
             return None
         rec.status = "active"
         rec.updated_at = _now()
-        await self.log_change(
-            memory_id=rec.id, op="approve", actor_client_id=actor_client_id
-        )
+        await self.log_change(memory_id=rec.id, op="approve", actor_client_id=actor_client_id)
         return rec
 
-    async def revise(self, memory_id, *, content=None, type=None,
-                     scope_tags=None, confidence=None, actor_client_id=None):
+    async def revise(
+        self,
+        memory_id,
+        *,
+        content=None,
+        type=None,
+        scope_tags=None,
+        confidence=None,
+        actor_client_id=None,
+    ):
         old = self._memories.get(memory_id)
         if old is None:
             return None
@@ -543,46 +565,53 @@ class InMemoryMemoryRepository(MemoryRepository):
         # the history chain. The server is ciphertext-blind: new_content is
         # stored as-is (the panel shows ciphertext for encrypted records, so
         # an edit pastes new ciphertext), never re-embedded.
-        vec = None if old.encrypted else self.embedder.embed_one(new_content)
+        vec = None if old.encrypted else await self.embedder.aembed_one(new_content)
         new = MemoryRecord(
-            id=uuid4(), content=new_content,
+            id=uuid4(),
+            content=new_content,
             type=type if type is not None else old.type,
             scope_tags=list(scope_tags) if scope_tags is not None else list(old.scope_tags),
             source=dict(old.source),
             confidence=confidence if confidence is not None else old.confidence,
-            status=old.status, embedding=vec,
-            created_at=_now(), updated_at=_now(),
+            status=old.status,
+            embedding=vec,
+            created_at=_now(),
+            updated_at=_now(),
             version=old.version + 1,  # US7 optimistic-concurrency counter
-            encrypted=old.encrypted, key_id=old.key_id,
+            encrypted=old.encrypted,
+            key_id=old.key_id,
+            pinned=old.pinned,
+            triage_reasons=list(old.triage_reasons),
         )
         new.source["revised_from"] = str(old.id)
         old.status = "archived"
         old.superseded_by = new.id
         old.updated_at = _now()
         self._memories[new.id] = new
+        await self.log_change(memory_id=old.id, op="archive", actor_client_id=actor_client_id)
         # The change subject is the NEW record (the old one is archived).
-        await self.log_change(
-            memory_id=new.id, op="revise", actor_client_id=actor_client_id
-        )
+        await self.log_change(memory_id=new.id, op="revise", actor_client_id=actor_client_id)
         return new
 
     async def delete(self, memory_id, *, actor_client_id=None):
-        if self._memories.pop(memory_id, None) is None:
+        if memory_id not in self._memories:
             return False
-        await self.log_change(
-            memory_id=memory_id, op="delete", actor_client_id=actor_client_id
-        )
+        await self.log_change(memory_id=memory_id, op="delete", actor_client_id=actor_client_id)
+        self._memories.pop(memory_id)
         return True
 
-    async def update_with_version(self, memory_id, *, expected_version,
-                                  content, actor_client_id=None):
+    async def update_with_version(
+        self, memory_id, *, expected_version, content, actor_client_id=None
+    ):
         # Serialized: resolve_head + revise + loser-preservation must be
         # atomic w.r.t. other writers, or the history chain branches (two
         # active heads). See the _uv_lock note in __init__.
         async with self._uv_lock:
             return await self._update_with_version_inner(
-                memory_id, expected_version=expected_version,
-                content=content, actor_client_id=actor_client_id,
+                memory_id,
+                expected_version=expected_version,
+                content=content,
+                actor_client_id=actor_client_id,
             )
 
     async def _update_with_version_inner(
@@ -594,12 +623,8 @@ class InMemoryMemoryRepository(MemoryRepository):
         old = self._memories.get(head.id)
         if old is None:
             return None, None
-        conflict = (
-            expected_version is not None and expected_version != old.version
-        )
-        new = await self.revise(
-            head.id, content=content, actor_client_id=actor_client_id
-        )
+        conflict = expected_version is not None and expected_version != old.version
+        new = await self.revise(head.id, content=content, actor_client_id=actor_client_id)
         loser = None
         if conflict and new is not None:
             # Last-writer-wins still applied above; preserve the overwritten
@@ -612,9 +637,7 @@ class InMemoryMemoryRepository(MemoryRepository):
                 confidence=old.confidence,  # preserved
                 source={
                     "conflict_of": str(new.id),
-                    "client_id": (
-                        str(actor_client_id) if actor_client_id else None
-                    ),
+                    "client_id": (str(actor_client_id) if actor_client_id else None),
                 },
                 actor_client_id=actor_client_id,
                 encrypted=old.encrypted,
@@ -630,6 +653,9 @@ class InMemoryMemoryRepository(MemoryRepository):
             "op": op,
             "actor_client_id": actor_client_id,
             "at": _now(),
+            "scope_tags": list(self._memories[memory_id].scope_tags)
+            if memory_id in self._memories
+            else None,
         }
         self._changes.append(entry)
         return entry
@@ -647,17 +673,19 @@ class InMemoryMemoryRepository(MemoryRepository):
         return dict(self._cursors[adapter_id])
 
     async def list_cursors(self):
-        return [
-            dict(self._cursors[k]) for k in sorted(self._cursors)
-        ]
+        return [dict(self._cursors[k]) for k in sorted(self._cursors)]
 
     async def audit(self, *, action, memory_ids=(), client_id=None, scopes_used=(), meta=None):
         if self._audit_locked:
             raise RuntimeError("audit log is append-only")
         rec = AuditRecord(
-            id=uuid4(), client_id=client_id, action=action,
-            memory_ids=list(memory_ids), scopes_used=list(scopes_used),
-            meta=dict(meta or {}), created_at=_now(),
+            id=uuid4(),
+            client_id=client_id,
+            action=action,
+            memory_ids=list(memory_ids),
+            scopes_used=list(scopes_used),
+            meta=dict(meta or {}),
+            created_at=_now(),
         )
         self._audit.append(rec)
         return rec
@@ -701,11 +729,16 @@ RETURNING {_PG_COLS}
 def _row_to_record(row: Any) -> MemoryRecord:
     emb = row["embedding"]
     return MemoryRecord(
-        id=row["id"], content=row["content"], type=row["type"],
-        scope_tags=list(row["scope_tags"] or []), source=dict(row["source"] or {}),
-        confidence=float(row["confidence"]), status=row["status"],
+        id=row["id"],
+        content=row["content"],
+        type=row["type"],
+        scope_tags=list(row["scope_tags"] or []),
+        source=json_object(row["source"]),
+        confidence=float(row["confidence"]),
+        status=row["status"],
         embedding=_parse_vector(emb),
-        created_at=row["created_at"], updated_at=row["updated_at"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
         superseded_by=row["superseded_by"],
         version=int(row["version"]) if row["version"] is not None else 1,
         encrypted=bool(row["encrypted"]) if row["encrypted"] is not None else False,
@@ -736,14 +769,23 @@ class PostgresMemoryRepository(MemoryRepository):
     def _vec_literal(vec: Sequence[float]) -> str:
         return "[" + ",".join(f"{x:.6f}" for x in vec) + "]"
 
-    async def create_pending(self, *, content, type, scope_tags, confidence,
-                             source, actor_client_id=None,
-                             encrypted=False, key_id=None,
-                             triage_reasons=()):
+    async def create_pending(
+        self,
+        *,
+        content,
+        type,
+        scope_tags,
+        confidence,
+        source,
+        actor_client_id=None,
+        encrypted=False,
+        key_id=None,
+        triage_reasons=(),
+    ):
         # E2EE (P2): ciphertext stored as-is, embedding NULL (the server must
         # not see plaintext), duplicate detection skipped (ciphertext is not
         # comparable — identical plaintexts differ under random nonces).
-        vec = None if encrypted else self.embedder.embed_one(content)
+        vec = None if encrypted else await self.embedder.aembed_one(content)
         async with self.pool.acquire() as con:
             async with con.transaction():
                 row = await con.fetchrow(
@@ -753,14 +795,21 @@ class PostgresMemoryRepository(MemoryRepository):
                     VALUES ($1, $2, $3, $4, $5, $6::vector, $7, $8, $9)
                     {_PG_RETURNING}
                     """,
-                    content, type, list(scope_tags), confidence, _json(source),
+                    content,
+                    type,
+                    list(scope_tags),
+                    confidence,
+                    _json(source),
                     self._vec_literal(vec) if vec is not None else None,
-                    bool(encrypted), key_id, json.dumps(list(triage_reasons)),
+                    bool(encrypted),
+                    key_id,
+                    json.dumps(list(triage_reasons)),
                 )
                 await con.execute(
                     "INSERT INTO change_log (memory_id, op, actor_client_id)"
                     " VALUES ($1, 'create', $2)",
-                    row["id"], actor_client_id,
+                    row["id"],
+                    actor_client_id,
                 )
             dup_rows = []
             if not encrypted:
@@ -773,15 +822,24 @@ class PostgresMemoryRepository(MemoryRepository):
                     ORDER BY embedding <=> $1::vector
                     LIMIT 5
                     """,
-                    self._vec_literal(vec), row["id"], DUPLICATE_THRESHOLD,
+                    self._vec_literal(vec),
+                    row["id"],
+                    DUPLICATE_THRESHOLD,
                 )
         rec = _row_to_record(row)
         dups = [
             ScoredMemory(
                 MemoryRecord(
-                    id=r["id"], content="", type="", scope_tags=[], source={},
-                    confidence=0.0, status="", embedding=None,
-                    created_at=_now(), updated_at=_now(),
+                    id=r["id"],
+                    content="",
+                    type="",
+                    scope_tags=[],
+                    source={},
+                    confidence=0.0,
+                    status="",
+                    embedding=None,
+                    created_at=_now(),
+                    updated_at=_now(),
                 ),
                 float(r["score"]),
             )
@@ -791,11 +849,12 @@ class PostgresMemoryRepository(MemoryRepository):
 
     async def find_similar_active(self, vec, *, threshold=0.70, limit=5):
         # Probe for triage: no last_retrieved_at touch, no decay (see
-        # abstract docstring).
+        # abstract docstring). Return full records just like the memory
+        # backend: triage needs project tags and the inbox needs labels.
         async with self.pool.acquire() as con:
             rows = await con.fetch(
-                """
-                SELECT id, 1 - (embedding <=> $1::vector) AS score
+                f"""
+                SELECT {_PG_COLS}, 1 - (embedding <=> $1::vector) AS score
                 FROM memories
                 WHERE status = 'active' AND encrypted = FALSE
                   AND embedding IS NOT NULL
@@ -803,23 +862,30 @@ class PostgresMemoryRepository(MemoryRepository):
                 ORDER BY embedding <=> $1::vector
                 LIMIT $3
                 """,
-                self._vec_literal(vec), threshold, limit,
+                self._vec_literal(vec),
+                threshold,
+                limit,
             )
         return [
             ScoredMemory(
-                MemoryRecord(
-                    id=r["id"], content="", type="", scope_tags=[], source={},
-                    confidence=0.0, status="active", embedding=None,
-                    created_at=_now(), updated_at=_now(),
-                ),
+                _row_to_record(r),
                 float(r["score"]),
             )
             for r in rows
         ]
 
-    async def create_active(self, *, content, type, scope_tags, confidence,
-                            source, actor_client_id=None, triage_reasons=()):
-        vec = self.embedder.embed_one(content)
+    async def create_active(
+        self,
+        *,
+        content,
+        type,
+        scope_tags,
+        confidence,
+        source,
+        actor_client_id=None,
+        triage_reasons=(),
+    ):
+        vec = await self.embedder.aembed_one(content)
         async with self.pool.acquire() as con:
             async with con.transaction():
                 row = await con.fetchrow(
@@ -829,13 +895,19 @@ class PostgresMemoryRepository(MemoryRepository):
                     VALUES ($1, $2, $3, $4, $5, $6::vector, 'active', $7)
                     {_PG_RETURNING}
                     """,
-                    content, type, list(scope_tags), confidence, _json(source),
-                    self._vec_literal(vec), json.dumps(list(triage_reasons)),
+                    content,
+                    type,
+                    list(scope_tags),
+                    confidence,
+                    _json(source),
+                    self._vec_literal(vec),
+                    json.dumps(list(triage_reasons)),
                 )
                 await con.execute(
                     "INSERT INTO change_log (memory_id, op, actor_client_id)"
                     " VALUES ($1, 'create', $2)",
-                    row["id"], actor_client_id,
+                    row["id"],
+                    actor_client_id,
                 )
             dup_rows = await con.fetch(
                 """
@@ -846,15 +918,24 @@ class PostgresMemoryRepository(MemoryRepository):
                 ORDER BY embedding <=> $1::vector
                 LIMIT 5
                 """,
-                self._vec_literal(vec), row["id"], DUPLICATE_THRESHOLD,
+                self._vec_literal(vec),
+                row["id"],
+                DUPLICATE_THRESHOLD,
             )
         rec = _row_to_record(row)
         dups = [
             ScoredMemory(
                 MemoryRecord(
-                    id=r["id"], content="", type="", scope_tags=[], source={},
-                    confidence=0.0, status="", embedding=None,
-                    created_at=_now(), updated_at=_now(),
+                    id=r["id"],
+                    content="",
+                    type="",
+                    scope_tags=[],
+                    source={},
+                    confidence=0.0,
+                    status="",
+                    embedding=None,
+                    created_at=_now(),
+                    updated_at=_now(),
                 ),
                 float(r["score"]),
             )
@@ -862,8 +943,7 @@ class PostgresMemoryRepository(MemoryRepository):
         ]
         return rec, dups
 
-    async def auto_merge(self, target_id, *, content, confidence,
-                         actor_client_id=None):
+    async def auto_merge(self, target_id, *, content, confidence, actor_client_id=None):
         # Tags deliberately NOT unioned (T1) — see abstract docstring.
         async with self.pool.acquire() as con:
             async with con.transaction():
@@ -875,14 +955,16 @@ class PostgresMemoryRepository(MemoryRepository):
                     WHERE id = $1 AND status = 'active' AND encrypted = FALSE
                     {_PG_RETURNING}
                     """,
-                    target_id, confidence,
+                    target_id,
+                    confidence,
                 )
                 if row is None:
                     return None
                 await con.execute(
                     "INSERT INTO change_log (memory_id, op, actor_client_id)"
                     " VALUES ($1, 'revise', $2)",
-                    row["id"], actor_client_id,
+                    row["id"],
+                    actor_client_id,
                 )
         return _row_to_record(row)
 
@@ -900,14 +982,13 @@ class PostgresMemoryRepository(MemoryRepository):
                 )
                 if row is None:
                     # Already archived or missing: return current state.
-                    row = await con.fetchrow(
-                        _PG_LIST_SQL + "WHERE id = $1", memory_id
-                    )
+                    row = await con.fetchrow(_PG_LIST_SQL + "WHERE id = $1", memory_id)
                     return _row_to_record(row) if row else None
                 await con.execute(
                     "INSERT INTO change_log (memory_id, op, actor_client_id)"
                     " VALUES ($1, 'archive', $2)",
-                    row["id"], actor_client_id,
+                    row["id"],
+                    actor_client_id,
                 )
         return _row_to_record(row)
 
@@ -919,7 +1000,8 @@ class PostgresMemoryRepository(MemoryRepository):
         async with self.pool.acquire() as con:
             await con.execute(
                 "UPDATE memories SET last_retrieved_at = $1 WHERE id = ANY($2)",
-                stamp, ids,
+                stamp,
+                ids,
             )
 
     async def set_pinned(self, memory_id, pinned, *, actor_client_id=None):
@@ -931,14 +1013,16 @@ class PostgresMemoryRepository(MemoryRepository):
                     WHERE id = $1
                     {_PG_RETURNING}
                     """,
-                    memory_id, bool(pinned),
+                    memory_id,
+                    bool(pinned),
                 )
                 if row is None:
                     return None
                 await con.execute(
                     "INSERT INTO change_log (memory_id, op, actor_client_id)"
                     " VALUES ($1, 'revise', $2)",
-                    row["id"], actor_client_id,
+                    row["id"],
+                    actor_client_id,
                 )
         return _row_to_record(row)
 
@@ -955,53 +1039,63 @@ class PostgresMemoryRepository(MemoryRepository):
             # apply_on_read archived it (decay) — re-fetch so the caller
             # sees the current status, not the pre-archive snapshot.
             async with self.pool.acquire() as con:
-                row = await con.fetchrow(
-                    _PG_LIST_SQL + "WHERE id = $1", memory_id)
+                row = await con.fetchrow(_PG_LIST_SQL + "WHERE id = $1", memory_id)
             return _row_to_record(row) if row else None
         return alive[0]
 
-    async def list(self, *, status=None, tags=(), type=None, limit=50, offset=0,
-                 query=None, source_client=None):
+    async def list(
+        self, *, status=None, tags=(), type=None, limit=50, offset=0, query=None, source_client=None
+    ):
         clauses, args = [], []
         if status:
-            clauses.append(f"status = ${len(args)+1}"); args.append(status)
+            clauses.append(f"status = ${len(args) + 1}")
+            args.append(status)
         if tags:
-            clauses.append(f"scope_tags && ${len(args)+1}"); args.append(list(tags))
+            clauses.append(f"scope_tags && ${len(args) + 1}")
+            args.append(list(tags))
         if type:
-            clauses.append(f"type = ${len(args)+1}"); args.append(type)
+            clauses.append(f"type = ${len(args) + 1}")
+            args.append(type)
         if query:
             # position() avoids LIKE-escape pitfalls entirely.
-            clauses.append(f"position(lower(${len(args)+1}) in lower(content)) > 0")
+            clauses.append(f"position(lower(${len(args) + 1}) in lower(content)) > 0")
             args.append(query)
         if source_client:
-            clauses.append(f"source->>'client_id' = ${len(args)+1}")
+            clauses.append(f"source->>'client_id' = ${len(args) + 1}")
             args.append(source_client)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         async with self.pool.acquire() as con:
             rows = await con.fetch(
                 _PG_LIST_SQL + f"{where} ORDER BY created_at DESC "
-                f"LIMIT ${len(args)+1} OFFSET ${len(args)+2}",
-                *args, limit, offset,
+                f"LIMIT ${len(args) + 1} OFFSET ${len(args) + 2}",
+                *args,
+                limit,
+                offset,
             )
         return [_row_to_record(r) for r in rows]
 
     async def search(self, *, query, top_k=5, tags=(), types=(), active_only=True):
-        vec = self.embedder.embed_one(query)
+        vec = await self.embedder.aembed_one(query)
         # E2EE (P2): encrypted rows are excluded EXPLICITLY. They carry no
         # embedding (the server never sees plaintext), so `embedding IS NOT
         # NULL` would already skip them — but the explicit predicate keeps
         # the guarantee at the decision point even if a future migration
         # ever backfills embeddings, and documents it for reviewers.
-        clauses, args = [
-            "embedding IS NOT NULL",
-            "encrypted = FALSE",
-        ], [self._vec_literal(vec)]
+        clauses, args = (
+            [
+                "embedding IS NOT NULL",
+                "encrypted = FALSE",
+            ],
+            [self._vec_literal(vec)],
+        )
         if active_only:
             clauses.append("status = 'active'")
         if tags:
-            clauses.append(f"scope_tags && ${len(args)+1}"); args.append(list(tags))
+            clauses.append(f"scope_tags && ${len(args) + 1}")
+            args.append(list(tags))
         if types:
-            clauses.append(f"type = ANY(${len(args)+1})"); args.append(list(types))
+            clauses.append(f"type = ANY(${len(args) + 1})")
+            args.append(list(types))
         where = "WHERE " + " AND ".join(clauses)
         async with self.pool.acquire() as con:
             rows = await con.fetch(
@@ -1009,12 +1103,11 @@ class PostgresMemoryRepository(MemoryRepository):
                     "embedding::text,",
                     "embedding::text, 1 - (embedding <=> $1::vector) AS score,",
                 )
-                + f"{where} ORDER BY embedding <=> $1::vector LIMIT ${len(args)+1}",
-                *args, top_k,
+                + f"{where} ORDER BY embedding <=> $1::vector LIMIT ${len(args) + 1}",
+                *args,
+                top_k,
             )
-        scored = [
-            ScoredMemory(_row_to_record(r), float(r["score"])) for r in rows
-        ]
+        scored = [ScoredMemory(_row_to_record(r), float(r["score"])) for r in rows]
         # Decay (automation layer): see InMemoryMemoryRepository.search.
         from .decay import apply_on_read
 
@@ -1038,12 +1131,16 @@ class PostgresMemoryRepository(MemoryRepository):
                     await con.execute(
                         "INSERT INTO change_log (memory_id, op, actor_client_id)"
                         " VALUES ($1, 'approve', $2)",
-                        row["id"], actor_client_id,
+                        row["id"],
+                        actor_client_id,
                     )
         return _row_to_record(row) if row else None
 
     async def _revise_tx(
-        self, con, old: MemoryRecord, *,
+        self,
+        con,
+        old: MemoryRecord,
+        *,
         content: str | None = None,
         type: str | None = None,
         scope_tags: Sequence[str] | None = None,
@@ -1060,55 +1157,79 @@ class PostgresMemoryRepository(MemoryRepository):
         new_source["revised_from"] = str(old.id)
         # E2EE (P2): encryption rides the history chain; the server stays
         # ciphertext-blind (no re-embed — the new content is opaque to us).
-        vec = None if old.encrypted else self.embedder.embed_one(new_content)
+        vec = None if old.encrypted else await self.embedder.aembed_one(new_content)
         new_row = await con.fetchrow(
             f"""
             INSERT INTO memories
                 (content, type, scope_tags, confidence, source, status,
-                 embedding, version, encrypted, key_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, $9, $10)
+                 embedding, version, encrypted, key_id, pinned, triage_reasons)
+            VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, $9, $10, $11, $12)
             {_PG_RETURNING}
             """,
-            new_content, new_type, new_tags, new_conf,
-            _json(new_source), old.status,
+            new_content,
+            new_type,
+            new_tags,
+            new_conf,
+            _json(new_source),
+            old.status,
             self._vec_literal(vec) if vec is not None else None,
             old.version + 1,
-            old.encrypted, old.key_id,
+            old.encrypted,
+            old.key_id,
+            old.pinned,
+            _json(old.triage_reasons),
         )
         await con.execute(
             "UPDATE memories SET status = 'archived',"
             " superseded_by = $2, updated_at = now() WHERE id = $1",
-            old.id, new_row["id"],
+            old.id,
+            new_row["id"],
         )
-        # The change subject is the NEW record (the old one is archived).
+        # Retire the old ID in adapters before publishing its replacement.
         await con.execute(
-            "INSERT INTO change_log (memory_id, op, actor_client_id)"
-            " VALUES ($1, 'revise', $2)",
-            new_row["id"], actor_client_id,
+            "INSERT INTO change_log (memory_id, op, actor_client_id) VALUES ($1, 'archive', $2)",
+            old.id,
+            actor_client_id,
+        )
+        await con.execute(
+            "INSERT INTO change_log (memory_id, op, actor_client_id) VALUES ($1, 'revise', $2)",
+            new_row["id"],
+            actor_client_id,
         )
         return new_row
 
-    async def revise(self, memory_id, *, content=None, type=None,
-                     scope_tags=None, confidence=None, actor_client_id=None):
+    async def revise(
+        self,
+        memory_id,
+        *,
+        content=None,
+        type=None,
+        scope_tags=None,
+        confidence=None,
+        actor_client_id=None,
+    ):
         # Edit with history (PRD US2): new row carries the edit; the old row
         # is archived with superseded_by -> new id. One transaction so the
         # chain can never half-exist.
         async with self.pool.acquire() as con:
             async with con.transaction():
-                old_row = await con.fetchrow(
-                    _PG_LIST_SQL + "WHERE id = $1 FOR UPDATE", memory_id
-                )
+                old_row = await con.fetchrow(_PG_LIST_SQL + "WHERE id = $1 FOR UPDATE", memory_id)
                 if old_row is None:
                     return None
                 new_row = await self._revise_tx(
-                    con, _row_to_record(old_row),
-                    content=content, type=type, scope_tags=scope_tags,
-                    confidence=confidence, actor_client_id=actor_client_id,
+                    con,
+                    _row_to_record(old_row),
+                    content=content,
+                    type=type,
+                    scope_tags=scope_tags,
+                    confidence=confidence,
+                    actor_client_id=actor_client_id,
                 )
         return _row_to_record(new_row)
 
-    async def update_with_version(self, memory_id, *, expected_version,
-                                  content, actor_client_id=None):
+    async def update_with_version(
+        self, memory_id, *, expected_version, content, actor_client_id=None
+    ):
         async with self.pool.acquire() as con:
             async with con.transaction():
                 # Resolve the revision chain INSIDE the transaction, holding
@@ -1120,9 +1241,7 @@ class PostgresMemoryRepository(MemoryRepository):
                 cur_id = memory_id
                 old_row = None
                 while True:
-                    row = await con.fetchrow(
-                        _PG_LIST_SQL + "WHERE id = $1 FOR UPDATE", cur_id
-                    )
+                    row = await con.fetchrow(_PG_LIST_SQL + "WHERE id = $1 FOR UPDATE", cur_id)
                     if row is None:
                         return None, None
                     sb = row["superseded_by"]
@@ -1132,12 +1251,11 @@ class PostgresMemoryRepository(MemoryRepository):
                     seen.add(cur_id)
                     cur_id = sb
                 old = _row_to_record(old_row)
-                conflict = (
-                    expected_version is not None
-                    and expected_version != old.version
-                )
+                conflict = expected_version is not None and expected_version != old.version
                 new_row = await self._revise_tx(
-                    con, old, content=content,
+                    con,
+                    old,
+                    content=content,
                     actor_client_id=actor_client_id,
                 )
                 new_id = new_row["id"]
@@ -1147,10 +1265,7 @@ class PostgresMemoryRepository(MemoryRepository):
                     # overwritten content as a new pending inbox record so
                     # nothing is silently dropped (US7). E2EE: the loser's
                     # encryption rides along (ciphertext-blind copy).
-                    vec = (
-                        None if old.encrypted
-                        else self.embedder.embed_one(old.content)
-                    )
+                    vec = None if old.encrypted else await self.embedder.aembed_one(old.content)
                     loser_row = await con.fetchrow(
                         f"""
                         INSERT INTO memories
@@ -1159,22 +1274,25 @@ class PostgresMemoryRepository(MemoryRepository):
                         VALUES ($1, $2, $3, $4, $5, 'pending', $6::vector, $7, $8)
                         {_PG_RETURNING}
                         """,
-                        old.content, old.type, old.scope_tags,
+                        old.content,
+                        old.type,
+                        old.scope_tags,
                         old.confidence,
-                        _json({
-                            "conflict_of": str(new_id),
-                            "client_id": (
-                                str(actor_client_id)
-                                if actor_client_id else None
-                            ),
-                        }),
+                        _json(
+                            {
+                                "conflict_of": str(new_id),
+                                "client_id": (str(actor_client_id) if actor_client_id else None),
+                            }
+                        ),
                         self._vec_literal(vec) if vec is not None else None,
-                        old.encrypted, old.key_id,
+                        old.encrypted,
+                        old.key_id,
                     )
                     await con.execute(
                         "INSERT INTO change_log (memory_id, op, actor_client_id)"
                         " VALUES ($1, 'create', $2)",
-                        loser_row["id"], actor_client_id,
+                        loser_row["id"],
+                        actor_client_id,
                     )
                     loser = _row_to_record(loser_row)
         return _row_to_record(new_row), loser
@@ -1182,15 +1300,17 @@ class PostgresMemoryRepository(MemoryRepository):
     async def delete(self, memory_id, *, actor_client_id=None):
         async with self.pool.acquire() as con:
             async with con.transaction():
-                res = await con.execute(
-                    "DELETE FROM memories WHERE id = $1", memory_id
+                row = await con.fetchrow(
+                    "DELETE FROM memories WHERE id = $1 RETURNING scope_tags", memory_id
                 )
-                if res != "DELETE 1":
+                if row is None:
                     return False
                 await con.execute(
-                    "INSERT INTO change_log (memory_id, op, actor_client_id)"
-                    " VALUES ($1, 'delete', $2)",
-                    memory_id, actor_client_id,
+                    "INSERT INTO change_log (memory_id, op, actor_client_id, scope_tags)"
+                    " VALUES ($1, 'delete', $2, $3)",
+                    memory_id,
+                    actor_client_id,
+                    list(row["scope_tags"]),
                 )
         return True
 
@@ -1200,7 +1320,9 @@ class PostgresMemoryRepository(MemoryRepository):
                 "INSERT INTO change_log (memory_id, op, actor_client_id)"
                 " VALUES ($1, $2, $3)"
                 " RETURNING seq, memory_id, op, actor_client_id, at",
-                memory_id, op, actor_client_id,
+                memory_id,
+                op,
+                actor_client_id,
             )
         return {
             "seq": row["seq"],
@@ -1213,14 +1335,13 @@ class PostgresMemoryRepository(MemoryRepository):
     async def get_changes(self, since, limit):
         async with self.pool.acquire() as con:
             rows = await con.fetch(
-                "SELECT seq, memory_id, op, actor_client_id, at"
+                "SELECT seq, memory_id, op, actor_client_id, at, scope_tags"
                 " FROM change_log WHERE seq > $1"
                 " ORDER BY seq ASC LIMIT $2",
-                since, limit,
+                since,
+                limit,
             )
-            head = await con.fetchval(
-                "SELECT COALESCE(MAX(seq), 0) FROM change_log"
-            )
+            head = await con.fetchval("SELECT COALESCE(MAX(seq), 0) FROM change_log")
         changes = [
             {
                 "seq": r["seq"],
@@ -1228,6 +1349,7 @@ class PostgresMemoryRepository(MemoryRepository):
                 "op": r["op"],
                 "actor_client_id": r["actor_client_id"],
                 "at": r["at"],
+                "scope_tags": list(r["scope_tags"]) if r["scope_tags"] is not None else None,
             }
             for r in rows
         ]
@@ -1243,7 +1365,8 @@ class PostgresMemoryRepository(MemoryRepository):
                 DO UPDATE SET cursor = EXCLUDED.cursor, last_seen = now()
                 RETURNING adapter_id, cursor, last_seen
                 """,
-                adapter_id, int(cursor),
+                adapter_id,
+                int(cursor),
             )
         return {
             "adapter_id": row["adapter_id"],
@@ -1254,8 +1377,7 @@ class PostgresMemoryRepository(MemoryRepository):
     async def list_cursors(self):
         async with self.pool.acquire() as con:
             rows = await con.fetch(
-                "SELECT adapter_id, cursor, last_seen FROM sync_cursors"
-                " ORDER BY adapter_id"
+                "SELECT adapter_id, cursor, last_seen FROM sync_cursors ORDER BY adapter_id"
             )
         return [
             {
@@ -1274,12 +1396,20 @@ class PostgresMemoryRepository(MemoryRepository):
                 VALUES ($1, $2, $3, $4, $5)
                 RETURNING id, client_id, action, memory_ids, scopes_used, meta, created_at
                 """,
-                client_id, action, list(memory_ids), list(scopes_used), _json(meta or {}),
+                client_id,
+                action,
+                list(memory_ids),
+                list(scopes_used),
+                _json(meta or {}),
             )
         return AuditRecord(
-            id=row["id"], client_id=row["client_id"], action=row["action"],
-            memory_ids=list(row["memory_ids"]), scopes_used=list(row["scopes_used"]),
-            meta=dict(row["meta"]), created_at=row["created_at"],
+            id=row["id"],
+            client_id=row["client_id"],
+            action=row["action"],
+            memory_ids=list(row["memory_ids"]),
+            scopes_used=list(row["scopes_used"]),
+            meta=json_object(row["meta"]),
+            created_at=row["created_at"],
         )
 
     async def audit_list(
@@ -1290,23 +1420,28 @@ class PostgresMemoryRepository(MemoryRepository):
     ):
         clauses, args = [], []
         if client_id is not None:
-            clauses.append(f"client_id = ${len(args)+1}")
+            clauses.append(f"client_id = ${len(args) + 1}")
             args.append(client_id)
         if since is not None:
-            clauses.append(f"created_at >= ${len(args)+1}")
+            clauses.append(f"created_at >= ${len(args) + 1}")
             args.append(since)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         async with self.pool.acquire() as con:
             rows = await con.fetch(
                 "SELECT id, client_id, action, memory_ids, scopes_used, meta, created_at"
-                f" FROM audit_log {where} ORDER BY created_at DESC LIMIT ${len(args)+1}",
-                *args, limit,
+                f" FROM audit_log {where} ORDER BY created_at DESC LIMIT ${len(args) + 1}",
+                *args,
+                limit,
             )
         return [
             AuditRecord(
-                id=r["id"], client_id=r["client_id"], action=r["action"],
-                memory_ids=list(r["memory_ids"]), scopes_used=list(r["scopes_used"]),
-                meta=dict(r["meta"]), created_at=r["created_at"],
+                id=r["id"],
+                client_id=r["client_id"],
+                action=r["action"],
+                memory_ids=list(r["memory_ids"]),
+                scopes_used=list(r["scopes_used"]),
+                meta=json_object(r["meta"]),
+                created_at=r["created_at"],
             )
             for r in rows
         ]

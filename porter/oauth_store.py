@@ -11,33 +11,35 @@ Token model (PRD §10.2, §12):
   `tokens.token_hash`. Presenting the raw value is the only way to use it.
 - Authorization codes are opaque; only sha256(code) is stored in `auth_codes`.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Sequence
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @dataclass
 class ClientRecord:
     id: UUID
     name: str
-    client_id: str          # public OAuth client_id, e.g. "porter_..."
-    secret_hash: str        # argon2 hash; raw secret never persisted
+    client_id: str  # public OAuth client_id, e.g. "porter_..."
+    secret_hash: str  # argon2 hash; raw secret never persisted
     redirect_uris: list[str]
     created_at: datetime
 
 
 @dataclass
 class AuthCodeRecord:
-    code_hash: str          # sha256(code)
-    client_id: UUID         # FK -> clients.id
+    code_hash: str  # sha256(code)
+    client_id: UUID  # FK -> clients.id
     scopes: list[str]
     redirect_uri: str
     expires_at: datetime
@@ -48,12 +50,12 @@ class AuthCodeRecord:
 @dataclass
 class TokenRecord:
     jti: UUID
-    client_id: UUID         # FK -> clients.id
+    client_id: UUID  # FK -> clients.id
     scopes: list[str]
     issued_at: datetime
     expires_at: datetime
     revoked: bool
-    token_hash: str | None = None   # sha256(refresh token), NULL for access rows
+    token_hash: str | None = None  # sha256(refresh token), NULL for access rows
     refresh_of: UUID | None = None  # chain link for rotation / reuse detection
 
 
@@ -79,7 +81,11 @@ class OAuthStore(ABC):
     # ------------------------------------------------------------ clients
     @abstractmethod
     async def create_client(
-        self, *, name: str, client_id: str, secret_hash: str,
+        self,
+        *,
+        name: str,
+        client_id: str,
+        secret_hash: str,
         redirect_uris: Sequence[str],
     ) -> ClientRecord: ...
 
@@ -98,8 +104,13 @@ class OAuthStore(ABC):
     # ------------------------------------------------------------ auth codes
     @abstractmethod
     async def create_auth_code(
-        self, *, code_hash: str, client_id: UUID, scopes: Sequence[str],
-        redirect_uri: str, expires_at: datetime,
+        self,
+        *,
+        code_hash: str,
+        client_id: UUID,
+        scopes: Sequence[str],
+        redirect_uri: str,
+        expires_at: datetime,
     ) -> None: ...
 
     @abstractmethod
@@ -109,8 +120,13 @@ class OAuthStore(ABC):
     # ------------------------------------------------------------ tokens
     @abstractmethod
     async def create_token(
-        self, *, jti: UUID, client_id: UUID, scopes: Sequence[str],
-        expires_at: datetime, token_hash: str | None = None,
+        self,
+        *,
+        jti: UUID,
+        client_id: UUID,
+        scopes: Sequence[str],
+        expires_at: datetime,
+        token_hash: str | None = None,
         refresh_of: UUID | None = None,
     ) -> None: ...
 
@@ -138,7 +154,11 @@ class OAuthStore(ABC):
     # ------------------------------------------------------------ shares (P2, memory.share)
     @abstractmethod
     async def create_share(
-        self, *, name: str, scopes: Sequence[str], expires_at: datetime,
+        self,
+        *,
+        name: str,
+        scopes: Sequence[str],
+        expires_at: datetime,
     ) -> ShareRecord:
         """Mint share metadata. The JWT is minted by the caller
         (oauth.mint_share_token) and is never stored."""
@@ -158,7 +178,10 @@ class OAuthStore(ABC):
     # ------------------------------------------------------------ grants
     @abstractmethod
     async def create_grant(
-        self, *, client_id: UUID, scopes: Sequence[str],
+        self,
+        *,
+        client_id: UUID,
+        scopes: Sequence[str],
         expires_at: datetime | None = None,
     ) -> None: ...
 
@@ -179,21 +202,25 @@ class OAuthStore(ABC):
 # ================================================================ in-memory
 class InMemoryOAuthStore(OAuthStore):
     def __init__(self) -> None:
-        self._clients: dict[str, ClientRecord] = {}          # by client_id
+        self._clients: dict[str, ClientRecord] = {}  # by client_id
         self._clients_by_id: dict[UUID, ClientRecord] = {}
-        self._codes: dict[str, AuthCodeRecord] = {}           # by code_hash
-        self._tokens: dict[UUID, TokenRecord] = {}            # by jti
-        self._tokens_by_hash: dict[str, TokenRecord] = {}    # by token_hash
+        self._codes: dict[str, AuthCodeRecord] = {}  # by code_hash
+        self._tokens: dict[UUID, TokenRecord] = {}  # by jti
+        self._tokens_by_hash: dict[str, TokenRecord] = {}  # by token_hash
         self._grants: list[dict[str, Any]] = []
-        self._custom_tags: dict[str, str] = {}                # tag -> label
-        self._shares: dict[UUID, ShareRecord] = {}            # by id (= JWT jti)
+        self._custom_tags: dict[str, str] = {}  # tag -> label
+        self._shares: dict[UUID, ShareRecord] = {}  # by id (= JWT jti)
 
     async def create_client(self, *, name, client_id, secret_hash, redirect_uris):
         if client_id in self._clients:
             raise ValueError(f"client_id {client_id} already exists")
         rec = ClientRecord(
-            id=uuid4(), name=name, client_id=client_id, secret_hash=secret_hash,
-            redirect_uris=list(redirect_uris), created_at=_now(),
+            id=uuid4(),
+            name=name,
+            client_id=client_id,
+            secret_hash=secret_hash,
+            redirect_uris=list(redirect_uris),
+            created_at=_now(),
         )
         self._clients[client_id] = rec
         self._clients_by_id[rec.id] = rec
@@ -213,8 +240,12 @@ class InMemoryOAuthStore(OAuthStore):
 
     async def create_auth_code(self, *, code_hash, client_id, scopes, redirect_uri, expires_at):
         self._codes[code_hash] = AuthCodeRecord(
-            code_hash=code_hash, client_id=client_id, scopes=list(scopes),
-            redirect_uri=redirect_uri, expires_at=expires_at, used=False,
+            code_hash=code_hash,
+            client_id=client_id,
+            scopes=list(scopes),
+            redirect_uri=redirect_uri,
+            expires_at=expires_at,
+            used=False,
             created_at=_now(),
         )
 
@@ -225,12 +256,18 @@ class InMemoryOAuthStore(OAuthStore):
         rec.used = True  # single-threaded test impl; Postgres uses UPDATE...RETURNING
         return rec
 
-    async def create_token(self, *, jti, client_id, scopes, expires_at,
-                           token_hash=None, refresh_of=None):
+    async def create_token(
+        self, *, jti, client_id, scopes, expires_at, token_hash=None, refresh_of=None
+    ):
         rec = TokenRecord(
-            jti=jti, client_id=client_id, scopes=list(scopes),
-            issued_at=_now(), expires_at=expires_at, revoked=False,
-            token_hash=token_hash, refresh_of=refresh_of,
+            jti=jti,
+            client_id=client_id,
+            scopes=list(scopes),
+            issued_at=_now(),
+            expires_at=expires_at,
+            revoked=False,
+            token_hash=token_hash,
+            refresh_of=refresh_of,
         )
         self._tokens[jti] = rec
         if token_hash:
@@ -262,22 +299,21 @@ class InMemoryOAuthStore(OAuthStore):
         return n
 
     async def list_revoked_jtis(self, since):
-        return [
-            t.jti for t in self._tokens.values()
-            if t.revoked and t.issued_at >= since
-        ]
+        return [t.jti for t in self._tokens.values() if t.revoked and t.issued_at >= since]
 
     async def create_grant(self, *, client_id, scopes, expires_at=None):
-        self._grants.append({
-            "client_id": client_id, "scopes": list(scopes),
-            "expires_at": expires_at, "issued_at": _now(), "revoked": False,
-        })
+        self._grants.append(
+            {
+                "client_id": client_id,
+                "scopes": list(scopes),
+                "expires_at": expires_at,
+                "issued_at": _now(),
+                "revoked": False,
+            }
+        )
 
     async def list_custom_tags(self):
-        return [
-            {"tag": t, "label": self._custom_tags[t]}
-            for t in sorted(self._custom_tags)
-        ]
+        return [{"tag": t, "label": self._custom_tags[t]} for t in sorted(self._custom_tags)]
 
     async def add_custom_tag(self, *, tag, label):
         self._custom_tags[tag] = label
@@ -287,8 +323,12 @@ class InMemoryOAuthStore(OAuthStore):
 
     async def create_share(self, *, name, scopes, expires_at):
         rec = ShareRecord(
-            id=uuid4(), name=name, scopes=list(scopes),
-            created_at=_now(), expires_at=expires_at, revoked=False,
+            id=uuid4(),
+            name=name,
+            scopes=list(scopes),
+            created_at=_now(),
+            expires_at=expires_at,
+            revoked=False,
         )
         self._shares[rec.id] = rec
         return rec
@@ -297,9 +337,7 @@ class InMemoryOAuthStore(OAuthStore):
         return self._shares.get(jti)
 
     async def list_shares(self):
-        return sorted(
-            self._shares.values(), key=lambda s: s.created_at, reverse=True
-        )
+        return sorted(self._shares.values(), key=lambda s: s.created_at, reverse=True)
 
     async def revoke_share(self, jti):
         rec = self._shares.get(jti)
@@ -310,9 +348,13 @@ class InMemoryOAuthStore(OAuthStore):
 # ================================================================ postgres
 def _token_row(r: Any) -> TokenRecord:
     return TokenRecord(
-        jti=r["jti"], client_id=r["client_id"], scopes=list(r["scopes"] or []),
-        issued_at=r["issued_at"], expires_at=r["expires_at"],
-        revoked=bool(r["revoked"]), token_hash=r["token_hash"],
+        jti=r["jti"],
+        client_id=r["client_id"],
+        scopes=list(r["scopes"] or []),
+        issued_at=r["issued_at"],
+        expires_at=r["expires_at"],
+        revoked=bool(r["revoked"]),
+        token_hash=r["token_hash"],
         refresh_of=r["refresh_of"],
     )
 
@@ -331,11 +373,17 @@ class PostgresOAuthStore(OAuthStore):
                 VALUES ($1, $2, $3, $4)
                 RETURNING id, name, client_id, secret_hash, redirect_uris, created_at
                 """,
-                name, client_id, secret_hash, list(redirect_uris),
+                name,
+                client_id,
+                secret_hash,
+                list(redirect_uris),
             )
         return ClientRecord(
-            id=row["id"], name=row["name"], client_id=row["client_id"],
-            secret_hash=row["secret_hash"], redirect_uris=list(row["redirect_uris"] or []),
+            id=row["id"],
+            name=row["name"],
+            client_id=row["client_id"],
+            secret_hash=row["secret_hash"],
+            redirect_uris=list(row["redirect_uris"] or []),
             created_at=row["created_at"],
         )
 
@@ -348,12 +396,15 @@ class PostgresOAuthStore(OAuthStore):
             )
         return (
             ClientRecord(
-                id=row["id"], name=row["name"], client_id=row["client_id"],
+                id=row["id"],
+                name=row["name"],
+                client_id=row["client_id"],
                 secret_hash=row["secret_hash"],
                 redirect_uris=list(row["redirect_uris"] or []),
                 created_at=row["created_at"],
             )
-            if row else None
+            if row
+            else None
         )
 
     async def get_client_by_id(self, id):
@@ -365,12 +416,15 @@ class PostgresOAuthStore(OAuthStore):
             )
         return (
             ClientRecord(
-                id=row["id"], name=row["name"], client_id=row["client_id"],
+                id=row["id"],
+                name=row["name"],
+                client_id=row["client_id"],
                 secret_hash=row["secret_hash"],
                 redirect_uris=list(row["redirect_uris"] or []),
                 created_at=row["created_at"],
             )
-            if row else None
+            if row
+            else None
         )
 
     async def count_clients(self):
@@ -385,7 +439,9 @@ class PostgresOAuthStore(OAuthStore):
             )
         return [
             ClientRecord(
-                id=r["id"], name=r["name"], client_id=r["client_id"],
+                id=r["id"],
+                name=r["name"],
+                client_id=r["client_id"],
                 secret_hash=r["secret_hash"],
                 redirect_uris=list(r["redirect_uris"] or []),
                 created_at=r["created_at"],
@@ -400,7 +456,11 @@ class PostgresOAuthStore(OAuthStore):
                 INSERT INTO auth_codes (code_hash, client_id, scopes, redirect_uri, expires_at)
                 VALUES ($1, $2, $3, $4, $5)
                 """,
-                code_hash, client_id, list(scopes), redirect_uri, expires_at,
+                code_hash,
+                client_id,
+                list(scopes),
+                redirect_uri,
+                expires_at,
             )
 
     async def consume_auth_code(self, code_hash):
@@ -418,20 +478,30 @@ class PostgresOAuthStore(OAuthStore):
         if row is None:
             return None
         return AuthCodeRecord(
-            code_hash=row["code_hash"], client_id=row["client_id"],
-            scopes=list(row["scopes"] or []), redirect_uri=row["redirect_uri"],
-            expires_at=row["expires_at"], used=True, created_at=row["created_at"],
+            code_hash=row["code_hash"],
+            client_id=row["client_id"],
+            scopes=list(row["scopes"] or []),
+            redirect_uri=row["redirect_uri"],
+            expires_at=row["expires_at"],
+            used=True,
+            created_at=row["created_at"],
         )
 
-    async def create_token(self, *, jti, client_id, scopes, expires_at,
-                           token_hash=None, refresh_of=None):
+    async def create_token(
+        self, *, jti, client_id, scopes, expires_at, token_hash=None, refresh_of=None
+    ):
         async with self.pool.acquire() as con:
             await con.execute(
                 """
                 INSERT INTO tokens (jti, client_id, scopes, expires_at, token_hash, refresh_of)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 """,
-                jti, client_id, list(scopes), expires_at, token_hash, refresh_of,
+                jti,
+                client_id,
+                list(scopes),
+                expires_at,
+                token_hash,
+                refresh_of,
             )
 
     async def get_token(self, jti):
@@ -490,14 +560,14 @@ class PostgresOAuthStore(OAuthStore):
         async with self.pool.acquire() as con:
             await con.execute(
                 "INSERT INTO grants (client_id, scopes, expires_at) VALUES ($1, $2, $3)",
-                client_id, list(scopes), expires_at,
+                client_id,
+                list(scopes),
+                expires_at,
             )
 
     async def list_custom_tags(self):
         async with self.pool.acquire() as con:
-            rows = await con.fetch(
-                "SELECT tag, label FROM custom_tags ORDER BY tag"
-            )
+            rows = await con.fetch("SELECT tag, label FROM custom_tags ORDER BY tag")
         return [{"tag": r["tag"], "label": r["label"]} for r in rows]
 
     async def add_custom_tag(self, *, tag, label):
@@ -507,7 +577,8 @@ class PostgresOAuthStore(OAuthStore):
                 INSERT INTO custom_tags (tag, label) VALUES ($1, $2)
                 ON CONFLICT (tag) DO UPDATE SET label = EXCLUDED.label
                 """,
-                tag, label,
+                tag,
+                label,
             )
 
     async def remove_custom_tag(self, tag):
@@ -519,8 +590,11 @@ class PostgresOAuthStore(OAuthStore):
     @staticmethod
     def _share_row(r: Any) -> ShareRecord:
         return ShareRecord(
-            id=r["id"], name=r["name"], scopes=list(r["scopes"] or []),
-            created_at=r["created_at"], expires_at=r["expires_at"],
+            id=r["id"],
+            name=r["name"],
+            scopes=list(r["scopes"] or []),
+            created_at=r["created_at"],
+            expires_at=r["expires_at"],
             revoked=bool(r["revoked"]),
         )
 
@@ -532,7 +606,9 @@ class PostgresOAuthStore(OAuthStore):
                 VALUES ($1, $2, $3)
                 RETURNING id, name, scopes, created_at, expires_at, revoked
                 """,
-                name, list(scopes), expires_at,
+                name,
+                list(scopes),
+                expires_at,
             )
         return self._share_row(row)
 
@@ -555,6 +631,4 @@ class PostgresOAuthStore(OAuthStore):
 
     async def revoke_share(self, jti):
         async with self.pool.acquire() as con:
-            await con.execute(
-                "UPDATE shares SET revoked = TRUE WHERE id = $1", jti
-            )
+            await con.execute("UPDATE shares SET revoked = TRUE WHERE id = $1", jti)

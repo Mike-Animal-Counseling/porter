@@ -2,11 +2,10 @@
 
 # Security Policy — Porter v0.1.0
 
-Porter stores your personal AI memories. Security is a first-class
-requirement, not a backlog item: every build phase (W1, W2, panel, MCP)
-was followed by an adversarial code + security review against the threat
-model below, and all P0/P1 findings were fixed before release
-(see CHANGELOG.md).
+Porter stores your personal AI memories. Its scope enforcement, owner
+access, audit trail and snapshot cryptography are covered by regression
+tests. This policy describes the implementation and remaining deployment
+verification needs; it is not a certification of a production deployment.
 
 ## Threat model (PRD §14) and mitigations as implemented
 
@@ -22,8 +21,11 @@ model below, and all P0/P1 findings were fixed before release
 
 ## Trust assumptions (read before deploying)
 
-1. **Network access ≈ owner (v1).** The consent screen and panel have no
-   login in v0.1.0. The server **binds `127.0.0.1` by default** and the
+1. **Owner access.** Native loopback connections are trusted. Container
+   gateway browsers unlock with `PORTER_SETUP_TOKEN` at `/owner/login`;
+   the signed HttpOnly session lasts 12 hours and protects the panel and
+   OAuth consent. Forwarded headers cannot grant owner access. The server
+   **binds `127.0.0.1` by default** and the
    very first client registration requires a one-time setup token
    (`X-Porter-Setup-Token`, auto-generated per process unless
    `PORTER_SETUP_TOKEN` is set). Do not expose the API port to an
@@ -37,35 +39,50 @@ model below, and all P0/P1 findings were fixed before release
    local.
 4. **Rate limiter is per-process.** Multi-worker deployments need a
    shared store (Redis) — P2.
+5. **HTTP host trust.** Exact allowed hosts default to localhost, 127.0.0.1
+   and [::1]. The host gate precedes owner/auth middleware. Custom domains
+   require an owner session even through a loopback reverse proxy. For TLS
+   termination, set `PORTER_PUBLIC_ORIGIN` and preserve Host; bundled server
+   commands disable forwarded-header trust. Malformed origins fail closed.
+6. **Configuration must be explicit.** Invalid boolean flags and repository
+   modes fail startup; `AUTH_ENABLED=true` keeps authentication enabled on
+   both HTTP and stdio transports. Use `0` only for local development.
+7. **Prefer HTTP for clients.** A Streamable HTTP client needs only its own
+   scoped access token. The stdio/Postgres templates need direct database
+   access and the server signing secret; use them only inside the same
+   trusted machine. Do not copy those credentials into an untrusted harness.
 
 ## What was verified vs. explicit residual gaps
 
-**Verified in this environment** (89/89 tests + adversarial probes):
+**Covered by automated regression tests** (latest results in README):
 scope fail-closed behavior, JWT tampering/replay rejection, revocation
 immediacy, refresh-reuse mass-revoke, rate-limit bypass closure,
-audit append-only (in-memory mirror + trigger SQL inspection),
+audit append-only (in-memory and real Postgres trigger rejection),
 true-delete (row + vector gone, audit content-free), snapshot
 signature verification, importer read-only behavior.
 
-**NOT verified here — must be verified in CI / on first real deploy:**
-- Migration SQL (`001`–`003`) and the audit trigger against a real
-  `pgvector/pg16` Postgres (no Docker in the build environment; SQL
-  validated with a parser + trigger logic mirrored in tests).
-- BGE-M3 embedding quality/latency (build VM has <300 MB free RAM;
-  interface + HTTP plumbing tested, model download deferred to Docker).
+**Also verified locally on 2026-10-18:** all eleven migrations applied twice
+to a fresh real Postgres/pgvector database; concurrent sync commit ordering;
+Docker boot and persistence across API recreation; real BGE-M3 CPU inference;
+OAuth consent, independent HTTP/stdio MCP clients, encrypted snapshots and
+immediate revocation. The small embedding evaluation is recorded in
+`docs/embedding-eval.2026-10-18.json`; it does not certify general model quality.
+
+**Residual gaps:**
 - Real harness handshakes (Codex/Zed/Cursor configs are written to the
   MCP spec but untested against the actual CLIs).
-- `docker compose up` end-to-end (compose YAML validated, Dockerfiles
-  reviewed, not executed here).
+- Visual browser acceptance and real user memory imports (fixture imports pass).
+- Optional ML triage latency/quality and additional embedding models.
 
 ## Reporting a vulnerability
 
 This is a personal self-hosted project. If you find a security issue:
 
 - **Do not** open a public issue with exploit details.
-- Contact: `[security contact — maintainer to fill in]` with a
-  description and, if possible, a minimal reproduction.
-- Aim: acknowledge within 7 days; fix + release + CHANGELOG entry.
+- Use [GitHub private vulnerability reporting](https://github.com/Mike-Animal-Counseling/porter/security/advisories/new)
+  if the maintainer has enabled it. If unavailable, request a private reporting
+  channel from the maintainer without publishing sensitive details. No dedicated
+  security mailbox or response-time guarantee is currently established.
 
 ## Hardening checklist for operators (see DEPLOY.md)
 

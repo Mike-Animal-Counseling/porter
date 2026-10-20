@@ -4,6 +4,7 @@ Uses stub models throughout — no transformers/torch needed on this VM.
 The real zero-shot/finetuned models are exercised on real hardware via
 scripts/triage_label_batch.py and scripts/finetune_triage.py.
 """
+
 import asyncio
 import importlib.util
 import json
@@ -12,7 +13,8 @@ import time
 
 import pytest
 
-from porter import triage, triage_model as tm
+from porter import triage
+from porter import triage_model as tm
 from porter.config import settings
 from porter.embeddings import HashEmbedder
 from porter.repositories import InMemoryMemoryRepository
@@ -46,8 +48,9 @@ class StubTriageModel(BaseTriageModel):
         for needle, scores in self.canned.items():
             if needle in text:
                 cats.update(scores)
-        return TriageScore(sensitive=bool(cats), categories=cats,
-                           latency_ms=1.0, backend=self._backend)
+        return TriageScore(
+            sensitive=bool(cats), categories=cats, latency_ms=1.0, backend=self._backend
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -70,11 +73,11 @@ async def _write(repo, content, model=None, **kw):
     kw.setdefault("source", {"via": "test"})
     if model is not None:
         import porter.triage_model as _tmm
+
         _orig = _tmm.get_triage_model
         _tmm.get_triage_model = lambda: model
         try:
-            return await triage.create_with_triage(
-                repo, content=content, via="test", **kw)
+            return await triage.create_with_triage(repo, content=content, via="test", **kw)
         finally:
             _tmm.get_triage_model = _orig
     return await triage.create_with_triage(repo, content=content, via="test", **kw)
@@ -140,15 +143,17 @@ def test_resolve_auto_priority(monkeypatch):
 
 def test_finetuned_missing_path_errors_clearly(tmp_path):
     with pytest.raises(RuntimeError, match="no model at"):
-        build_triage_model("finetuned",
-                           model_path=str(tmp_path / "does-not-exist"))
+        build_triage_model("finetuned", model_path=str(tmp_path / "does-not-exist"))
 
 
 # ------------------------------------------------------- decide() ML signal
 def test_decide_ml_categories_queue():
     d = triage.decide(
-        content="I prefer dark mode", scope_tags=["general"],
-        confidence=0.9, encrypted=False, similar=[],
+        content="I prefer dark mode",
+        scope_tags=["general"],
+        confidence=0.9,
+        encrypted=False,
+        similar=[],
         ml_categories=["health"],
     )
     assert d.action == "queue"
@@ -160,8 +165,10 @@ def test_decide_ml_blocks_auto_merge():
 
     target = uuid4()
     d = triage.decide(
-        content="I prefer dark mode", scope_tags=["general"],
-        confidence=0.9, encrypted=False,
+        content="I prefer dark mode",
+        scope_tags=["general"],
+        confidence=0.9,
+        encrypted=False,
         similar=[(target, 0.99)],
         ml_categories=["finance"],
     )
@@ -172,8 +179,11 @@ def test_decide_ml_blocks_auto_merge():
 # ------------------------------------------------------- two-domain rules
 def test_decide_personal_domain_queues():
     d = triage.decide(
-        content="I prefer dark mode", scope_tags=["general"],
-        confidence=0.9, encrypted=False, similar=[],
+        content="I prefer dark mode",
+        scope_tags=["general"],
+        confidence=0.9,
+        encrypted=False,
+        similar=[],
         domain="personal",
     )
     assert d.action == "queue"
@@ -182,8 +192,11 @@ def test_decide_personal_domain_queues():
 
 def test_decide_project_domain_auto_approves_with_tag():
     d = triage.decide(
-        content="Repo uses Ruff for linting", scope_tags=["project:porter"],
-        confidence=0.9, encrypted=False, similar=[],
+        content="Repo uses Ruff for linting",
+        scope_tags=["project:porter"],
+        confidence=0.9,
+        encrypted=False,
+        similar=[],
         domain="project",
     )
     assert d.action == "auto_approve"
@@ -191,8 +204,11 @@ def test_decide_project_domain_auto_approves_with_tag():
 
 def test_decide_project_domain_needs_project_tag():
     d = triage.decide(
-        content="Repo uses Ruff for linting", scope_tags=["general"],
-        confidence=0.9, encrypted=False, similar=[],
+        content="Repo uses Ruff for linting",
+        scope_tags=["general"],
+        confidence=0.9,
+        encrypted=False,
+        similar=[],
         domain="project",
     )
     assert d.action == "queue"
@@ -205,8 +221,10 @@ def test_decide_project_conflict_is_per_project():
     a, b = uuid4(), uuid4()
     # Same project tag, conflict band -> side-by-side queue.
     d = triage.decide(
-        content="Use Ruff for linting", scope_tags=["project:porter"],
-        confidence=0.9, encrypted=False,
+        content="Use Ruff for linting",
+        scope_tags=["project:porter"],
+        confidence=0.9,
+        encrypted=False,
         similar=[(a, 0.80, ["project:porter"])],
         domain="project",
     )
@@ -214,8 +232,10 @@ def test_decide_project_conflict_is_per_project():
     assert "possible_conflict" in d.reasons
     # Same similarity but a DIFFERENT project tag -> not a conflict.
     d = triage.decide(
-        content="Use Ruff for linting", scope_tags=["project:porter"],
-        confidence=0.9, encrypted=False,
+        content="Use Ruff for linting",
+        scope_tags=["project:porter"],
+        confidence=0.9,
+        encrypted=False,
         similar=[(b, 0.80, ["project:other"])],
         domain="project",
     )
@@ -224,8 +244,11 @@ def test_decide_project_conflict_is_per_project():
 
 def test_decide_unknown_domain_auto_approve_eligible():
     d = triage.decide(
-        content="the sky is blue today", scope_tags=["general"],
-        confidence=0.9, encrypted=False, similar=[],
+        content="the sky is blue today",
+        scope_tags=["general"],
+        confidence=0.9,
+        encrypted=False,
+        similar=[],
         domain="unknown",
     )
     assert d.action == "auto_approve"
@@ -252,29 +275,44 @@ def test_heuristic_domain_broad_project():
 def test_explicit_project_type_end_to_end():
     """create_with_triage honors an explicit project domain; the ML
     second opinion can only ever pull toward personal, never away."""
+
     async def _go():
         repo = _repo()
         # untagged project write queues on first pass...
         rec, d = await triage.create_with_triage(
-            repo, content="Repo uses Ruff", type="project",
-            scope_tags=["general"], confidence=0.9,
-            source={"via": "test"}, via="test")
+            repo,
+            content="Repo uses Ruff",
+            type="project",
+            scope_tags=["general"],
+            confidence=0.9,
+            source={"via": "test"},
+            via="test",
+        )
         assert d.action == "queue"
         assert "missing_project_scope" in d.reasons
         # ...and a tagged one auto-approves (ML disabled -> unknown).
         rec2, d2 = await triage.create_with_triage(
-            repo, content="Repo uses Ruff for lint", type="project",
-            scope_tags=["project:porter"], confidence=0.9,
-            source={"via": "test"}, via="test")
+            repo,
+            content="Repo uses Ruff for lint",
+            type="project",
+            scope_tags=["project:porter"],
+            confidence=0.9,
+            source={"via": "test"},
+            via="test",
+        )
         assert d2.action == "auto_approve"
         assert rec2.status == "active"
+
     _run(_go())
 
 
 def test_v1_preference_maps_to_personal():
     d = triage.decide(
-        content="I prefer dark mode", scope_tags=["general"],
-        confidence=0.9, encrypted=False, similar=[],
+        content="I prefer dark mode",
+        scope_tags=["general"],
+        confidence=0.9,
+        encrypted=False,
+        similar=[],
         domain=triage.OLD_TYPE_TO_NEW["preference"],
     )
     assert d.action == "queue"
@@ -294,12 +332,14 @@ def test_ml_second_opinion_queues_rule_passed_write():
         audits = await repo.audit_list()
         m = next(a for a in audits if rec.id in a.memory_ids)
         assert m.meta["triage_model"]["backend"] == "stub"
+
     _run(_go())
 
 
 def test_rules_prefilter_skips_model():
     """Rules are the fast pre-filter: an already-queued write never pays
     model latency."""
+
     async def _go():
         repo = _repo()
         model = StubTriageModel({"anything": {"health": 0.99}})
@@ -307,18 +347,21 @@ def test_rules_prefilter_skips_model():
         assert d.action == "queue"
         assert "sensitive_tag" in d.reasons
         assert model.calls == 0
+
     _run(_go())
 
 
 def test_model_missing_falls_back_to_rules(monkeypatch):
     """PORTER_TRIAGE_MODEL=auto with no transformers -> heuristic path,
     writes still work."""
+
     async def _go():
         monkeypatch.setattr(tm, "zeroshot_importable", lambda: False)
         monkeypatch.setattr(tm, "_finetuned_path_exists", lambda: False)
         repo = _repo()
         rec, d = await _write(repo, "I prefer dark mode")
         assert d.action == "auto_approve"
+
     _run(_go())
 
 
@@ -332,6 +375,7 @@ def test_slow_model_timeout_falls_back_and_audits(monkeypatch):
         audits = await repo.audit_list()
         m = next(a for a in audits if rec.id in a.memory_ids)
         assert m.meta["triage_model"]["fallback"] == "timeout"
+
     _run(_go())
 
 
@@ -339,11 +383,11 @@ def test_e2ee_never_reaches_model():
     async def _go():
         repo = _repo()
         model = StubTriageModel({"x": {"health": 0.99}})
-        rec, d = await _write(repo, "ciphertext-blob", model=model,
-                              encrypted=True, key_id="k1")
+        rec, d = await _write(repo, "ciphertext-blob", model=model, encrypted=True, key_id="k1")
         assert d.action == "queue"
         assert d.reasons == ["encrypted"]
         assert model.calls == 0
+
     _run(_go())
 
 
@@ -358,6 +402,7 @@ def test_threshold_edge_deterministic():
             model = StubTriageModel({text: {"health": score_val}})
             rec, d = await _write(repo, f"note about {text}", model=model)
             assert (d.action == "queue") == queued, text
+
     _run(_go())
 
 
@@ -384,18 +429,17 @@ def test_cached_score_never_raises():
 def test_probe_paraphrase_rules_catch_zh():
     """Rules catch what they know; the model is the backstop for the rest."""
     # rules know this one (pattern)
-    d = triage.decide(content="我对花生过敏", scope_tags=["general"],
-                      confidence=0.9, encrypted=False, similar=[])
+    d = triage.decide(
+        content="我对花生过敏", scope_tags=["general"], confidence=0.9, encrypted=False, similar=[]
+    )
     assert d.action == "queue" and "sensitive_content" in d.reasons
 
     # rules MISS this paraphrase ("blood sugar"/"A1C" aren't in the
     # patterns); the ML second opinion catches it
     async def _go():
         repo = _repo()
-        model = StubTriageModel({"A1C": {"health": 0.91},
-                                 "blood sugar": {"health": 0.88}})
-        for text in ("my A1C came back at 9.2",
-                     "my blood sugar has been running high"):
+        model = StubTriageModel({"A1C": {"health": 0.91}, "blood sugar": {"health": 0.88}})
+        for text in ("my A1C came back at 9.2", "my blood sugar has been running high"):
             tm.clear_score_cache()
             repo = _repo()
             rec, d = await _write(repo, text, model=model)
@@ -407,6 +451,7 @@ def test_probe_paraphrase_rules_catch_zh():
         model2 = StubTriageModel({})
         rec2, d2 = await _write(repo2, "my A1C came back at 9.2", model=model2)
         assert d2.action == "auto_approve"
+
     _run(_go())
 
 
@@ -415,6 +460,7 @@ def test_probe_domain_evasion_model_backstop():
     domain classifier is the backstop (simulated here with a stub —
     the real zero-shot hypothesis "this text is about an ongoing task,
     decision or work context" covers this class on real hardware)."""
+
     class DomainStub(StubTriageModel):
         def __init__(self, canned, domains):
             super().__init__(canned)
@@ -432,26 +478,26 @@ def test_probe_domain_evasion_model_backstop():
         # heuristic alone: no project signal -> unknown -> would
         # auto-approve (no sensitivity); the model says project.
         text = "still waiting on review feedback for the deploy"
-        assert HeuristicTriageModel().score(text, ["general"]).domain \
-            == "unknown"
+        assert HeuristicTriageModel().score(text, ["general"]).domain == "unknown"
         model = DomainStub({}, {"review feedback": "project"})
         repo = _repo()
-        rec, d = await _write(repo, text, model=model,
-                              scope_tags=["project:porter"])
+        rec, d = await _write(repo, text, model=model, scope_tags=["project:porter"])
         # project + tagged -> auto-approve either way; what matters is the
         # audit trail records the model's domain vote.
         assert d.action == "auto_approve"
         audits = await repo.audit_list()
         m = next(a for a in audits if rec.id in a.memory_ids)
         assert m.meta["triage_model"]["predicted_domain"] == "project"
+
     _run(_go())
 
 
 def test_probe_obfuscated_content_still_queued_by_rules():
     # zero-width / fullwidth smuggling defeated by NFKC normalization
     for sneaky in ("my ｓａｌａｒｙ is 200k", "my sal​ary is 200k"):
-        d = triage.decide(content=sneaky, scope_tags=["general"],
-                          confidence=0.9, encrypted=False, similar=[])
+        d = triage.decide(
+            content=sneaky, scope_tags=["general"], confidence=0.9, encrypted=False, similar=[]
+        )
         assert d.action == "queue", sneaky
 
 
@@ -460,16 +506,16 @@ def test_probe_empty_and_hostile_input():
     for bad in ("", "   ", "\x00", "�" * 5000):
         s = m.score(bad, [])
         assert isinstance(s.sensitive, bool)
-    d = triage.decide(content="", scope_tags=[], confidence=0.9,
-                      encrypted=False, similar=[], ml_categories=[])
+    d = triage.decide(
+        content="", scope_tags=[], confidence=0.9, encrypted=False, similar=[], ml_categories=[]
+    )
     assert d.action in ("auto_approve", "queue")  # schema rejects empty upstream
 
 
 # ------------------------------------------------------- scripts
 def _load_script(name):
     path = os.path.join(os.path.dirname(__file__), "..", "scripts", name)
-    spec = importlib.util.spec_from_file_location(
-        name.replace(".py", ""), path)
+    spec = importlib.util.spec_from_file_location(name.replace(".py", ""), path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -486,12 +532,10 @@ def test_label_batch_output_format(tmp_path):
     lines = out.read_text(encoding="utf-8").strip().split("\n")
     assert len(lines) == 2
     first = json.loads(lines[0])
-    assert set(first.keys()) == {
-        "text", "domain", "project", "sensitivity", "predicted_by"}
+    assert set(first.keys()) == {"text", "domain", "project", "sensitivity", "predicted_by"}
     assert first["domain"] == "personal"  # health -> personal domain
     assert first["project"] is None
-    assert set(first["sensitivity"].keys()) == {
-        "health", "finance", "pii", "credentials"}
+    assert set(first["sensitivity"].keys()) == {"health", "finance", "pii", "credentials"}
     assert all(v in (0, 1) for v in first["sensitivity"].values())
     assert first["sensitivity"]["health"] == 1
     assert first["predicted_by"] == "heuristic"
@@ -504,8 +548,7 @@ def test_label_batch_project_tags(tmp_path):
     lb = _load_script("triage_label_batch.py")
     out = tmp_path / "out.jsonl"
     model = HeuristicTriageModel()
-    n = lb.write_jsonl(
-        [("Repo uses Ruff for linting", ["project:porter"])], str(out), model)
+    n = lb.write_jsonl([("Repo uses Ruff for linting", ["project:porter"])], str(out), model)
     assert n == 1
     first = json.loads(out.read_text(encoding="utf-8").strip())
     assert first["domain"] == "project"
@@ -528,13 +571,18 @@ def test_finetune_arg_parsing_and_dry_run(tmp_path, capsys):
     ]
     with open(inp, "w", encoding="utf-8") as f:
         for text, domain, vec in rows:
-            f.write(json.dumps({
-                "text": text,
-                "domain": domain,
-                "project": None,
-                "sensitivity": dict(zip(
-                    ["health", "finance", "pii", "credentials"], vec)),
-            }, ensure_ascii=False) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "text": text,
+                        "domain": domain,
+                        "project": None,
+                        "sensitivity": dict(zip(["health", "finance", "pii", "credentials"], vec)),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
     out = tmp_path / "model"
     metrics = ft.main(["--input", str(inp), "--output", str(out), "--dry-run"])
     assert metrics["eval_macro_f1"] == 0.5
@@ -551,22 +599,25 @@ def test_finetune_arg_parsing_and_dry_run(tmp_path, capsys):
 def test_finetune_rejects_malformed(tmp_path):
     ft = _load_script("finetune_triage.py")
     bad = tmp_path / "bad.jsonl"
-    bad.write_text('{"text": "x", "domain": "personal"}\n' * 8,
-                   encoding="utf-8")
+    bad.write_text('{"text": "x", "domain": "personal"}\n' * 8, encoding="utf-8")
     with pytest.raises(ValueError, match="sensitivity must be 0/1"):
         ft.load_labeled_jsonl(str(bad))
     bad_domain = tmp_path / "bad_domain.jsonl"
     bad_domain.write_text(
         '{"text": "x", "domain": "task_state", '
         '"sensitivity": {"health": 0, "finance": 0, "pii": 0, '
-        '"credentials": 0}}\n' * 8, encoding="utf-8")
+        '"credentials": 0}}\n' * 8,
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError, match="domain must be one of"):
         ft.load_labeled_jsonl(str(bad_domain))
     few = tmp_path / "few.jsonl"
     few.write_text(
         '{"text": "x", "domain": "personal", '
         '"sensitivity": {"health": 0, "finance": 0, "pii": 0, '
-        '"credentials": 0}}\n', encoding="utf-8")
+        '"credentials": 0}}\n',
+        encoding="utf-8",
+    )
     with pytest.raises(ValueError, match="at least 8"):
         ft.load_labeled_jsonl(str(few))
 

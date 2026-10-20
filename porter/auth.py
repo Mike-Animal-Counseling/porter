@@ -23,11 +23,12 @@ The panel will own client management (documented in README).
 When AUTH_ENABLED=0 the middleware installs an owner context with every
 scope (W1 behavior, local dev only).
 """
+
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 import jwt
@@ -48,8 +49,12 @@ from .schemas import ErrorOut
 ALL_KNOWN_SCOPES = list(oauth_logic.BASE_SCOPES)
 
 PUBLIC_PATHS = {
-    "/healthz", "/docs", "/openapi.json", "/redoc",
-    "/oauth/authorize", "/oauth/token",
+    "/healthz",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/oauth/authorize",
+    "/oauth/token",
 }
 
 
@@ -59,17 +64,21 @@ def _is_mcp_path(path: str) -> bool:
     not even initialize/tools-list. Tool calls re-verify independently
     (defense in depth; stdio has no middleware at all)."""
     return path == "/mcp" or path.startswith("/mcp/")
+
+
 # Path prefixes reachable without a bearer token. The panel (/panel) enforces
-# its own localhost-only gate (see porter/panel.py _panel_owner): it is the
-# owner interface, and main.py binds 127.0.0.1 by default. Defense in depth:
-# even if the port is exposed, non-localhost panel requests get 401.
-PUBLIC_PATH_PREFIXES = ("/panel",)
+# its own owner-session/loopback gate (porter/origin.py): it is the owner
+# interface, and main.py binds 127.0.0.1 by default. Host validation runs
+# outside this middleware before public-path or owner decisions.
+PUBLIC_PATH_PREFIXES = ("/panel", "/owner")
 
 
 def _is_public_path(path: str) -> bool:
     if path in PUBLIC_PATHS:
         return True
     return any(path == p or path.startswith(p + "/") for p in PUBLIC_PATH_PREFIXES)
+
+
 # (method, path) pairs where auth is resolved but not required; the endpoint
 # decides (used by POST /clients bootstrap).
 AUTH_OPTIONAL = {("POST", "/api/v1/clients")}
@@ -77,8 +86,8 @@ AUTH_OPTIONAL = {("POST", "/api/v1/clients")}
 
 @dataclass
 class AuthContext:
-    client_pk: UUID | None   # clients.id; None in owner context (auth disabled)
-    client_id: str           # public client_id string, or "owner"
+    client_pk: UUID | None  # clients.id; None in owner context (auth disabled)
+    client_id: str  # public client_id string, or "owner"
     scopes: list[str]
 
 
@@ -117,9 +126,7 @@ async def _resolve_for_path(request: Request) -> AuthContext | None:
     if _is_public_path(request.url.path):
         return None
     if not request.app.state.auth_enabled:
-        return AuthContext(
-            client_pk=None, client_id="owner", scopes=list(ALL_KNOWN_SCOPES)
-        )
+        return AuthContext(client_pk=None, client_id="owner", scopes=list(ALL_KNOWN_SCOPES))
     return await _resolve_auth(request)  # may be None on AUTH_OPTIONAL
 
 
@@ -145,7 +152,9 @@ async def verify_bearer_token(
     """
     try:
         claims = jwt.decode(
-            token, oauth_logic.jwt_signing_key(), algorithms=["HS256"],
+            token,
+            oauth_logic.jwt_signing_key(),
+            algorithms=["HS256"],
             options={"require": ["exp", "jti", "sub"]},
         )
     except jwt.ExpiredSignatureError:
@@ -175,7 +184,7 @@ async def _resolve_share_identity(
         share = await oauth_store.get_share(UUID(jti))
     except (ValueError, AttributeError, TypeError):
         share = None
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if share is None or share.revoked or share.expires_at <= now:
         raise TokenRevoked("share token has been revoked")
     return AuthContext(
@@ -213,7 +222,9 @@ async def _resolve_auth(request: Request) -> AuthContext | None:
     token = header[7:].strip()
     try:
         claims = jwt.decode(
-            token, oauth_logic.jwt_signing_key(), algorithms=["HS256"],
+            token,
+            oauth_logic.jwt_signing_key(),
+            algorithms=["HS256"],
             options={"require": ["exp", "jti", "sub"]},
         )
     except jwt.ExpiredSignatureError:
@@ -258,11 +269,7 @@ async def auth_middleware(request: Request, call_next):
             raise RateLimited("rate limit exceeded: 60 requests/minute per client")
         if auth_error is not None:
             raise auth_error
-        if (
-            resolved is None
-            and request.app.state.auth_enabled
-            and _is_mcp_path(request.url.path)
-        ):
+        if resolved is None and request.app.state.auth_enabled and _is_mcp_path(request.url.path):
             # /mcp is strict: the sub-app has no FastAPI dependencies, so a
             # missing token must 401 here rather than sailing through to an
             # anonymous initialize/tools-list.
@@ -271,9 +278,7 @@ async def auth_middleware(request: Request, call_next):
     except PorterError as exc:
         return JSONResponse(
             status_code=exc.status_code,
-            content=ErrorOut(
-                error={"code": exc.code, "message": exc.message}
-            ).model_dump(),
+            content=ErrorOut(error={"code": exc.code, "message": exc.message}).model_dump(),
         )
     return await call_next(request)
 

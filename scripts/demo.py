@@ -5,9 +5,10 @@ without Docker or Postgres:
 
     cd ~/workspace/porter && .venv/bin/python scripts/demo.py
 """
+
 import json
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -20,23 +21,26 @@ from porter.repositories import InMemoryMemoryRepository
 
 def main() -> None:
     # W1 owner-context demo: auth disabled (pre-OAuth behavior).
-    client = TestClient(create_app(
-        InMemoryMemoryRepository(HashEmbedder()), auth_enabled=False))
+    client = TestClient(create_app(InMemoryMemoryRepository(HashEmbedder()), auth_enabled=False))
 
     print("== 1. write memory (goes to pending review) ==")
-    r = client.post("/api/v1/memories", json={
-        "content": "User does not eat cilantro and is allergic to peanuts",
-        "type": "preference",
-        "scope_tags": ["dietary"],
-        "confidence": 0.95,
-        "source": {"client_id": "demo"},
-    })
+    r = client.post(
+        "/api/v1/memories",
+        json={
+            "content": "User does not eat cilantro and is allergic to peanuts",
+            "type": "preference",
+            "scope_tags": ["dietary"],
+            "confidence": 0.95,
+            "source": {"client_id": "demo"},
+        },
+    )
     print(r.status_code, json.dumps(r.json(), indent=2)[:300])
     mid = r.json()["id"]
 
     print("\n== 2. search BEFORE approve (pending is invisible) ==")
-    r = client.post("/api/v1/memories/search",
-                    json={"query": "what foods should I avoid?", "top_k": 3})
+    r = client.post(
+        "/api/v1/memories/search", json={"query": "what foods should I avoid?", "top_k": 3}
+    )
     print("hits:", len(r.json()["results"]))
 
     print("\n== 3. approve ==")
@@ -44,17 +48,22 @@ def main() -> None:
     print(r.status_code, r.json()["status"])
 
     print("\n== 4. search AFTER approve (semantic recall) ==")
-    r = client.post("/api/v1/memories/search",
-                    json={"query": "what foods should I avoid?", "top_k": 3})
+    r = client.post(
+        "/api/v1/memories/search", json={"query": "what foods should I avoid?", "top_k": 3}
+    )
     for hit in r.json()["results"]:
         print(f"  score={hit['score']:.3f} untrusted={hit['untrusted_data']}")
         print(f"  content: {hit['content']}")
 
     print("\n== 5. duplicate detection ==")
-    r = client.post("/api/v1/memories", json={
-        "content": "User does not eat cilantro and is allergic to peanuts!",
-        "type": "preference", "scope_tags": ["dietary"],
-    })
+    r = client.post(
+        "/api/v1/memories",
+        json={
+            "content": "User does not eat cilantro and is allergic to peanuts!",
+            "type": "preference",
+            "scope_tags": ["dietary"],
+        },
+    )
     print("duplicate_candidates:", json.dumps(r.json()["duplicate_candidates"], indent=2))
 
     print("\n== 6. audit log ==")

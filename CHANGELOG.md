@@ -8,6 +8,62 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Runtime hardening (2026-10-19)
+
+- Render inbox duplicate hints from stored vectors without model requests,
+  retrieval timestamp updates or confidence decay. Return full Postgres
+  similarity records so project tags and labels match the memory backend.
+- Add a recommended Codex HTTP template requiring only a scoped access token;
+  both transports parse in Codex CLI 0.160.0. Use the canonical embedder flag
+  in stdio templates so an inherited setting cannot override their HTTP backend.
+
+- Reject unknown HTTP hosts before owner/auth routing; custom domains require
+  login even behind a loopback proxy. Support explicit public origins for TLS
+  termination and disable forwarded-header trust in bundled launch commands.
+- Reject malformed Origin/Referer headers cleanly and normalize default ports.
+- Parse authentication flags consistently across HTTP and stdio. Invalid flags
+  and repository modes now stop startup instead of disabling auth or selecting
+  temporary storage. Use the package version in OpenAPI metadata.
+
+### Repository standards
+
+- Standardize Python packaging, version metadata, lightweight development and optional ML dependencies.
+- Apply Ruff lint/import sorting/formatting and add matching pre-commit hooks, UTF-8/LF conventions and Dependabot updates.
+- Harden CI permissions and action references; add source/wheel build and installed-package verification.
+- Correct deployment, contribution and security documentation to reflect the actual PostgreSQL, Docker and BGE-M3 acceptance results.
+
+### Fixed and verified (2026-10-18)
+
+- Repair real startup failures: trailing comment-only SQL, resumable OAuth
+  migrations, and the text default blocking the cursor's bigint conversion.
+- Fix the model Dockerfile's nested requirements file, use CPU PyTorch by
+  default, constrain verified model dependencies, and trim the build context.
+- Remove memory plaintext from auto-merge audit metadata.
+- Add reproducible Docker acceptance covering real Postgres, OAuth,
+  HTTP/stdio MCP, encrypted snapshots and container recreation. The complete
+  local suite passed all 404 tests; BGE-M3 also passed live end-to-end checks.
+- Add HTTP-based embedding evaluation with JSON results. On the small
+  bilingual fixture BGE-M3 achieved R@5=1.0 and R@1=0.583; this is not a
+  general benchmark. Keep review gates for semantic duplicate candidates.
+
+### Fixed (2026-10-14)
+
+- Prevent sync pagination and concurrent database commits from dropping changes;
+  acknowledge filtered pages, scope deletion events, and retire archived IDs.
+- Complete persistent memory/audit enums and asyncpg JSON decoding; preserve pins
+  on edits and serialize startup migrations across API/stdio processes.
+- Repair Windows binary snapshot writes, support both new memory types, avoid
+  same-second filename collisions, and validate malformed snapshot metadata.
+- Wire Docker secrets, localhost dependency ports, and durable settings/snapshots.
+  Add owner unlock sessions for container gateway peers and same-origin consent.
+- Share persistent configuration across stdio templates; fix HTTP embedder setup,
+  add installable packaging, and generate stable random local credentials.
+- Move embedding inference off the event loop; retry transient triage errors.
+  Guard client key paths and prevent accidental key replacement.
+- Add Windows/Linux CI, real Postgres/pgvector regressions and dependency
+  constraints. Correct setup instructions and distinguish templates/prototypes
+  from integrations that have been validated on a real machine.
+
 ### Added
 
 **New embedding challengers** — `porter/embeddings.py` gains

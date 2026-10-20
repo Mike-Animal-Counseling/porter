@@ -6,6 +6,7 @@ source tags + confidence 0.5, malformed inputs (never crash), the zip
 path (in-memory only, zip-slip, zip-bomb guard), and read-only proof
 (source files byte-identical after import).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,8 +34,7 @@ from porter.repositories import InMemoryMemoryRepository
 def _chatgpt_mapping(msgs: list[tuple[str, str, float]]) -> dict:
     """Build a ChatGPT-style mapping from (role, text, create_time) triples."""
     mapping: dict = {
-        "root": {"id": "root", "message": None,
-                 "parent": None, "children": ["m0"] if msgs else []}
+        "root": {"id": "root", "message": None, "parent": None, "children": ["m0"] if msgs else []}
     }
     prev = "root"
     for i, (role, text, ts) in enumerate(msgs):
@@ -62,29 +62,34 @@ def chatgpt_export(tmp_path):
             "id": "conv-a",
             "title": "Sourdough starter",
             "create_time": 1728000000.0,
-            "mapping": _chatgpt_mapping([
-                ("user",
-                 "My name is Alex. I prefer concise answers with no fluff. "
-                 "(my test key sk-abcdefghijklmnopqrst)",
-                 1728000000.0),
-                ("assistant", "Sure thing, Alex.", 1728000060.0),
-            ]),
+            "mapping": _chatgpt_mapping(
+                [
+                    (
+                        "user",
+                        "My name is Alex. I prefer concise answers with no fluff. "
+                        "(my test key sk-abcdefghijklmnopqrst)",
+                        1728000000.0,
+                    ),
+                    ("assistant", "Sure thing, Alex.", 1728000060.0),
+                ]
+            ),
         },
         {
             "id": "conv-b",
             "title": "Python question",
             "create_time": 1728000000.0,
-            "mapping": _chatgpt_mapping([
-                ("user", "How do I sort a list in Python?", 1728000000.0),
-                ("assistant", "Use sorted().", 1728090000.0),  # next day
-            ]),
+            "mapping": _chatgpt_mapping(
+                [
+                    ("user", "How do I sort a list in Python?", 1728000000.0),
+                    ("assistant", "Use sorted().", 1728090000.0),  # next day
+                ]
+            ),
         },
         {
             "id": "conv-c",
             "title": "Empty chat",
             "create_time": 1728000000.0,
-            "mapping": {"root": {"id": "root", "message": None,
-                                 "parent": None, "children": []}},
+            "mapping": {"root": {"id": "root", "message": None, "parent": None, "children": []}},
         },
         "not-a-conversation",
         42,
@@ -102,14 +107,18 @@ def claude_export(tmp_path):
             "name": "Trip planning",
             "created_at": "2024-10-05T10:00:00Z",
             "chat_messages": [
-                {"uuid": "mm1",
-                 "text": "I love hiking in the Alps, remember that I "
-                         "prefer morning flights.",
-                 "sender": "human",
-                 "created_at": "2024-10-05T10:00:00Z"},
-                {"uuid": "mm2", "text": "Noted!",
-                 "sender": "assistant",
-                 "created_at": "2024-10-05T10:01:00Z"},
+                {
+                    "uuid": "mm1",
+                    "text": "I love hiking in the Alps, remember that I prefer morning flights.",
+                    "sender": "human",
+                    "created_at": "2024-10-05T10:00:00Z",
+                },
+                {
+                    "uuid": "mm2",
+                    "text": "Noted!",
+                    "sender": "assistant",
+                    "created_at": "2024-10-05T10:01:00Z",
+                },
             ],
         },
         {
@@ -117,9 +126,12 @@ def claude_export(tmp_path):
             "name": "Debug help",
             "created_at": "2024-10-06T10:00:00Z",
             "chat_messages": [
-                {"uuid": "mm3", "text": "why is this segfaulting",
-                 "sender": "human",
-                 "created_at": "2024-10-06T10:00:00Z"},
+                {
+                    "uuid": "mm3",
+                    "text": "why is this segfaulting",
+                    "sender": "human",
+                    "created_at": "2024-10-06T10:00:00Z",
+                },
             ],
         },
         {"uuid": "claude-3", "name": "Empty", "chat_messages": []},
@@ -150,17 +162,13 @@ def test_chatgpt_scan(chatgpt_export):
     facts = [c for c in candidates if c.type == "fact"]
     assert len(episodes) == 2 and len(facts) == 1
 
-    ep_a = next(c for c in episodes
-                if c.source["conversation_id"] == "conv-a")
-    assert ep_a.content == (
-        "ChatGPT conversation 'Sourdough starter' (2 messages, 2024-10-04)"
-    )
+    ep_a = next(c for c in episodes if c.source["conversation_id"] == "conv-a")
+    assert ep_a.content == ("ChatGPT conversation 'Sourdough starter' (2 messages, 2024-10-04)")
     assert ep_a.source["client_id"] == "chatgpt"
     assert ep_a.source["imported_from"] == str(chatgpt_export)
     assert ep_a.confidence == 0.5
 
-    ep_b = next(c for c in episodes
-                if c.source["conversation_id"] == "conv-b")
+    ep_b = next(c for c in episodes if c.source["conversation_id"] == "conv-b")
     assert "(2 messages, 2024-10-04 → 2024-10-05)" in ep_b.content
 
     fact = facts[0]
@@ -235,11 +243,13 @@ def test_null_bytes_and_non_utf8_survive(tmp_path):
     # Invalid bytes live INSIDE string values (not trailing garbage, which
     # is correctly rejected as invalid JSON): null bytes are stripped,
     # non-UTF8 bytes become U+FFFD, parsing continues.
-    doc = [{
-        "id": "x", "title": "T",
-        "mapping": _chatgpt_mapping(
-            [("user", "I like coffee PLACEHOLDER", 1728000000.0)]),
-    }]
+    doc = [
+        {
+            "id": "x",
+            "title": "T",
+            "mapping": _chatgpt_mapping([("user", "I like coffee PLACEHOLDER", 1728000000.0)]),
+        }
+    ]
     raw = json.dumps(doc, ensure_ascii=True).encode("ascii")
     raw = raw.replace(b"PLACEHOLDER", b"\x00 and \xff\xfe bytes")
     p = tmp_path / "conversations.json"
@@ -264,8 +274,7 @@ def test_missing_file_and_wrong_suffix(tmp_path):
 def test_zip_import_in_memory(chatgpt_zip):
     candidates, note = ChatGPTExportImporter(chatgpt_zip).scan()
     assert len(candidates) == 3, note
-    assert all(c.source["imported_from"] == str(chatgpt_zip)
-               for c in candidates)
+    assert all(c.source["imported_from"] == str(chatgpt_zip) for c in candidates)
 
 
 def test_zip_without_conversations_json(tmp_path):
@@ -281,8 +290,7 @@ def test_zip_slip_never_writes(tmp_path, chatgpt_export):
     zp = tmp_path / "evil.zip"
     with zipfile.ZipFile(zp, "w") as zf:
         zf.writestr("../../evil.txt", "pwned")
-        zf.writestr("conversations.json",
-                    chatgpt_export.read_bytes())
+        zf.writestr("conversations.json", chatgpt_export.read_bytes())
     before = set(tmp_path.rglob("*"))
     candidates, _ = ChatGPTExportImporter(zp).scan()
     assert len(candidates) == 3
@@ -318,8 +326,7 @@ def test_zip_bomb_guard_rejects_lying_header(tmp_path):
 
 # ------------------------------------------------------------ CLI
 def test_cli_dry_run_chatgpt(chatgpt_export, capsys):
-    rc = import_main(["--harness", "chatgpt", "--dry-run",
-                      "--file", str(chatgpt_export)])
+    rc = import_main(["--harness", "chatgpt", "--dry-run", "--file", str(chatgpt_export)])
     assert rc == 0
     out = capsys.readouterr().out
     assert "would be imported" in out
@@ -330,8 +337,7 @@ def test_cli_dry_run_chatgpt(chatgpt_export, capsys):
 
 
 def test_cli_dry_run_claude_zip(chatgpt_zip, capsys):
-    rc = import_main(["--harness", "claude", "--dry-run",
-                      "--file", str(chatgpt_zip)])
+    rc = import_main(["--harness", "claude", "--dry-run", "--file", str(chatgpt_zip)])
     assert rc == 0
     assert "would be imported" in capsys.readouterr().out
 
@@ -372,18 +378,16 @@ def test_run_import_pending_inbox(chatgpt_export):
         assert s2["imported"] == 0
         assert s2["skipped_already_imported"] == 3
         assert len(await repo.list(status="pending", limit=100)) == 3
+
     asyncio.run(_run())
 
 
 def test_dedupe_key_granularity():
     base = {"imported_from": "/x/conversations.json"}
     assert import_dedupe_key(base) == "/x/conversations.json"
-    ep = import_dedupe_key({**base, "conversation_id": "a",
-                            "kind": "episode"})
-    fact = import_dedupe_key({**base, "conversation_id": "a",
-                              "kind": "fact"})
-    other = import_dedupe_key({**base, "conversation_id": "b",
-                               "kind": "episode"})
+    ep = import_dedupe_key({**base, "conversation_id": "a", "kind": "episode"})
+    fact = import_dedupe_key({**base, "conversation_id": "a", "kind": "fact"})
+    other = import_dedupe_key({**base, "conversation_id": "b", "kind": "episode"})
     assert len({ep, fact, other}) == 3  # episode+fact+other conv distinct
 
 
@@ -394,14 +398,18 @@ def test_export_importers_registered():
 
 def test_source_files_byte_identical(chatgpt_export, chatgpt_zip):
     """READ-ONLY: export files unchanged after scan + import."""
+
     async def _run():
         paths = [chatgpt_export, chatgpt_zip]
         before = {p: p.read_bytes() for p in paths}
         repo = InMemoryMemoryRepository(HashEmbedder())
-        for cls, path in ((ChatGPTExportImporter, chatgpt_export),
-                          (ClaudeExportImporter, chatgpt_zip)):
+        for cls, path in (
+            (ChatGPTExportImporter, chatgpt_export),
+            (ClaudeExportImporter, chatgpt_zip),
+        ):
             candidates, _ = cls(path).scan()
             await run_import(repo, candidates)
         after = {p: p.read_bytes() for p in paths}
         assert before == after
+
     asyncio.run(_run())

@@ -17,12 +17,23 @@ Thanks for wanting to help. Porter is early and the surface area is small on pur
 
 ```bash
 git clone https://github.com/Mike-Animal-Counseling/porter.git && cd porter
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
-python -m pytest -q          # full suite, must be green
+python -m venv .venv
+source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+python -m pip install -c requirements-lock.txt -e ".[dev]"
+python -m pre_commit install
+python -m ruff check .
+python -m ruff format --check --quiet .
+python -m pytest -q
+python -m build
 ```
 
-The test suite runs against SQLite by default and **stubs out** heavy optional deps (`transformers`, `torch`, BGE-M3/Qwen3). You don't need a GPU or model downloads to contribute. Docker/Postgres paths are covered by `docker compose up` (see `docs/USER_SETUP_CHECKLIST.md`).
+Use Python 3.12 (the CI baseline in `.python-version`). The default tests use an **in-memory repository**, with heavy model backends stubbed. No GPU or model download is needed. The development extra contains only test, lint, hook and packaging tools; `.[ml]` is an explicit, large optional install. Docker uses CPU-only PyTorch by default.
+
+Run `python scripts/verify_deployment.py` for the isolated Docker acceptance test (Compose 2.24.4+). It checks real Postgres migrations, OAuth, HTTP/stdio MCP, snapshots and persistence across API recreation. It uses `.env.review`, separate ports and the `porter-review` project; named volumes are retained. `--keep-running` leaves the panel available on port 18000. The normal test run skips external-service tests unless their `PORTER_TEST_*` variables are supplied.
+
+Ruff configuration and pytest discovery live in `pyproject.toml`; `VERSION` is the package version source. Run `python -m ruff check . --fix` and `python -m ruff format .` to apply mechanical fixes. Hooks and CI use the same commands. CI also builds the source archive and wheel, then checks the installed wheel outside the checkout, including migrations and static assets.
+
+`requirements-lock.txt` and `requirements-embedder-lock.txt` are tested version constraints, not hash-verified universal lockfiles. After a dependency update, resolve in a clean Python 3.12 environment, run `pip check`, the unit/integration tests and Docker acceptance, and refresh the relevant constraints. Never mark an unexecuted check as passed.
 
 ## Workflow
 
@@ -31,7 +42,7 @@ The test suite runs against SQLite by default and **stubs out** heavy optional d
 3. Keep PRs focused; one concern per PR.
 4. Every PR must:
    - keep `python -m pytest -q` green (add tests for new behavior),
-   - keep `python -m pyflakes porter scripts` clean,
+   - keep `python -m ruff check .` and `python -m ruff format --check --quiet .` clean,
    - update docs in **both** EN and zh-CN (README / SPECS / DEVELOPER / CHANGELOG as applicable),
    - fill in the PR template, including the security notes section.
 

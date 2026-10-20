@@ -1,6 +1,6 @@
 ---
 name: Bug report
-description: Report something broken
+about: Report something broken
 labels: [bug]
 ---
 

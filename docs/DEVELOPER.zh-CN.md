@@ -2,6 +2,12 @@
 
 # Porter — 开发者集成指南
 
+Codex 连接已运行的 API 时，优先使用
+[`clients/codex-http-config.toml`](../clients/codex-http-config.toml)，
+通过 Streamable HTTP 与启动环境中的单个客户端访问令牌连接。
+stdio 方案需要共享数据库访问与服务端 JWT 签名密钥，仅适合同一受信任机器。
+两种配置已通过 Codex CLI 0.160.0 解析；这与对话中实际调用工具是不同的验收项。
+
 ## 1. Porter 是什么
 
 Porter 是一个**用户所有的记忆与状态层**，面向 AI 编程 harness（Claude Code、Codex、Cursor、Zed、…）。
@@ -502,3 +508,23 @@ PRD §11 还命名了 `duplicate_memory` 和 `snapshot_conflict`——v1 把近�
 - TypeScript（`fetch` + `libsodium-wrappers`）：[`../clients/typescript/porter-client.ts`](../clients/typescript/porter-client.ts)
 
 两者都覆盖 OAuth token 使用、搜索/新增/更新、E2EE 工具函数和 60 秒同步轮询循环。
+
+## Deployment corrections (2026-10-14)
+
+Install the editable package from the repository root with
+`pip install -c requirements-lock.txt -e .`. Stdio clients share the API
+`DATABASE_URL`, `PORTER_JWT_SECRET`, and embedding endpoint; templates
+include these fields. Docker owner browsers authenticate at `/owner/login`
+using the setup token before approving OAuth consent.
+
+Sync cursors acknowledge the last raw row scanned on a page, including
+filtered rows. Drain further pages until the cursor stops advancing.
+Process `archive` with a null memory by removing the old ID from local
+context. Delete tombstones preserve scope metadata. Migration 011 serializes
+sequence assignment through transaction commit.
+
+Run `python -m pytest -q` and `python -m pyflakes porter scripts`. For real
+Postgres validation set `PORTER_TEST_DATABASE_URL` to a dedicated database
+whose name ends in `_test`, then run `tests/test_postgres_integration.py`.
+The integration test applies migrations and writes data; use a disposable
+test database. The `stub` extractor is the only implemented LLM extractor.

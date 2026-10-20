@@ -9,6 +9,7 @@
   overridable via ``PORTER_SETTINGS_PATH`` for tests). It only ever holds
   ``{"lang": "en"}`` — no secrets — but is still written 0600.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,7 +28,7 @@ def settings_path() -> str:
 
 def get_lang() -> str:
     try:
-        with open(settings_path(), "r", encoding="utf-8") as f:
+        with open(settings_path(), encoding="utf-8") as f:
             data = json.load(f)
         lang = str(data.get("lang", DEFAULT_LANG))
         return lang if lang in LANGS else DEFAULT_LANG
@@ -215,6 +216,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "client_new_done_warn": "client_secret 只显示这一次，请立即复制保存。丢失后只能重新注册。",
         "row_name": "名称",
         "btn_done": "完成",
+        "btn_sign_out": "退出浏览器会话",
         "revoke_warn": "确定撤销「{name}」的全部授权吗？<br>其所有 access token 与 refresh token 将立即失效（60 秒内全网生效，PRD US3）。该应用需重新走授权流程才能再访问你的记忆。此操作记入审计日志。",
         "revoke_current_scopes": "当前权限：",
         "btn_confirm_revoke": "确认撤销",
@@ -509,6 +511,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "client_new_done_warn": "The client_secret is shown only this once — copy and save it now. If lost, you will need to register again.",
         "row_name": "Name",
         "btn_done": "Done",
+        "btn_sign_out": "Sign out",
         "revoke_warn": 'Revoke all access for "{name}"?<br>All its access and refresh tokens stop working immediately (effective everywhere within 60s, PRD US3). The app must re-authorize to access your memories again. This is recorded in the audit log.',
         "revoke_current_scopes": "Current scopes:",
         "btn_confirm_revoke": "Confirm revoke",
@@ -612,7 +615,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "view_toggle_label": "Switch view",
         "constel_hint": "Click a node for detail · memories sharing tags are linked",
         "constel_empty": "Not enough memories to form a constellation yet — come back with more",
-        "sync_note": "Note: a delta fetch only refreshes \"last sync\" — the cursor advances solely on explicit acks (POST /api/v1/sync/cursor). Lag = feed head − cursor.",
+        "sync_note": 'Note: a delta fetch only refreshes "last sync" — the cursor advances solely on explicit acks (POST /api/v1/sync/cursor). Lag = feed head − cursor.',
         # ---- settings ----
         "h_tag_mgmt": "Tag management",
         "tags_sub": "Tags classify memories and power fine-grained <code>memory.read.&lt;tag&gt;</code> authorization (PRD §10.3). Preset tags cannot be changed.",

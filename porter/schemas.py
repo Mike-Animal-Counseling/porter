@@ -1,16 +1,20 @@
 """Pydantic schemas for the Porter v1 REST API (PRD §11)."""
+
 from __future__ import annotations
 
 import base64
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 MemoryType = Literal[
     # v1 kinds (still accepted; mapped for triage, see triage.OLD_TYPE_TO_NEW)
-    "preference", "fact", "episode", "skill_ref",
+    "preference",
+    "fact",
+    "episode",
+    "skill_ref",
     # Triage taxonomy (two domains; triage resolves the domain per write —
     # it is not a stored type field):
     #  personal  the user's own memories (prefs, health, finance, PII,
@@ -18,9 +22,11 @@ MemoryType = Literal[
     #  project   the agent harness's working memory for a project/workspace
     #            (conventions, decisions, codebase knowledge, task state) —
     #            auto-approved, must carry a project:<name> tag
-    "personal", "project",
+    "personal",
+    "project",
 ]
 MemoryStatus = Literal["pending", "active", "archived"]
+MEMORY_TYPES = get_args(MemoryType)
 
 MAX_CONTENT_LEN = 20_000  # DoS guard: embedding a novel is not a memory
 MAX_QUERY_LEN = 2_000
@@ -36,7 +42,7 @@ def _validate_tags(v: list[str]) -> list[str]:
     if len(v) > MAX_TAGS:
         raise ValueError(f"at most {MAX_TAGS} scope_tags")
     for t in v:
-        if not t or len(t) > MAX_TAG_LEN:
+        if not isinstance(t, str) or not t or len(t) > MAX_TAG_LEN:
             raise ValueError(f"scope_tags must be 1..{MAX_TAG_LEN} chars")
     return v
 
@@ -90,15 +96,9 @@ class MemoryCreate(BaseModel):
         plain = self.content is not None
         cipher = self.content_ciphertext is not None or self.encryption is not None
         if plain and cipher:
-            raise ValueError(
-                "content and content_ciphertext/encryption are mutually exclusive"
-            )
-        if not plain and not (
-            self.content_ciphertext is not None and self.encryption is not None
-        ):
-            raise ValueError(
-                "either content or (content_ciphertext + encryption) is required"
-            )
+            raise ValueError("content and content_ciphertext/encryption are mutually exclusive")
+        if not plain and not (self.content_ciphertext is not None and self.encryption is not None):
+            raise ValueError("either content or (content_ciphertext + encryption) is required")
         return self
 
 
@@ -330,8 +330,8 @@ class SyncChange(BaseModel):
 
 
 class SyncDeltaOut(BaseModel):
-    """GET /api/v1/sync/delta response. `cursor` is the current feed head
-    (use it as the next `since` after persisting what you consumed)."""
+    """`cursor` is the last raw sequence scanned on this page, including
+    filtered rows. Use it as the next `since` after applying this page."""
 
     changes: list[SyncChange]
     cursor: int

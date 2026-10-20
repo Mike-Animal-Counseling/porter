@@ -3,16 +3,17 @@
 Used by both GET /api/v1/export (app.py) and GET /panel/export (panel.py)
 so the two surfaces can never drift apart.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 async def build_export_payload(repo) -> dict:
     memories = await repo.list(limit=100_000)
     return {
         "format": "porter-export/v1",
-        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "exported_at": datetime.now(UTC).isoformat(),
         "memory_count": len(memories),
         "memories": [
             {
@@ -34,5 +35,5 @@ async def build_export_payload(repo) -> dict:
             for m in memories
         ],
         "note": "Embeddings are not exported; re-embed on import. "
-                "Audit log exports as metadata only (no memory content).",
+        "Audit log exports as metadata only (no memory content).",
     }

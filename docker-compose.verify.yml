@@ -1,0 +1,19 @@
+# Infrastructure acceptance with deterministic embeddings, isolated from
+# production data and host ports. This does not certify model quality.
+# docker compose --env-file .env.review -p porter-review \
+#   -f docker-compose.yml -f docker-compose.verify.yml up --build -d
+services:
+  db:
+    ports: !override
+      - "127.0.0.1:55432:5432"
+  embedder:
+    build:
+      args:
+        REQ_FILE: requirements.txt
+    environment:
+      EMBEDDER_KIND: hash
+    ports: !override
+      - "127.0.0.1:18001:8001"
+  api:
+    ports: !override
+      - "127.0.0.1:18000:8000"

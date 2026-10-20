@@ -158,6 +158,7 @@
   margin: 0 auto;
 }
 .page--narrow { max-width: 760px; }
+.owner-login { width: min(100% - 32px, 480px); margin: 12vh auto 32px; }
 
 .page-head {
   display: flex;

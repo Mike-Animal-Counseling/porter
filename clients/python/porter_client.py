@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import time
 import urllib.parse
 from pathlib import Path
@@ -41,9 +42,15 @@ class PorterError(Exception):
 # E2EE helpers (P2 contract; see docs/DEVELOPER.md §6)
 # --------------------------------------------------------------------------- #
 
-KEYS_DIR = Path.home() / ".porter" / "keys"
+KEYS_DIR = Path(os.environ.get("PORTER_KEYS_DIR", str(Path.home() / ".porter" / "keys")))
 NONCE_SIZE = 24  # XChaCha20-Poly1305 nonce size
 KEY_SIZE = 32
+
+
+def _key_path(key_id: str) -> Path:
+    if not isinstance(key_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", key_id):
+        raise ValueError("key_id must be 1..64 letters, digits, underscores or hyphens")
+    return KEYS_DIR / f"{key_id}.key"
 
 
 def generate_key() -> bytes:
@@ -56,11 +63,12 @@ def save_key(key_id: str, key: bytes) -> Path:
 
     Key management is the client's job: Porter never sees these files.
     """
+    path = _key_path(key_id)
+    if len(key) != KEY_SIZE:
+        raise ValueError("key must be exactly 32 bytes")
     KEYS_DIR.mkdir(parents=True, exist_ok=True)
-    path = KEYS_DIR / f"{key_id}.key"
     # Open with restrictive mode from the start (no umask race window).
-    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600),
-                   "wb") as fh:
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as fh:
         fh.write(key)
     os.chmod(path, 0o600)  # belt and braces: enforce 0600
     return path
@@ -68,7 +76,7 @@ def save_key(key_id: str, key: bytes) -> Path:
 
 def load_key(key_id: str) -> bytes:
     """Load a key previously stored with save_key()."""
-    path = KEYS_DIR / f"{key_id}.key"
+    path = _key_path(key_id)
     with open(path, "rb") as fh:
         key = fh.read()
     if len(key) != KEY_SIZE:
@@ -153,6 +161,7 @@ class PorterClient:
         scope_tags: list[str] | None = None,
         confidence: float = 1.0,
         source: dict | None = None,
+        project: str | None = None,
     ) -> dict:
         """Submit a memory -> lands in the user's pending-review queue (202).
         Requires scope memory.write."""
@@ -162,6 +171,7 @@ class PorterClient:
             "scope_tags": scope_tags or [],
             "confidence": confidence,
             "source": source or {},
+            "project": project,
         }
         return self._post("/memories", body)
 
@@ -211,8 +221,7 @@ class PorterClient:
         """
         if memory.get("encrypted"):
             ciphertext = memory["content"]
-            encryption = {
-                "alg": "xchacha20-poly1305", "key_id": memory["key_id"]}
+            encryption = {"alg": "xchacha20-poly1305", "key_id": memory["key_id"]}
         else:
             ciphertext = memory["content_ciphertext"]
             encryption = memory["encryption"]
@@ -220,20 +229,24 @@ class PorterClient:
 
     # -- sync (P1) ------------------------------------------------------------ #
 
-    def get_delta(self, since: int = 0, limit: int = 100) -> dict:
+    def get_delta(self, since: int = 0, limit: int = 100, project: str | None = None) -> dict:
         """GET /sync/delta?since=&limit= -> {"changes": [...], "cursor": int}.
 
         P1 auto-sync (live since the F9 release); v1-only servers answer
         501 sync_not_available (manual snapshots only).
         """
-        return self._get("/sync/delta", {"since": since, "limit": limit})
+        params = {"since": since, "limit": limit}
+        if project is not None:
+            params["project"] = project
+        return self._get("/sync/delta", params)
 
     def ack_cursor(self, cursor: int) -> None:
         """POST /sync/cursor {"cursor": n} — persist our position server-side."""
         self._post("/sync/cursor", {"cursor": cursor})
 
-    def poll_forever(self, interval: float = 60.0, on_change=None, cursor: int = 0,
-                     state_file: str | None = None) -> None:
+    def poll_forever(
+        self, interval: float = 60.0, on_change=None, cursor: int = 0, state_file: str | None = None
+    ) -> None:
         """60-second sync poll loop. Calls on_change(change) for each change,
         then persists the cursor (local file + server ack)."""
         if state_file:
@@ -257,13 +270,17 @@ class PorterClient:
                 if on_change:
                     on_change(change)
                 else:
-                    print(f"[porter] change seq={change['seq']} "
-                          f"op={change['op']} id={change['memory_id']}")
-            if changes:
-                cursor = int(delta["cursor"])
-                self.ack_cursor(cursor)
+                    print(
+                        f"[porter] change seq={change['seq']} "
+                        f"op={change['op']} id={change['memory_id']}"
+                    )
+            next_cursor = int(delta["cursor"])
+            if next_cursor > cursor:
+                self.ack_cursor(next_cursor)
+                cursor = next_cursor
                 if state_file:
                     Path(state_file).write_text(str(cursor))
+                continue  # drain all pages before the polling interval
             time.sleep(interval)
 
 
@@ -272,8 +289,7 @@ class PorterClient:
 # --------------------------------------------------------------------------- #
 
 
-def register_client(base_url: str, name: str, redirect_uri: str,
-                    setup_token: str) -> dict:
+def register_client(base_url: str, name: str, redirect_uri: str, setup_token: str) -> dict:
     """POST /api/v1/clients. Returns dict with client_id and client_secret
     (the secret is shown ONCE — store it)."""
     resp = requests.post(
@@ -286,20 +302,24 @@ def register_client(base_url: str, name: str, redirect_uri: str,
     return resp.json()
 
 
-def authorize_url(base_url: str, client_id: str, redirect_uri: str,
-                  scopes: list[str], state: str) -> str:
-    params = urllib.parse.urlencode({
-        "response_type": "code",
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "scope": " ".join(scopes),
-        "state": state,
-    })
+def authorize_url(
+    base_url: str, client_id: str, redirect_uri: str, scopes: list[str], state: str
+) -> str:
+    params = urllib.parse.urlencode(
+        {
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": " ".join(scopes),
+            "state": state,
+        }
+    )
     return f"{base_url.rstrip('/')}/oauth/authorize?{params}"
 
 
-def exchange_code(base_url: str, code: str, redirect_uri: str,
-                  client_id: str, client_secret: str) -> dict:
+def exchange_code(
+    base_url: str, code: str, redirect_uri: str, client_id: str, client_secret: str
+) -> dict:
     """POST /oauth/token (grant_type=authorization_code)."""
     resp = requests.post(
         f"{base_url.rstrip('/')}/oauth/token",
@@ -316,8 +336,9 @@ def exchange_code(base_url: str, code: str, redirect_uri: str,
     return resp.json()
 
 
-def refresh_access_token(base_url: str, refresh_token: str,
-                         client_id: str, client_secret: str) -> dict:
+def refresh_access_token(
+    base_url: str, refresh_token: str, client_id: str, client_secret: str
+) -> dict:
     """POST /oauth/token (grant_type=refresh_token). Returns a ROTATED
     refresh_token — persist the new one; the old one is single-use."""
     resp = requests.post(
