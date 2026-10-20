@@ -10,9 +10,9 @@ import os
 import secrets
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
-from uuid import uuid4
 
 import asyncpg
 import httpx
@@ -94,23 +94,23 @@ def main(argv=None):
             PORTER_TEST_RECREATE="1",
             PYTHONUTF8="1",
         )
-        temp = ROOT / ".review-venv" / ("pytest-deployment-" + uuid4().hex)
-        assert temp.resolve().is_relative_to(ROOT) and not temp.exists()
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pytest",
-                "-q",
-                "tests/test_postgres_integration.py",
-                "tests/test_deployed_api.py",
-                "--basetemp",
-                str(temp),
-                "--tb=short",
-            ],
-            cwd=ROOT,
-            env=env,
-        )
+        with tempfile.TemporaryDirectory(prefix="porter-deployment-") as directory:
+            temp = Path(directory) / "pytest"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-q",
+                    "tests/test_postgres_integration.py",
+                    "tests/test_deployed_api.py",
+                    "--basetemp",
+                    str(temp),
+                    "--tb=short",
+                ],
+                cwd=ROOT,
+                env=env,
+            )
         if result.returncode == 0:
             print(
                 "Verified: real Postgres, OAuth, HTTP/stdio MCP, snapshots and container recreation."

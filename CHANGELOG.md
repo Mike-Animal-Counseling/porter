@@ -10,6 +10,8 @@ versioning follows [SemVer](https://semver.org/).
 
 ### Owner handoff and optional extraction
 
+- Use an independent temporary directory for deployment acceptance so a fresh
+  CI checkout does not require the developer's local virtual-environment path.
 - Add an owner handoff page with project suggestions, bilingual preview,
   copy/download and audited exports; enforce owner access, CSRF and no-store.
 - Persist lifecycle feedback atomically across both repositories, and apply
