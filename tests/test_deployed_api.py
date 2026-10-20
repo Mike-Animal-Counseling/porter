@@ -138,6 +138,7 @@ def test_deployed_oauth_memory_mcp_snapshot_and_recreation():
             "memories",
             "inbox",
             "sync",
+            "handoff",
             "clients",
             "shares",
             "audit",
@@ -223,6 +224,14 @@ def test_deployed_oauth_memory_mcp_snapshot_and_recreation():
         if response.json()["status"] == "pending_review":
             assert "duplicate_candidate" in response.json()["triage_reasons"]
             assert owner.post(f"/api/v1/memories/{mid}/approve", headers=auth).status_code == 200
+        handoff_form = {"project": project, "from_harness": "codex", "to_harness": "cursor"}
+        briefing_page = owner.post("/panel/handoff", data=handoff_form)
+        assert briefing_page.status_code == 200
+        assert "Repository runs pytest" in briefing_page.text
+        briefing_file = owner.post("/panel/handoff/download", data=handoff_form)
+        assert briefing_file.status_code == 200
+        assert "Repository runs pytest" in briefing_file.text
+        assert briefing_file.headers["cache-control"] == "no-store"
         response = owner.post(
             "/api/v1/memories",
             headers=auth,

@@ -299,7 +299,7 @@ class WikiService:
         """
         if not self.enabled or record.encrypted:
             return 0
-        mentions = self.extractor.extract_entities(record.content or "")
+        mentions = await self.extractor.aextract_entities(record.content or "")
         if not mentions:
             return 0
         name_to_id: dict[str, UUID] = {}
@@ -343,7 +343,12 @@ class WikiService:
         )
         if not self.enabled:
             return base[:top_k]
-        q_entities = {e.name for e in self.extractor.extract_entities(query)}
+        from .llm_ollama import ExtractionUnavailable
+
+        try:
+            q_entities = {e.name for e in await self.extractor.aextract_entities(query)}
+        except ExtractionUnavailable:
+            return base[:top_k]
         if not q_entities:
             return base[:top_k]
 
@@ -384,7 +389,7 @@ def build_wiki_service(
     extractor_kind: str = "stub",
 ) -> WikiService:
     """Factory. repo_kind: "postgres" | "memory". The extractor defaults to
-    the deterministic stub; pass extractor_kind="ollama" etc. once wired."""
+    the deterministic stub; Ollama requires its explicit model configuration."""
     from .llm import build_extractor
 
     store: WikiStore = PostgresWikiStore(pool) if repo_kind == "postgres" else InMemoryWikiStore()

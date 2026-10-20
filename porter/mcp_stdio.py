@@ -24,6 +24,7 @@ async def _build_deps():
     from .auth import RevocationCache
     from .config import env_bool, repository_kind, settings
     from .embeddings import build_embedder
+    from .llm import build_extractor
     from .mcp_server import MCPDeps
     from .oauth_store import InMemoryOAuthStore, PostgresOAuthStore
     from .ratelimit import TokenBucket
@@ -31,6 +32,7 @@ async def _build_deps():
 
     kind = repository_kind()
     auth_enabled = env_bool("AUTH_ENABLED", True)
+    build_extractor(os.getenv("PORTER_LLM_EXTRACTOR", "stub"))
 
     embed_kind = os.getenv("PORTER_EMBEDDER", os.getenv("EMBEDDER_KIND", "hash"))
     kwargs = {}

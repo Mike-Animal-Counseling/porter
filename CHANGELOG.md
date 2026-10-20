@@ -8,6 +8,16 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Owner handoff and optional extraction
+
+- Add an owner handoff page with project suggestions, bilingual preview,
+  copy/download and audited exports; enforce owner access, CSRF and no-store.
+- Persist lifecycle feedback atomically across both repositories, and apply
+  the workspace personal boundary to legacy preference records too.
+- Add opt-in local Ollama structured extraction off the API event loop.
+  Validate bounded outputs, require review for every model fact and save
+  PostgreSQL capture batches transactionally. Keep the rules backend as default.
+
 ### Switching integration (2026-10-19)
 
 - Integrate upstream through `4000dd5`, retaining its workspace/key migrations

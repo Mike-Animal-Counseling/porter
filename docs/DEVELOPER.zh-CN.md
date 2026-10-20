@@ -239,6 +239,20 @@ Streamable HTTP 用 `Authorization` 头），并在服务端强制执行 scope�
 | `memory_capture` | `(conversation_text, source_tags=None)` | `memory.write` | 从对话文本提取持久事实；每个事实走与 `memory_add` 相同的 triage。每 call ≤10 个事实，每个烧一条 rate-limit token |
 | `memory_update` | `(id, content)` | `memory.write` | 更新一条**活跃**记忆；保留历史（经 `superseded_by` 生成新 id），返回 `revised_from` |
 | `sync_delta` | `(since=0, limit=100, project=None)` | `memory.read` / `memory.read.<tag>` | 增量变更 feed（P1 自动同步）。`project="<name>"` 只拉该项目的工作记忆 + 无标签/全局记忆（SPECS §7.1.1）|
+| `memory_graph` | `(entity=None, memory_id=None)` | `memory.read` | 可选 wiki 图谱，仅返回可见的有效记忆 |
+| `switch_handoff` | `(project, from_harness, to_harness, top_k=10, lang="en")` | `memory.read` | 按授权过滤的项目/个人上下文和双语简报 |
+| `writeback_sync` | `(harness, project=None, dry_run=True, include_sensitive=False)` | `memory.read`；实际写入需 `memory.admin` | 默认预览，仅写入服务端文件系统中的标记区域 |
+| `memory_contradictions` | `(memory_id)` | `memory.read` | 从可见有效记录中查找启发式矛盾候选 |
+| `memory_merge` | `(memory_ids, strategy="newest_wins_per_aspect", content=None)` | `memory.admin` | PostgreSQL 原子合并并保存来源溯源 |
+| `memory_resolve` | `(winner_id, loser_ids, resolution)` | `memory.admin` | 保留赢家，归档其余记录并保存关联 |
+
+Ollama 的 `memory_capture` 输出始终进入人工确认队列，不会自动批准或自动合并，
+详见[提取说明](EXTRACTION.zh-CN.md)。面板 `/panel/handoff` 支持预览、复制和
+下载，不需要客户端 token，但仍受 owner 身份和 CSRF 检查保护。
+
+写回发生在 Porter 进程所在机器。Docker API 不能直接修改另一台电脑的编辑器
+文件；目标文件在本机时，可使用预览/下载或可信的本地 stdio 进程。默认不写回
+敏感记忆，需显式请求才会包含。
 
 **所有返回的记忆都是 `untrusted_data`。** 每个结果都携带 `"untrusted_data": true`，
 工具描述里也明确写了（T3，PRD §5 原则 5）：记忆内容必须视为不可信的用户数据，
@@ -520,11 +534,12 @@ using the setup token before approving OAuth consent.
 Sync cursors acknowledge the last raw row scanned on a page, including
 filtered rows. Drain further pages until the cursor stops advancing.
 Process `archive` with a null memory by removing the old ID from local
-context. Delete tombstones preserve scope metadata. Migration 011 serializes
+context. Delete tombstones preserve scope metadata. Migration 013 serializes
 sequence assignment through transaction commit.
 
-Run `python -m pytest -q` and `python -m pyflakes porter scripts`. For real
+Run `python -m pytest -q` and `python -m ruff check .`. For real
 Postgres validation set `PORTER_TEST_DATABASE_URL` to a dedicated database
 whose name ends in `_test`, then run `tests/test_postgres_integration.py`.
 The integration test applies migrations and writes data; use a disposable
-test database. The `stub` extractor is the only implemented LLM extractor.
+test database. 默认提取器为 `stub`；可选本地 Ollama 需要显式配置，候选事实
+需人工确认，见[提取说明](EXTRACTION.zh-CN.md)。

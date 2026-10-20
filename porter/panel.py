@@ -192,6 +192,7 @@ _NAV = [
     ("memories", "nav_memories", "database", "/panel/memories"),
     ("inbox", "nav_inbox", "inbox", "/panel/inbox"),
     ("sync", "nav_sync", "refresh", "/panel/sync"),
+    ("handoff", "nav_handoff", "share", "/panel/handoff"),
     ("clients", "nav_clients", "key", "/panel/clients"),
     ("shares", "nav_shares", "share", "/panel/shares"),
     ("audit", "nav_audit", "file", "/panel/audit"),

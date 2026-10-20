@@ -245,6 +245,8 @@ def test_personal_domain_red_line():
     with pytest.raises(InvalidInput):
         validate_workspace_memory("personal", [tag])
     with pytest.raises(InvalidInput):
+        validate_workspace_memory("preference", [tag])
+    with pytest.raises(InvalidInput):
         validate_workspace_memory("personal", ["work", tag, "coding_style"])
     # everything else passes
     validate_workspace_memory("project", [tag])

@@ -34,18 +34,11 @@ Wiring spec (for the integrator; nothing in this module touches HTTP):
 - :func:`flag_stale_on_contradiction` should be called when the
   conflicts/triage path reports a contradiction between two memories.
 
-Portability note: the repository interface deliberately exposes no
-generic in-place ``update()`` (provenance is append-only; edits go
-through ``revise()`` which mints a new record). Confidence nudges here
-are metadata-only adjustments in the spirit of ``touch_retrieved`` /
-``set_pinned``: they are applied to the fetched record objects and
-persisted via ``touch_retrieved`` for the idle clock. On
-``InMemoryMemoryRepository`` the fetched object *is* the stored object,
-so the confidence write persists. ``PostgresMemoryRepository`` has no
-metadata-only confidence column write on the abstract interface, so
-there the durable effect is the idle-clock reset (which restores
-effective confidence to the stored value); a future
-``adjust_confidence`` metadata op could make the write uniform.
+Lifecycle feedback is persisted through the repository's atomic metadata
+operation on both backends. PostgreSQL updates confidence without a stale
+read/modify/write and publishes a sync change in the same transaction.
+These helpers are explicit operations; existing search keeps its legacy
+idle-clock behavior until the lifecycle model is selected by the caller.
 """
 
 from __future__ import annotations
@@ -175,23 +168,11 @@ async def record_retrieval(
     For each active, non-encrypted, non-pinned memory: close 5% of the
     remaining confidence gap toward 1.0
     (``min(1.0, old + 0.05 * (1 - old))``) and reset the idle clock via
-    ``repo.touch_retrieved``. The confidence write follows the same
-    in-place pattern as ``auto_merge``; see the module docstring for the
-    Postgres portability note.
+    ``repo.touch_retrieved``. The confidence adjustment and sync event are persisted atomically.
     """
     now = at or _now()
-    touched: list = []
-    for mid in memory_ids:
-        rec = await repo.get(mid)
-        if rec is None or rec.status != "active":
-            continue
-        if rec.encrypted or rec.pinned:
-            continue
-        old = float(rec.confidence)
-        rec.confidence = min(1.0, old + RETRIEVAL_BOOST * (1.0 - old))
-        touched.append(rec.id)
-    if touched:
-        await repo.touch_retrieved(touched, at=now)
+    for mid in dict.fromkeys(memory_ids):
+        await repo.lifecycle_feedback(mid, boost=RETRIEVAL_BOOST, at=now)
 
 
 async def sweep(
@@ -266,23 +247,20 @@ async def flag_stale_on_contradiction(repo: MemoryRepository, memory_id, contrad
     reported. No-op for missing, non-active, encrypted, or pinned
     records.
     """
-    rec = await repo.get(memory_id)
-    if rec is None or rec.status != "active":
-        return
-    if rec.encrypted or rec.pinned:
-        return
-    old = float(rec.confidence)
-    rec.confidence = old * CONTRADICTION_PENALTY
-    await repo.audit(
-        action="contradiction_flag",
-        memory_ids=[rec.id, contradicting_id],
-        client_id=None,
-        scopes_used=(),
-        meta={
-            "reason": "contradiction_detected",
-            "old_confidence": round(old, 4),
-            "new_confidence": round(rec.confidence, 4),
-            "penalty": CONTRADICTION_PENALTY,
-            "contradicting_id": str(contradicting_id),
-        },
-    )
+    async with repo.atomic([memory_id]):
+        rec = await repo.lifecycle_feedback(memory_id, multiplier=CONTRADICTION_PENALTY)
+        if rec is None:
+            return
+        await repo.audit(
+            action="contradiction_flag",
+            memory_ids=[rec.id, contradicting_id],
+            client_id=None,
+            scopes_used=(),
+            meta={
+                "reason": "contradiction_detected",
+                "old_confidence": round(rec.confidence / CONTRADICTION_PENALTY, 4),
+                "new_confidence": round(rec.confidence, 4),
+                "penalty": CONTRADICTION_PENALTY,
+                "contradicting_id": str(contradicting_id),
+            },
+        )

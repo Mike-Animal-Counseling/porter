@@ -1693,6 +1693,9 @@ def create_app(
             name="panel-static",
         )
     app.include_router(panel_router)
+    from .panel_handoff import router as handoff_panel_router
+
+    app.include_router(handoff_panel_router)
 
     # ------------------------------------------------------------- MCP (PRD §8 F3)
     # Mounted LAST: mounts are matched in registration order, so /api/v1/*

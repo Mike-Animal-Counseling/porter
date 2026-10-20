@@ -110,7 +110,7 @@ def validate_workspace_memory(memory_type: str, tags) -> None:
     workspace, no matter who writes them. Project memories and
     non-workspace tags are unaffected.
     """
-    if memory_type == "personal" and any(is_workspace_tag(t) for t in (tags or [])):
+    if memory_type in {"personal", "preference"} and any(is_workspace_tag(t) for t in (tags or [])):
         raise InvalidInput(
             "personal memories must not carry workspace tags: "
             "the personal domain never enters a team workspace"

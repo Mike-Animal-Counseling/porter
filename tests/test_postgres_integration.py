@@ -256,6 +256,23 @@ def test_persistent_memory_snapshot_and_scoped_sync(tmp_path):
                 repo, merged["id"], [loser.id], resolution="updated", actor_client_id=owner.id
             )
             assert (await repo.get(loser.id)).superseded_by == merged["id"]
+            feedback, _ = await repo.create_active(
+                content="Feedback persists across independent repository reads",
+                type="project",
+                scope_tags=["project:handoff"],
+                confidence=0.5,
+                source={},
+            )
+            await asyncio.gather(
+                *[lifecycle.record_retrieval(repo, [feedback.id, feedback.id]) for _ in range(4)]
+            )
+            expected = 1 - 0.5 * 0.95**4
+            assert (await repo.get(feedback.id)).confidence == pytest.approx(expected)
+            await lifecycle.flag_stale_on_contradiction(repo, feedback.id, merged["id"])
+            assert (await repo.get(feedback.id)).confidence == pytest.approx(expected * 0.7)
+            await repo.set_pinned(feedback.id, True)
+            await lifecycle.record_retrieval(repo, [feedback.id])
+            assert (await repo.get(feedback.id)).confidence == pytest.approx(expected * 0.7)
             stale, _ = await repo.create_active(
                 content="Expired task state",
                 type="project",

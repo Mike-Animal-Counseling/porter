@@ -124,8 +124,7 @@ class Settings:
     # on entity extraction at approve-time + hybrid graph-boosted retrieval.
     # Default OFF: with the flag off, search behavior is identical to v1.
     wiki_enabled: bool = field(default_factory=lambda: env_bool("PORTER_WIKI_ENABLED", False))
-    # LLM extractor backend for the wiki layer: stub (default, deterministic,
-    # no model) — see porter/llm.py for ollama/openai wiring notes.
+    # Fact/wiki extractor: stub (default) | ollama (explicit model configuration).
     llm_extractor_kind: str = field(
         default_factory=lambda: os.getenv("PORTER_LLM_EXTRACTOR", "stub")
     )

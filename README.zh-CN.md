@@ -37,8 +37,9 @@ docker compose up --build -d  # API + Postgres/pgvector + 网页面板
 # 打开 http://127.0.0.1:8000/panel
 ```
 
-接入 harness：从 [`clients/`](clients/) 合并配置模板，填入 token、共享签名密钥、
-数据库地址和项目路径，然后重启。27 个工具提供的是配置模板，真实连接仍需逐个验证。
+接入 harness：从 [`clients/`](clients/) 合并配置模板。HTTP MCP 需要服务地址和
+限权 token；stdio 还需要共享数据库、签名密钥、模型服务地址及项目路径。
+修改配置后重启工具。27 个工具提供的是配置模板，真实连接仍需逐个验证。
 完整步骤见 [`docs/USER_SETUP_CHECKLIST.zh-CN.md`](docs/USER_SETUP_CHECKLIST.zh-CN.md)。
 
 ## 功能
@@ -46,6 +47,7 @@ docker compose up --build -d  # API + Postgres/pgvector + 网页面板
 - **分级审批**——低风险记忆自动生效（有审计、可撤销）；敏感/冲突的进队列等你
 - **MCP 原生，27 个 harness**——stdio + Streamable HTTP 传输
 - **跨 harness 共享记忆**——共用数据库；客户端通过 `sync_delta(project="…")` 拉取项目增量，轮询和上下文注入由 adapter 完成
+- **工具交接简报**——在 `/panel/handoff` 预览、复制或下载项目上下文
 - **记忆导入器**——一次性导入各 harness 的原生记忆文件（AGENTS.md、CLAUDE.md、`.cursorrules`……）
 - **语义搜索 + 去重**——pgvector 召回；近似重复只标记、不静默合并
 - **Scoped OAuth 2.0**——每 harness 独立 token、按标签限读、一键撤销
@@ -77,7 +79,7 @@ docker compose up --build -d  # API + Postgres/pgvector + 网页面板
 
 ## 状态
 
-v0.1.0 · 2026-10-19 本地完整验证：558 项通过，无跳过项。真实 Postgres、Docker、OAuth、两种 MCP、快照恢复和容器重建均已验收；BGE-M3 已实际运行并做中英文小样本评估。Codex CLI 0.160.0 成功解析两种接入模板；各工具的对话使用和视觉验收仍待完成。详见 [检查与修复报告](docs/REVIEW.zh-CN.md)。
+v0.1.0 · 2026-10-20 本地完整验证：589 项通过，无跳过项。真实 Postgres、Docker、OAuth、两种 MCP、快照恢复和容器重建均已验收；BGE-M3 已实际运行并做中英文小样本评估。Codex CLI 0.160.0 成功解析两种接入模板；各工具的对话使用和视觉验收仍待完成。详见 [检查与修复报告](docs/REVIEW.zh-CN.md)。
 
 ## 许可
 

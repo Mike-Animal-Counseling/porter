@@ -306,9 +306,10 @@ Sample Python/TypeScript polling loops drain all pages before waiting and
 acknowledge filtered pages too. Access tokens expire after one hour; use the
 refresh flow and update static client tokens as described above.
 
-Only the regex `stub` fact extractor is implemented in this release.
-`ollama`/`openai` extractor settings are extension points and cannot be selected
-until those backends are implemented. ML triage is optional and separate.
+The default `stub` extractor uses keyword rules. Optional local Ollama
+extraction requires an explicitly configured model and always queues facts
+for review; see [extraction setup](docs/EXTRACTION.md). OpenAI extraction
+is not implemented. ML triage remains a separate optional feature.
 
 
 ## Repeatable isolated acceptance

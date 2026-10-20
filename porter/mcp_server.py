@@ -560,7 +560,7 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
             from .triage import create_with_triage
 
             extractor = build_extractor(deps.llm_extractor_kind_fn())
-            facts = extractor.extract_facts(conversation_text)
+            facts = await extractor.aextract_facts(conversation_text)
             # T5: each extracted fact is a write — charge the rate limiter
             # per fact (bounded at MAX_CAPTURE_FACTS per call) so a long
             # transcript cannot launder a write flood through one call.
@@ -574,50 +574,61 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
 
             repo = _ready_repo(deps)
             out = []
-            for fact in facts:
-                if fact.type not in MEMORY_TYPES:
-                    continue
+            # Validate the whole batch before saving any extracted fact.
+            fact_tags = [
+                _validate_tool_tags(list(dict.fromkeys([*tags, *fact.scope_tags])))
+                for fact in facts
+            ]
+            for fact, merged_tags in zip(facts, fact_tags, strict=True):
                 await teams_logic.require_memory_write(
                     deps.team_store_fn() if deps.team_store_fn else None,
                     client_id=auth.client_pk,
                     memory_type=fact.type,
-                    tags=list(tags) + list(fact.scope_tags),
+                    tags=merged_tags,
                     is_admin="memory.admin" in auth.scopes,
                 )
-                rec, decision = await create_with_triage(
-                    repo,
-                    content=fact.content,
-                    type=fact.type,
-                    scope_tags=list(tags) + list(fact.scope_tags),
-                    confidence=fact.confidence,
-                    source={
-                        "via": "mcp",
-                        "tool": "memory_capture",
-                        "client_id": auth.client_id,
-                        "extracted": True,
-                    },
-                    actor_client_id=auth.client_pk,
-                    via="mcp",
-                    scopes_used=granted,
-                )
-                if decision.action == "auto_merge":
-                    out.append(
-                        {
-                            "status": "merged",
-                            "merged_into": str(decision.merge_target_id),
-                            "triage_reasons": decision.reasons,
-                        }
+            async with repo.atomic([]):
+                for fact, merged_tags in zip(facts, fact_tags, strict=True):
+                    if fact.type not in MEMORY_TYPES:
+                        continue
+                    rec, decision = await create_with_triage(
+                        repo,
+                        content=fact.content,
+                        type=fact.type,
+                        scope_tags=merged_tags,
+                        confidence=fact.confidence,
+                        source={
+                            "via": "mcp",
+                            "tool": "memory_capture",
+                            "client_id": auth.client_id,
+                            "extracted": True,
+                            "extractor": deps.llm_extractor_kind_fn(),
+                        },
+                        actor_client_id=auth.client_pk,
+                        via="mcp",
+                        scopes_used=granted,
+                        approval_mode="strict" if deps.llm_extractor_kind_fn() != "stub" else None,
                     )
-                else:
-                    out.append(
-                        {
-                            "id": str(rec.id),
-                            "status": (
-                                "active" if decision.action == "auto_approve" else "pending_review"
-                            ),
-                            "triage_reasons": decision.reasons,
-                        }
-                    )
+                    if decision.action == "auto_merge":
+                        out.append(
+                            {
+                                "status": "merged",
+                                "merged_into": str(decision.merge_target_id),
+                                "triage_reasons": decision.reasons,
+                            }
+                        )
+                    else:
+                        out.append(
+                            {
+                                "id": str(rec.id),
+                                "status": (
+                                    "active"
+                                    if decision.action == "auto_approve"
+                                    else "pending_review"
+                                ),
+                                "triage_reasons": decision.reasons,
+                            }
+                        )
             return {"facts": out, "truncated": truncated, "extractor": deps.llm_extractor_kind_fn()}
         except ToolError:
             raise

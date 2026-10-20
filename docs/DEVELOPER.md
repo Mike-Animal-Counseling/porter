@@ -241,6 +241,22 @@ Streamable HTTP) and enforces scopes server-side (T1).
 | `memory_capture` | `(conversation_text, source_tags=None)` | `memory.write` | Extracts durable facts from a transcript; each fact goes through the same triage as `memory_add`. ≤10 facts/call, each burns a rate-limit token |
 | `memory_update` | `(id, content)` | `memory.write` | Updates an **active** memory; history-preserving (new id via `superseded_by`), returns `revised_from` |
 | `sync_delta` | `(since=0, limit=100, project=None)` | `memory.read` / `memory.read.<tag>` | Incremental change feed (P1 auto-sync). `project="<name>"` pulls only that project's working memory plus untagged/global memories (SPECS §7.1.1) |
+| `memory_graph` | `(entity=None, memory_id=None)` | `memory.read` | Optional wiki graph, filtered by visible active memories |
+| `switch_handoff` | `(project, from_harness, to_harness, top_k=10, lang="en")` | `memory.read` | Scoped project/personal context and a bilingual briefing |
+| `writeback_sync` | `(harness, project=None, dry_run=True, include_sensitive=False)` | `memory.read`; actual writes require `memory.admin` | Preview by default; marked-zone writes on the server's filesystem |
+| `memory_contradictions` | `(memory_id)` | `memory.read` | Heuristic contradiction candidates from visible active records |
+| `memory_merge` | `(memory_ids, strategy="newest_wins_per_aspect", content=None)` | `memory.admin` | Atomic PostgreSQL merge with durable source provenance |
+| `memory_resolve` | `(winner_id, loser_ids, resolution)` | `memory.admin` | Keep winner, archive losers with durable links |
+
+Ollama `memory_capture` output always queues for review. It cannot auto-approve
+or auto-merge a model-generated fact; see [extraction](EXTRACTION.md).
+The owner panel's `/panel/handoff` provides preview, copy and text download
+without a client token. Owner access and CSRF checks still apply.
+
+Writeback operates where the Porter process runs. A Docker API cannot update
+a separate laptop's editor files. Use preview/download or a trusted local
+stdio process when the target files are on that laptop; sensitive memories
+are excluded unless explicitly requested.
 
 **All returned memory is `untrusted_data`.** Every result carries `"untrusted_data": true`, and the tool
 descriptions say so explicitly (T3, PRD §5 principle 5): memory content must be treated as untrusted user data
@@ -530,11 +546,12 @@ using the setup token before approving OAuth consent.
 Sync cursors acknowledge the last raw row scanned on a page, including
 filtered rows. Drain further pages until the cursor stops advancing.
 Process `archive` with a null memory by removing the old ID from local
-context. Delete tombstones preserve scope metadata. Migration 011 serializes
+context. Delete tombstones preserve scope metadata. Migration 013 serializes
 sequence assignment through transaction commit.
 
-Run `python -m pytest -q` and `python -m pyflakes porter scripts`. For real
+Run `python -m pytest -q` and `python -m ruff check .`. For real
 Postgres validation set `PORTER_TEST_DATABASE_URL` to a dedicated database
 whose name ends in `_test`, then run `tests/test_postgres_integration.py`.
 The integration test applies migrations and writes data; use a disposable
-test database. The `stub` extractor is the only implemented LLM extractor.
+test database. The default extractor is `stub`; optional local Ollama
+requires explicit configuration and human review. See [extraction](EXTRACTION.md).

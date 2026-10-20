@@ -3,7 +3,7 @@
 # Porter review and repairs
 
 Original baseline: `1cbc3b9`; integrated upstream through `4000dd5`.
-Latest local verification: 2026-10-19. Earlier repairs are committed as `6e2ae93`.
+Latest local verification: 2026-10-20. Earlier repairs are committed as `93bf45e`.
 
 All thirteen initial upload commits exist. The last is
 [`ada83e7`](https://github.com/Mike-Animal-Counseling/porter/commit/ada83e7),
@@ -32,7 +32,7 @@ functional completion.
 
 ## Verification and limits
 
-The complete local suite passed **558 tests with no skips**, with real Postgres
+The complete local suite passed **589 tests with no skips**, with real Postgres
 and the isolated Docker services configured. The original Windows baseline was
 363 passes and 11 failures. Ruff, formatting, pre-commit hooks, dependency
 consistency and patch whitespace checks passed.
@@ -54,9 +54,10 @@ Visual browser acceptance and per-harness conversations remain unverified.
 The installed Codex CLI 0.160.0 parsed both stdio and HTTP templates;
 that check does not execute tools. Templates alone do not capture conversations or inject context;
 adapters must consume the MCP tools and sync feed. The fact extractor is the
-regex stub; Ollama/OpenAI extraction remains unimplemented. Optional ML triage
+regex stub by default; optional local Ollama is implemented and always queues
+facts for review (see [extraction](EXTRACTION.md)). OpenAI extraction remains unimplemented. Optional ML triage
 and additional embedding models were not evaluated. Windows ACLs were not
-independently audited. Remote CI has not run for these unpushed changes.
+independently audited. Remote CI status is reported on the review pull request.
 
 ## Local preview
 
@@ -76,7 +77,7 @@ and requires the retained review database and model containers.
 For repeatable hash-based infrastructure acceptance, run
 `python scripts/verify_deployment.py --keep-running`; its panel uses port 18000.
 Switching embedding models requires a separate database or regenerated vectors,
-even when dimensions match. Changes are tracked on the local review branch; they have not been pushed.
+even when dimensions match. Changes are tracked on `fix/porter-review-hardening`; the review pull request records remote CI status.
 
 ## Upstream switching integration (2026-10-19)
 
@@ -101,3 +102,21 @@ interrupted-merge integration checks pass. Docker acceptance also covers the
 new endpoints and all eleven MCP tools, including container recreation.
 The workspace onboarding UI and per-device delegated key access are not a
 completed multi-user product; key management is deliberately owner-only.
+
+## Owner handoff and durable feedback
+
+The panel now provides `/panel/handoff`: project suggestions, bilingual preview,
+copy and text download. Preview does not record a switch; downloading records
+the handoff. Pending records and other projects stay out of the briefing, HTML
+is escaped, and the owner/CSRF gates apply to every route. Responses are not cached.
+
+Lifecycle retrieval/contradiction helpers now persist confidence on both
+backends, publish sync changes, and avoid lost PostgreSQL updates. They remain
+explicit helpers; ordinary searches keep the existing idle-clock behavior.
+Legacy `preference` records also obey the workspace personal-memory boundary.
+
+The optional Ollama extractor uses bounded structured output off the API event
+loop. All its facts await human approval; model errors cannot silently switch
+backends. A local synthetic test exercised real model capture through MCP.
+The tiny model's greeting false positive is recorded rather than hidden by
+the protocol tests. Production extraction is disabled by default.

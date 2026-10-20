@@ -24,6 +24,7 @@ from uuid import UUID, uuid4
 from .config import settings
 from .db import json_object
 from .embeddings import Embedder
+from .errors import InvalidInput
 
 DUPLICATE_THRESHOLD = settings.duplicate_threshold  # PRD §8 F1; single source of truth
 
@@ -236,6 +237,12 @@ class MemoryRepository(ABC):
         """Pin/unpin a memory. Pinned memories never decay. Metadata-only
         (same exception as touch_retrieved); logs a 'revise' change so sync
         consumers refresh, and the caller audits the action."""
+
+    async def lifecycle_feedback(
+        self, memory_id: UUID, *, boost: float = 0, multiplier: float = 1, at=None
+    ) -> MemoryRecord | None:
+        """Atomically adjust lifecycle metadata, preserving content and history."""
+        raise NotImplementedError
 
     # NOTE: there is intentionally NO in-place update() on this interface.
     # All edits go through revise(), which archives the old record and links
@@ -500,6 +507,18 @@ class InMemoryMemoryRepository(MemoryRepository):
             rec = self._memories.get(mid)
             if rec is not None:
                 rec.last_retrieved_at = stamp
+
+    async def lifecycle_feedback(self, memory_id, *, boost=0, multiplier=1, at=None):
+        if not (0 <= boost <= 1 and 0 <= multiplier <= 1):
+            raise InvalidInput("lifecycle feedback factors must be between 0 and 1")
+        rec = self._memories.get(memory_id)
+        if rec is None or rec.status != "active" or rec.encrypted or rec.pinned:
+            return None
+        rec.confidence = min(1.0, rec.confidence * multiplier + boost * (1 - rec.confidence))
+        if at is not None:
+            rec.last_retrieved_at = at
+        await self.log_change(memory_id=rec.id, op="revise")
+        return rec
 
     async def set_pinned(self, memory_id, pinned, *, actor_client_id=None):
         rec = self._memories.get(memory_id)
@@ -1070,6 +1089,29 @@ class PostgresMemoryRepository(MemoryRepository):
                 stamp,
                 ids,
             )
+
+    async def lifecycle_feedback(self, memory_id, *, boost=0, multiplier=1, at=None):
+        if not (0 <= boost <= 1 and 0 <= multiplier <= 1):
+            raise InvalidInput("lifecycle feedback factors must be between 0 and 1")
+        async with self.pool.acquire() as con:
+            async with con.transaction():
+                row = await con.fetchrow(
+                    f"""UPDATE memories
+                    SET confidence = LEAST(1.0, confidence * $2 + $3 * (1 - confidence)),
+                        last_retrieved_at = COALESCE($4, last_retrieved_at)
+                    WHERE id = $1 AND status = 'active' AND NOT encrypted AND NOT pinned
+                    {_PG_RETURNING}""",
+                    memory_id,
+                    float(multiplier),
+                    float(boost),
+                    at,
+                )
+                if row is None:
+                    return None
+                await con.execute(
+                    "INSERT INTO change_log (memory_id, op) VALUES ($1, 'revise')", memory_id
+                )
+        return _row_to_record(row)
 
     async def set_pinned(self, memory_id, pinned, *, actor_client_id=None):
         async with self.pool.acquire() as con:

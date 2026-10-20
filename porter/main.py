@@ -80,8 +80,12 @@ async def lifespan(app):
 
 def build_app():
     from .e2ee_hub import InMemoryEnvelopeStore
+    from .llm import build_extractor
     from .teams import InMemoryTeamStore
 
+    build_extractor(
+        settings.llm_extractor_kind
+    )  # Validate configuration without contacting a model.
     repo = None if _use_postgres() else InMemoryMemoryRepository(build_embedder_from_settings())
     oauth_store = None if _use_postgres() else InMemoryOAuthStore()
     snapshot_store = None if _use_postgres() else InMemorySnapshotStore()

@@ -40,7 +40,11 @@ docker compose up --build -d  # API + Postgres/pgvector + web panel
 # open http://127.0.0.1:8000/panel
 ```
 
-Connect a harness: merge its template from [`clients/`](clients/), fill in the token, shared signing secret, database URL and repository path, then restart it. Full walkthrough: [`docs/USER_SETUP_CHECKLIST.md`](docs/USER_SETUP_CHECKLIST.md). Templates are provided for 27 harnesses; individual live handshakes still need verification.
+Connect a harness using a template from [`clients/`](clients/). HTTP MCP needs
+the server URL and a scoped token; stdio also needs the shared database,
+signing secret, embedding service and repository path. Restart the tool after
+merging its configuration. See [`docs/USER_SETUP_CHECKLIST.md`](docs/USER_SETUP_CHECKLIST.md).
+Templates cover 27 harnesses; individual live handshakes still need verification.
 
 ## Features
 
@@ -53,6 +57,7 @@ Connect a harness: merge its template from [`clients/`](clients/), fill in the t
 - **E2EE memories** — XChaCha20-Poly1305; the server only ever sees ciphertext
 - **Signed snapshots** — Ed25519-signed, AES-256-GCM-encrypted backup & restore
 - **Bilingual panel** — English / 中文 toggle in Settings
+- **Handoff briefing** — preview, copy or download project context at `/panel/handoff`
 
 ## How it works
 
@@ -78,7 +83,7 @@ Connect a harness: merge its template from [`clients/`](clients/), fill in the t
 
 ## Status
 
-v0.1.0 · 558 tests passed with real Postgres and the running Docker acceptance stack (2026-10-19). OAuth, HTTP/stdio MCP, encrypted restore and container recreation were verified. BGE-M3 passed live service checks and a small bilingual retrieval evaluation. Codex CLI 0.160.0 parsed both connection templates; individual harness conversations and visual QA remain — see [DEPLOY.md](DEPLOY.md).
+v0.1.0 · 589 tests passed with real Postgres and the running Docker acceptance stack (2026-10-20). OAuth, HTTP/stdio MCP, encrypted restore and container recreation were verified. BGE-M3 passed live service checks and a small bilingual retrieval evaluation. Codex CLI 0.160.0 parsed both connection templates; individual harness conversations and visual QA remain — see [DEPLOY.md](DEPLOY.md).
 
 ## License
 
