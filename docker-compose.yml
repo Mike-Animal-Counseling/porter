@@ -28,7 +28,7 @@ services:
       OMP_NUM_THREADS: ${PORTER_EMBED_THREADS:-2}
       MKL_NUM_THREADS: ${PORTER_EMBED_THREADS:-2}
     volumes:
-      - porter-models:/home/porter/models   # BGE-M3 cached here (~2.3 GB first run)
+      - porter-models:/home/porter/models   # BGE-M3 cache; about 3.8 GB measured in acceptance
     ports:
       - "127.0.0.1:8001:8001"
     healthcheck:

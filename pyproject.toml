@@ -21,8 +21,10 @@ dynamic = ["version", "dependencies", "optional-dependencies"]
 
 [project.urls]
 Repository = "https://github.com/Mike-Animal-Counseling/porter"
+Documentation = "https://github.com/Mike-Animal-Counseling/porter#readme"
 Issues = "https://github.com/Mike-Animal-Counseling/porter/issues"
 Changelog = "https://github.com/Mike-Animal-Counseling/porter/blob/main/CHANGELOG.md"
+Security = "https://github.com/Mike-Animal-Counseling/porter/security/policy"
 
 [project.scripts]
 porter-import = "porter.import_cli:main"

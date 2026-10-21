@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability privately / 私密报告安全漏洞
+    url: https://github.com/Mike-Animal-Counseling/porter/security/advisories/new
+    about: Keep exploit details, credentials and personal memories out of public issues.
+  - name: Setup and acceptance guide / 安装与验收指南
+    url: https://github.com/Mike-Animal-Counseling/porter/blob/main/docs/USER_SETUP_CHECKLIST.md
+    about: Start here for local setup, client connections and known acceptance gaps.

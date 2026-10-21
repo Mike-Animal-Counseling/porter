@@ -30,9 +30,9 @@ functional completion.
   pre-commit, CI permissions, dependency updates and bilingual instructions.
   See [repository standards](REPOSITORY_STANDARDS.md).
 
-## Verification and limits
+## Earlier verification baseline and limits
 
-The complete local suite passed **589 tests with no skips**, with real Postgres
+The earlier complete local suite passed **589 tests with no skips**, with real Postgres
 and the isolated Docker services configured. The original Windows baseline was
 363 passes and 11 failures. Ruff, formatting, pre-commit hooks, dependency
 consistency and patch whitespace checks passed.
@@ -120,3 +120,63 @@ loop. All its facts await human approval; model errors cannot silently switch
 backends. A local synthetic test exercised real model capture through MCP.
 The tiny model's greeting false positive is recorded rather than hidden by
 the protocol tests. Production extraction is disabled by default.
+
+## Acceptance, access and interface review (2026-10-20)
+
+This pass adds reproducible user acceptance instructions and corrects remaining
+access boundaries found while reviewing the real write and retrieval paths:
+
+- Graph neighbor names, edges and originating UUIDs require a readable, active,
+  unencrypted source memory; unattributed/private/pending/archived edges are
+  excluded rather than treating entity names as harmless metadata.
+- Write-only or tag-restricted clients cannot use duplicate probes to reveal
+  private memory IDs or refresh private confidence values. Similarity candidates
+  and returned duplicate IDs use the caller's read scopes.
+- Automatic merge requires a readable target with the same memory type and
+  complete tag set, preserving domains and workspace boundaries.
+- MCP updates require read visibility of the resolved active head, including
+  requests using a stale revision ID.
+- REST list filtering accepts the shared memory taxonomy, including `personal`
+  and `project`, instead of rejecting these current types.
+- PostgreSQL pending/active duplicate queries return full record metadata,
+  allowing production visibility checks instead of filtering UUID-only stubs.
+- Snapshot validation checks the entire batch's personal/workspace boundary
+  before import. PostgreSQL imports and their audit entry run in one transaction;
+  an injected mid-import failure must not leave a partial batch or sync changes.
+
+OAuth write consent now describes tiered and strict approval accurately. New
+regression coverage is in [acceptance security tests](../tests/test_acceptance_security.py),
+including a real PostgreSQL duplicate/filter and failed-import rollback case.
+
+Dependency review also found issues in the pinned model/runtime dependencies.
+Constraints were updated for `filelock` (4.2.3), `setuptools` (84.0.0) and
+`certifi` (2026.10.19). The Docker build fetches only PyTorch from the CPU index
+without its dependencies, then resolves ordinary dependencies under both
+constraint files; `pip check` and a CPU-only assertion run during the build.
+Both API and real-model images rebuilt successfully with these constraints.
+After refreshing both services while retaining their data/cache volumes, the
+real BGE-M3 deployed OAuth/HTTP/stdio/snapshot/revocation acceptance passed.
+The [post-update audit](DEPENDENCY_AUDIT.md) queried 94 exact package/version
+combinations without matching a known OSV advisory. This does not cover base
+image OS packages or guarantee that the application has no vulnerabilities.
+
+Panel changes preserve the existing style while adding accessible control and
+navigation names, drawer focus handling, narrow-screen navigation state, phone
+targets, localized failure feedback, corrected contrast tokens, reduced motion
+and bounded canvas listeners. The dedicated HTTP/HTML/CSS suite passed **42
+cases**. JavaScript interactions and actual rendered layout remain unverified:
+browser connection attempts returned “No browser is available.” See
+[UI review](UI_REVIEW.md) for source evidence and the human checks; this is not
+a WCAG certification or visual acceptance.
+
+The English/Chinese README, deployment and setup guides now distinguish
+templates from verified clients, explain plaintext/encrypted memory boundaries,
+and prioritize limited OAuth scopes and HTTP MCP. Missing promotional-media
+claims were removed. [Acceptance criteria](ACCEPTANCE.md) separate completed
+automation from the user's two-tool and browser sign-off. The final complete
+suite passed **650 tests, with no skips**, including real PostgreSQL, the
+deployed HTTP/stdio flow, container recreation and the isolated local Ollama
+integration. The earlier 589-test result and CI run at `c3c5fdf` are historical
+evidence. [PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1)
+records the final head and its six remote CI jobs; check that exact head when
+signing off a candidate.

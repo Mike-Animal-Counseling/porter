@@ -30,6 +30,13 @@ Examples of unacceptable behavior:
 
 Report abusive, harassing, or otherwise unacceptable behavior to a project maintainer through a private contact channel listed on their GitHub profile. This project does not currently publish a dedicated conduct-report address; if no private channel is listed, request one without posting incident details or other people's personal information. Maintainers should protect the reporter's confidentiality and review reports before deciding on a response. Security vulnerabilities follow the separate process in `SECURITY.md`.
 
+Maintainers may ask for a correction, remove harmful content, or temporarily
+or permanently restrict participation according to severity and repeated
+behavior. Explain the action privately when possible and avoid exposing the
+reporter. A maintainer involved in a report should defer to another uninvolved
+maintainer where one is available. This policy applies in project spaces and
+when someone represents the project publicly.
+
 ## Attribution
 
 Adapted from the [Contributor Covenant](https://www.contributor-covenant.org), version 2.1.

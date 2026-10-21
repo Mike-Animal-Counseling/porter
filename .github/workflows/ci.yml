@@ -34,6 +34,7 @@ jobs:
       - run: python -m ruff check .
       - run: python -m ruff format --check --quiet .
       - run: python -m pre_commit validate-config
+      - run: python scripts/check_repository.py
       - run: python -m pip check
 
   package:
@@ -51,9 +52,10 @@ jobs:
       - name: Install and check the wheel outside the source tree
         shell: bash
         run: |
+          export PORTER_EXPECTED_MIGRATIONS="$(python -c "from pathlib import Path; print(len(list(Path('migrations').glob('*.sql'))))")"
           python -m pip install -c requirements-lock.txt dist/*.whl
           cd "$RUNNER_TEMP"
-          python -I -c "from importlib.resources import files; import porter; assert porter.__version__; assert sum(p.name.endswith('.sql') for p in files('porter.migrations').iterdir()) == 14; assert files('porter').joinpath('static/css/app.css').is_file()"
+          python -I -c "import os; from importlib.resources import files; import porter; assert porter.__version__; assert sum(p.name.endswith('.sql') for p in files('porter.migrations').iterdir()) == int(os.environ['PORTER_EXPECTED_MIGRATIONS']); assert files('porter').joinpath('static/css/app.css').is_file()"
           porter-import --help
           python -m pip check
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

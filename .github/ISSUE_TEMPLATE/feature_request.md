@@ -6,7 +6,8 @@ labels: [enhancement]
 
 ## Problem
 
-<!-- What can't you do today? Who does this affect? -->
+<!-- What can't you do today? Who does this affect? English or Chinese is welcome.
+Use synthetic examples; do not include private memories or credentials. -->
 
 ## Proposal
 

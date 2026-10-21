@@ -1,23 +1,23 @@
 **English** | [中文](README.zh-CN.md)
 
-# Porter Promo Video
+# Project media
 
-`porter-promo.mp4` — Porter's product launch promo (51 seconds, 1280×720, H.264).
+This directory currently contains these two documentation files. No product
+video, cover image, screenshot collection or video-rendering script is included.
 
-## Content outline
+The former references to `porter-promo.mp4`, `poster.png` and
+`render_promo.py` described unavailable artifacts and have been removed from
+the asset inventory. The project does not claim that a promotional video was
+produced or that real UI screenshots were verified.
 
-1. **Hook** (0–5s): "Switched across 5 AI coding tools, and your memory starts from zero every time?"
-2. **What Porter is** (5–13s): you → 27 harnesses → MCP → the Porter memory store — one diagram explains the architecture
-3. **Real test** (13–33s): actual `scripts/demo_e2e.py` output — cross-harness memory recall, the pending-review queue, revocation taking effect instantly
-4. **Panel tour** (33–57s): slow pans over real UI screenshots — pending-review queue, memory library, auto-sync, memory star map
-5. **Close** (57s–): "Porter · your data belongs only to you" + GitHub URL
+Future media should come from an identified Porter commit and a running,
+accepted instance using synthetic data. Record the capture date, language and
+viewport; remove tokens, client secrets, private memories and local account
+information. Label architectural illustrations as illustrations rather than
+screenshots. Check in the source or reproduction steps and any relevant asset
+license alongside the output.
 
-## Design language
-
-Deep warm-charcoal background + warm-gold `#D4A24E` accent + Chinese serif headlines, bilingual (Chinese/English). No voiceover (muted by default), no AI-generated people or voices — every screen is a real Porter screenshot.
-
-## Files
-
-- `porter-promo.mp4` — final cut (faststart, plays directly in a browser)
-- `poster.png` — cover frame
-- `render_promo.py` — render script (PIL + ffmpeg, reproducible)
+Real browser visual acceptance is still open; see
+[acceptance criteria](../docs/ACCEPTANCE.md). The root
+[README](../README.md) explains current behavior without relying on missing
+media.

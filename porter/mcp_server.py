@@ -336,6 +336,17 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
                 if not name or len(name) > 128:
                     raise ToolError("porter:invalid_input: entity must be 1..128 chars")
                 neighbors = await svc.store.neighbors(name)
+                visible_neighbors = []
+                for neighbor in neighbors:
+                    # Entity labels and relation provenance can reveal
+                    # private contents just as memory excerpts can.
+                    if neighbor.via_memory_id is None:
+                        continue
+                    provenance = await repo.get(neighbor.via_memory_id)
+                    if _visible(provenance):
+                        visible_neighbors.append(neighbor)
+                        if len(visible_neighbors) >= 50:
+                            break
                 mem_ids = await svc.store.memory_ids_for_entity(name)
                 memories = []
                 for mid in mem_ids[:20]:
@@ -358,7 +369,7 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
                             "relation": n.relation,
                             "via_memory_id": (str(n.via_memory_id) if n.via_memory_id else None),
                         }
-                        for n in neighbors[:50]
+                        for n in visible_neighbors
                     ],
                     "memories": memories,
                     "untrusted_data": True,
@@ -646,7 +657,7 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
             "a mismatch still applies the write (last-writer-wins) but the "
             "overwritten content is preserved as a pending inbox record and "
             "the result reports conflict=true with loser_pending_id. "
-            "Requires the memory.write scope."
+            "Requires the memory.write scope and read access to the target."
         )
     )
     async def memory_update(
@@ -674,10 +685,10 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
             # its head (a stale id must not resurrect an archived revision),
             # then require the head to be active.
             head = await repo.resolve_head(mid)
-            if head is None or head.status != "active":
+            if not can_read_memory(head, granted):
                 raise ToolError(
                     "porter:not_found: memory not found, or not active "
-                    "(only active memories can be updated)"
+                    "(only readable active memories can be updated)"
                 )
             # History-preserving edit (PRD US2): revise() archives the old
             # record with superseded_by -> new id. Never repo.update(), which

@@ -10,9 +10,15 @@ COPY api/${REQ_FILE} ./req.txt
 COPY requirements-lock.txt ./constraints.txt
 COPY requirements-embedder-lock.txt ./model-constraints.txt
 RUN if [ "$REQ_FILE" = "requirements-embedder.txt" ]; then \
-        pip install --no-cache-dir -c model-constraints.txt torch --index-url "$TORCH_INDEX_URL"; \
+        # Fetch only PyTorch from its CPU-only index. Resolve its ordinary \
+        # dependencies from PyPI below under the shared/model constraints. \
+        pip install --no-cache-dir --no-deps -c model-constraints.txt torch --index-url "$TORCH_INDEX_URL"; \
     fi \
-    && pip install --no-cache-dir -c constraints.txt -c model-constraints.txt -r req.txt
+    && pip install --no-cache-dir -c constraints.txt -c model-constraints.txt -r req.txt \
+    && pip check \
+    && if [ "$REQ_FILE" = "requirements-embedder.txt" ]; then \
+        python -c 'import torch; assert torch.version.cuda is None, "CPU-only PyTorch required"'; \
+    fi
 
 COPY porter/ ./porter/
 COPY migrations/ ./migrations/

@@ -9,7 +9,7 @@
 ## 基本原则
 
 - **两域模型。** 每个功能都要清楚自己服务哪个域：**personal**（个人记忆，敏感度分级 + 人工审核）或 **project**（项目的工作记忆，跨 harness 携带）。如果你的改动模糊了边界，请在 PR 里说明。
-- **可移植性是核心，敏感度是次要。** 默认一切自动流动；审核队列是拦垃圾的，不是拦你的。
+- **明确自动化边界。** 分级模式可立即激活符合条件的项目写入；个人/敏感/冲突写入和 Ollama 提取结果需要审核。严格模式将所有新写入排队。保留这些边界，策略改动应在 PR 说明。
 - **英文优先，双语文档。** 每个文档都是英文主文件 + `*.zh-CN.md` 姊妹文件，顶部互链。代码注释用英文。
 - **仓库里不放垃圾。** 不提交 `.venv`、`__pycache__`、`.env`、快照和临时文件。提交前看一眼 `.gitignore`。
 
@@ -23,6 +23,7 @@ python -m pip install -c requirements-lock.txt -e ".[dev]"
 python -m pre_commit install
 python -m ruff check .
 python -m ruff format --check --quiet .
+python scripts/check_repository.py
 python -m pytest -q
 python -m build
 ```
@@ -43,6 +44,7 @@ Ruff 和 pytest 配置统一放在 `pyproject.toml`，包版本以 `VERSION` 为
 4. 每个 PR 必须：
    - `python -m pytest -q` 全绿（新行为要有测试），
    - `python -m ruff check .` 与 `python -m ruff format --check --quiet .` 通过，
+   - 运行 `python scripts/check_repository.py`，检查本地文档链接、双语对应与打包约定，
    - 文档中英双语同步更新（README / SPECS / DEVELOPER / CHANGELOG，按需），
    - 填好 PR 模板，包括安全说明部分。
 
@@ -53,3 +55,6 @@ Porter 存的是用户在意的东西。改动如果涉及认证、OAuth scope�
 ## 行为准则
 
 友善、直接、善意推定。详见 `CODE_OF_CONDUCT.md`。
+
+发布与仓库管理见[维护者指南](docs/MAINTAINERS.zh-CN.md)。
+用[验收门槛](docs/ACCEPTANCE.zh-CN.md)区分自动化覆盖与真实用户验证。

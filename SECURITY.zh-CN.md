@@ -1,80 +1,79 @@
 [English](SECURITY.md) | **中文**
 
-# 安全政策 —— Porter v0.1.0
+# 安全政策
 
-Porter 存储你的个人 AI 记忆。安全是一等需求，不是 backlog：
-每个构建阶段（W1、W2、面板、MCP）之后都针对下述威胁模型做了
-对抗性代码 + 安全评审，所有 P0/P1 问题都在发布前修复
-（见 CHANGELOG.md）。
-
-## 威胁模型（PRD §14）与本版本缓解措施
-
-| # | 威胁 | 缓解措施（v0.1.0） |
-|---|---|---|
-| T1 | 恶意/被攻陷的 client 超 scope 读取记忆 | Scope 在每个请求上**服务端**强制执行（`require_scopes`）；`memory.read.<tag>` 在 repository 层过滤，**fail-closed**（scope∩tag 为空 → 返回空并审计）。client 传的 `tags` 永不能扩大 scope。OAuth 同意 POST 有同源 CSRF 守卫（`porter/origin.py`），恶意网站无法伪造批准来提权；宽松 CORS 已彻底移除。已用对抗性探测验证。 |
-| T2 | token 被盗/重放 | access token 为 HS256 JWT，1h TTL，`alg` 固定（算法混淆探测 → 401）。refresh token 为 opaque，用后轮换；**宽限窗外复用会吊销该 client 的全部 token**并发出 `security` 审计事件。经 jti 黑名单撤销——吊销的 token 远早于 60s 预算即 401（US3）。 |
-| T3 | 记忆内容污染下游 agent（prompt 注入） | 每条检索路径都给结果打 `untrusted_data: true`；MCP tool 描述指示模型把返回内容当数据、而非指令对待。写入走待确认队列（人工把关）。 |
-| T4 | 本地 DB 被盗 / 服务器被攻陷 | 自托管：物理机安全是运维者的责任（见 DEPLOY.md 文档）。可选的静态防护：绑定 localhost、加密备份（运维者管理）。`.env.example` 只含占位符；默认无遥测、无外部调用。 |
-| T5 | 恶意 client 刷写 | `memory.write` 只到待确认队列（永不直接发布）；限流 60 req/min/client（in-memory token bucket，按**已验证**的 client 身份分桶——评审中发现的伪造 `sub` 绕过已修复）；面板一键封禁 client。 |
-| T6 | 快照文件在 apply 前被篡改 | `inspect`/`apply` 验证 Ed25519 签名——不匹配 fail closed。实例密钥对（0o600）；签名随文件携带以便跨机验证。Trust-on-first-use：任何*合法*密钥都能验证（你的机器各有自己的密钥）；旧无签名文件仅在明确警告下接受，应用的内容一律进待确认队列（人工把关），永不直接进入激活记忆。写入前先展示 dry-run 列表；可选 AES-256-GCM 用户密码加密。 |
-| T7 | 审计日志被篡改以掩盖读取 | `audit_log` 为 append-only：Postgres trigger 禁止 UPDATE/DELETE（纵深防御——应用层 bug 也删不掉）；应用没有该表的更新/删除路径。删除事件只留元数据、不留内容（US5）。批准记为可见性变更审计。 |
-
-## 信任假设（部署前必读）
-
-1. **Owner 访问。**本机 loopback 连接受信任；容器转发的浏览器在
-   `/owner/login` 使用 `PORTER_SETUP_TOKEN` 解锁。签名 HttpOnly 会话有效
-   12 小时，用于面板和 OAuth 同意页；伪造转发头不会获得访问权限。
-   服务器**默认绑定 `127.0.0.1`**，首次 client 注册需要一次性
-   setup token（`X-Porter-Setup-Token`，未设置则每进程自动生成）。
-   不要把 API 端口暴露到不可信网络，除非前面加了鉴权。
-2. **JWT secret。**生产环境设置 `PORTER_JWT_SECRET`。若未设置，
-   每进程生成随机密钥（启动时大声警告），重启后所有 token 失效。
-3. **Embedder 选择是隐私选择。**`EMBEDDER_KIND=openai`
-   会把你的记忆文本发给 OpenAI。默认（小机器 `hash` 桩、
-   Docker 中 `sentence-transformer`/BGE-M3）全部本地。
-4. **限流器按进程。**多 worker 部署需要共享存储（Redis）——P2。
-5. **HTTP 域名信任。**默认只接受 localhost、127.0.0.1 与 [::1]，
-   域名校验先于 owner/认证中间件执行。自定义域名即使由本机反向代理转发，
-   也必须使用 owner 会话。TLS 在代理终止时设置 `PORTER_PUBLIC_ORIGIN`，
-   并保留 Host；内置启动命令禁用转发头信任。畸形来源地址直接拒绝。
-6. **配置必须明确。**无效的布尔开关和存储模式阻止启动；
-   `AUTH_ENABLED=true` 在 HTTP 与 stdio 中均保持认证开启。仅本地开发可设为 `0`。
-7. **客户端优先使用 HTTP。**Streamable HTTP 只需要该客户端的访问令牌。
-   stdio/Postgres 模板需要直接访问数据库与服务端签名密钥，仅适合同一受信任机器，
-   不应把这些凭据复制到不受信任的 harness。
-
-## 已验证 vs. 明确残留缺口
-
-**自动化回归测试覆盖**（最新结果见 README）：
-scope fail-closed 行为、JWT 篡改/重放拒绝、撤销即时性、
-refresh 复用全量吊销、限流绕过关闭、审计 append-only
-（内存仓库与真实 Postgres trigger 拒绝修改）、true-delete
-（行 + 向量消失、审计无内容）、快照签名验证、导入器只读行为。
-
-**2026-10-18 另已在本机验证：**真实 Postgres/pgvector 新建数据库重复
-执行全部 11 个迁移、并发事务的同步提交顺序、Docker 启动与 API 重建持久化、
-BGE-M3 CPU 真实推理、OAuth 同意、独立 HTTP/stdio MCP 客户端、加密快照
-与即时吊销。小样本 embedding 评测见 `docs/embedding-eval.2026-10-18.json`，
-不能据此保证模型在所有数据上的效果。
-
-**仍未验证：**
-- 真实 harness 握手（Codex/Zed/Cursor 配置按 MCP 规范编写，
-  但未对真实 CLI 测试）。
-- 浏览器视觉验收、真实用户记忆导入（fixture 导入已通过）。
-- 可选 ML 分级的质量/延迟与其他 embedding 模型。
+Porter 是用于自托管 AI 记忆的 alpha 软件。回归测试覆盖鉴权、持久化与加密操作，
+不代表独立安全审计或生产认证。目前安全修复面向最新 `main` 及其下一次发布；
+旧版本没有独立维护分支，也没有承诺支持期限。
 
 ## 报告漏洞
 
-这是个人自托管项目。如果你发现安全问题：
+不要在公开 issue 中发布利用细节、私人记忆、访问令牌或密钥。
+若已启用，请使用 [GitHub 私密漏洞报告](https://github.com/Mike-Animal-Counseling/porter/security/advisories/new)。
+若不可用，请使用[维护者个人页](https://github.com/Mike-Animal-Counseling)列出的私密渠道，
+或先请求私密联系方式，不要公开漏洞细节。目前没有专用安全邮箱或响应时限承诺。
 
-- **不要**开公开 issue 贴 exploit 细节。
-- 若维护者已开启，可使用 [GitHub 私密漏洞报告](https://github.com/Mike-Animal-Counseling/porter/security/advisories/new)。
-  若不可用，请向维护者请求私密报告渠道，避免公开敏感细节。目前尚未设立专用安全邮箱或响应时限承诺。
+请提供受影响的提交/版本、部署方式、使用虚构数据的最小复现、影响及可选修复建议。
+与维护者协调披露时间；提交报告不代表获得测试他人实例的授权。
+[维护者指南](docs/MAINTAINERS.zh-CN.md)说明发布和仓库设置的核验步骤。
 
-## 运维者加固清单（见 DEPLOY.md）
+## 威胁模型与实现
 
-- [ ] `PORTER_JWT_SECRET` 和 `PORTER_SETUP_TOKEN` 设为强随机值
-- [ ] `POSTGRES_PASSWORD` 已改掉 compose 默认值
-- [ ] 绑定本机或置于带鉴权的反向代理 + TLS 之后
-- [ ] 加密备份已配置并测试过恢复
-- [ ] `EMBEDDER_KIND` 已有意识地选择（本地 vs OpenAI）
+| 威胁 | 防护与实际边界 |
+| --- | --- |
+| T1：客户端越权读取 | HTTP 与 MCP 校验令牌并在服务端执行读取 scope。按标签授权的检索、同步、交接与写回预览只包含可见的激活记忆；客户端过滤条件不能扩大权限。Owner/admin 凭据受信任，可访问该实例。 |
+| T2：令牌被盗或重放 | Access token 是有效期一小时、固定算法的 HS256 JWT。Refresh token 用后轮换；宽限窗外复用会吊销该客户端的令牌。请求时检查撤销状态。TLS 与客户端凭据存储仍由运维者负责。 |
+| T3：记忆中的提示注入 | 检索结果标记 `untrusted_data`，MCP 描述要求把记忆当数据使用，但无法强制下游模型遵守。默认分级审批中，符合条件的低风险项目记忆可以立即激活或与近重复记录合并。个人、敏感、冲突、低置信度和加密写入进入审核；Ollama 提取结果始终审核。设 `PORTER_APPROVAL_MODE=strict` 可要求所有新写入审核。启发式敏感检测不保证机密性。 |
+| T4：存储被盗或服务端失陷 | 未使用客户端 E2EE 的记忆在服务端是明文。E2EE 隐藏正文，标签、类型和时间仍可见，加密记忆不能做语义检索。可选的密码加密快照保护导出内容。应使用系统/磁盘加密、受限文件权限和经过恢复测试的备份。普通记忆仍信任服务端。 |
+| T5：恶意写入或修改服务端文件 | 按已验证客户端身份执行进程内限流，默认每客户端每分钟 60 次请求。`memory.write` 允许经过分级判断的写入；默认模式可自动激活符合条件的记录。管理员合并、冲突处理与实际服务端写回需要 `memory.admin`。写回默认预览，实际写入使用标记区与备份。不要给不可信客户端写入/admin 权限。 |
+| T6：快照篡改或冒名 | Ed25519 校验拒绝修改后的签名正文；AES-256-GCM 检测密码加密快照的改动。校验公钥随文件携带，未绑定可信发送者，因此整个文件和公钥仍可能一起被替换。有效签名本身不能证明发送者身份。旧的无签名文件会带警告接受。请检查并确认导入；快照应用一律进入审核。 |
+| T7：审计记录被清除 | PostgreSQL 触发器拒绝普通审计 UPDATE/DELETE；删除事件只保留元数据，不保留记忆正文。这能约束普通应用写入，不能防住数据库管理员或存储失陷。外部日志保留由运维者选择。 |
+
+## 部署信任假设
+
+1. **Owner 权限很高。** 原生 loopback 连接受信任。通过 Docker 转发的浏览器用
+   `PORTER_SETUP_TOKEN` 解锁 `/owner/login`；签名 HttpOnly 会话有效 12 小时。
+   此令牌也限制首次客户端注册，应妥善保管。转发头不能授予 owner 权限。
+2. **网络边界必须明确。** 内置 Compose 端口绑定本机。默认允许域名为 localhost、
+   127.0.0.1 和 [::1]。自定义域名即使经过本机代理，也要求 owner 会话。
+   TLS 代理须保留 Host 并设置 `PORTER_PUBLIC_ORIGIN`；内置命令不信任转发头。
+   面板和 OAuth 修改操作执行同源校验。不要把未受保护的 owner 服务暴露到不可信网络。
+3. **凭据须在重启后稳定。** 设置强随机且持久的 `PORTER_JWT_SECRET`、
+   `PORTER_SETUP_TOKEN` 和 `POSTGRES_PASSWORD`。缺少 JWT secret 会生成进程临时密钥，
+   重启使令牌失效。无效存储模式和布尔开关阻止启动。除有意进行本机开发外，
+   保持 `AUTH_ENABLED=true`。
+4. **模型配置影响隐私。** Hash 与本机 BGE-M3 推理不向外发送记忆正文；首次下载模型需要联网。
+   `EMBEDDER_KIND=openai` 会把正文发送给配置的提供方。Ollama 提取是显式启用功能，
+   会把提交的聊天发送到配置的 Ollama 地址，该地址也可能在远端；启用前应了解运营方与数据保留策略。
+5. **客户端优先使用最小权限 HTTP。** Streamable HTTP 只需该客户端的令牌。
+   PostgreSQL stdio 客户端还需直接访问数据库和服务端签名密钥，仅适合同一受信任机器。
+   不要随客户端模板分发这些服务端凭据。
+6. **密钥管理仍需人工把关。** E2EE 设备/封套操作需要 admin 权限，设备私钥应留在客户端。
+   POSIX 文件模式不能证明 Windows ACL 隔离，需要检查本机系统权限。
+   快照密码与私钥不得进入源码或日志。
+7. **部分保护只在单进程内生效。** 限流使用内存桶，多 worker 需要共享限流机制；
+   内置部署使用一个 worker。不承诺分布式限流。
+
+## 证据与剩余验收
+
+已执行结果与限制见[检查报告](docs/REVIEW.zh-CN.md)。自动化检查包括 scope 拒绝、
+令牌篡改/撤销、refresh 复用、真实 PostgreSQL 审计触发器拒绝修改、彻底删除、
+签名/加密快照、多操作事务回滚与 Docker 持久化。14 个迁移已经在新建 PostgreSQL
+数据库和旧检查数据库的迁移名称接续场景中运行。
+
+已安装的 Codex CLI 能解析提供的 HTTP 和 stdio 配置，这不等于真实对话或执行工具。
+逐工具真实对话、用户真实导入、浏览器视觉验收、Windows ACL 和可选 ML 质量仍需
+[验收文档](docs/ACCEPTANCE.zh-CN.md)中的检查。Fixture 模型评测不能证明普遍提取或检索质量。
+团队与加密设备 API 也不代表多用户接入流程已完整验收。
+
+## 运维清单
+
+- [ ] 强随机持久凭据，认证保持开启。
+- [ ] 绑定本机，或明确配置带鉴权的 TLS 代理。
+- [ ] 客户端采用最小 scope，明确选择分级或严格审批。
+- [ ] 明确选择 embedding/提取服务地址。
+- [ ] 加密备份并在另一实例演练恢复。
+- [ ] 检查宿主系统中的私钥/文件权限。
+- [ ] 对外提供服务前记录当前版本和验收证据。
+
+部署说明：[DEPLOY.zh-CN.md](DEPLOY.zh-CN.md)。

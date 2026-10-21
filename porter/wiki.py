@@ -18,9 +18,9 @@ Security notes (prototype inherits the repo's guarantees):
 - Encrypted (E2EE) memories are NEVER indexed: the server is
   ciphertext-blind, so there is nothing meaningful to extract.
 - Graph expansion respects the same tag/active filters as the base search.
-- The graph stores entity *names* derived from memory text; names are
-  metadata, not secrets, but they are still only readable through the
-  memory.read-scoped MCP tool below.
+- Entity names and relation provenance can reveal memory contents.
+  The MCP graph tool applies the originating memory's visibility to
+  every returned edge, including active-only and tag restrictions.
 """
 
 from __future__ import annotations

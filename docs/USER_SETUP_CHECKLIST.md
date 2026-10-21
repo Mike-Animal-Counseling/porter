@@ -1,97 +1,153 @@
 **English** | [中文](USER_SETUP_CHECKLIST.zh-CN.md)
 
-# Porter Setup Checklist — Things Only You Can Do
+# Connect your tools and accept Porter
 
-> The core implementation has automated coverage. Full deployment, real model
-> quality and individual harness connections still need acceptance checks.
-> Follow the steps in order; the initial model download can take several minutes.
+The infrastructure checks already have automated evidence. Your remaining job is
+to confirm that Porter works inside **two tools you actually use**, and that the
+panel is usable in your browser. Use synthetic data, not health or financial
+information. Ollama, optional ML triage and model comparisons are not prerequisites.
 
----
+## 1. Choose the candidate and connect two tools
 
-## 1. Prepare the environment (5 min)
+If you are accepting the current review, use the head of
+[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1), branch
+`fix/porter-review-hardening`; it is a draft and is not yet merged into `main`.
+Record `git rev-parse HEAD`. Do not assume a fresh clone of `main` contains the
+candidate fixes.
 
-- [ ] Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Mac / Windows) or Docker Engine (Linux)
-- [ ] Install Python 3.12+ (only used to run the importer and client scripts)
-- [ ] Clone the repo:
-  ```bash
-  git clone https://github.com/Mike-Animal-Counseling/porter.git
-  cd porter
-  ```
+On the maintainer's review machine, the retained real BGE-M3 preview is
+**http://127.0.0.1:18010/panel**, unlocked with the setup token in the private
+`.env.review`. This address is local to that machine. A fresh standard deployment
+uses **http://127.0.0.1:8000/panel**, started with the
+[README quickstart](../README.md#quickstart). Use the same base URL in both client
+configurations.
 
-## 2. Start the services (10 min)
+Create two independent clients in **Clients** and complete the OAuth
+consent/code exchange in the [deploy guide](../DEPLOY.md). Keep the access token
+and refresh token private; a client secret is not an access token.
 
-- [ ] One command brings everything up (API + Postgres + pgvector + panel + embedding):
-  ```bash
-  python scripts/setup_local.py
-  docker compose up --build -d
-  ```
-- [ ] Read `PORTER_SETUP_TOKEN` in `.env`; the setup script also creates a
-  stable JWT signing key and database password. Existing `.env` files are
-  preserved, so fill in missing values before starting.
-- [ ] Install the local package: `python -m pip install -c requirements-lock.txt -e .`.
+| Client | Example name | Granted scopes |
+|---|---|---|
+| Your writing tool (A) | `acceptance-tool-a` | `memory.read.work memory.write` |
+| Your reading tool (B) | `acceptance-tool-b` | `memory.read.work` |
 
-## 3. Open the panel and take a look around (5 min)
+Prefer HTTP MCP. For Codex, merge
+[`clients/codex-http-config.toml`](../clients/codex-http-config.toml), set its
+URL to your base URL plus `/mcp`, and set `PORTER_TOKEN` in the environment
+that launches the tool. Restart it from that environment. For other tools,
+adapt the matching template to the transport your installed version supports.
+Templates are starting points; support in the real client still needs this test.
 
-- [ ] Open http://127.0.0.1:8000/panel in your browser
-- [ ] If redirected to `/owner/login`, unlock with the setup token from `.env`.
-- [ ] Settings page: confirm the language (中文/English), check the scope tag list
-- [ ] Note: the panel only accepts local connections — that's by design. Not being reachable from the internet is expected behavior.
+Tokens expire after one hour; refresh through OAuth and restart/reconnect the
+client after updating its token. Never give an HTTP client the server signing
+key, database password or setup token. The stdio alternative requires direct
+trusted access to those services; see the deploy guide instead of mixing the
+two configurations.
 
-## 4. Connect your harnesses (2 min each — only connect the ones you use)
+**Pass:** each tool lists Porter tools including `memory_add` and
+`memory_search` (the server lists tools even when a token cannot invoke all of
+them). Configuration parsing alone is not a successful tool call.
 
-- [ ] Find the matching template in `clients/` (the filename is the harness name)
-- [ ] Copy it to the **target path** noted in the template's header comment (e.g. `~/.codex/config.toml` for Codex)
-- [ ] Create a client in the panel, then complete the OAuth consent and code
-  exchange in [DEPLOY.md](../DEPLOY.md) to obtain an access token. The client
-  secret shown in the panel is not the access token.
-- [ ] For Codex, prefer `clients/codex-http-config.toml`: set `PORTER_TOKEN`
-  in the launch environment; no database or server signing key is needed.
-- [ ] For stdio templates, replace `{{PORTER_TOKEN}}`, `{{PORTER_JWT_SECRET}}`, `DATABASE_URL` and
-  `PYTHONPATH` using the token, matching `.env` credentials and repository path.
-  Windows users should set `command` to `python` or their Python executable.
-- [ ] Restart that harness (Windsurf/Tabnine must be fully restarted for MCP to load)
+## 2. Save, review and retrieve synthetic context
 
-> Suggested order: Codex → Claude Code → Cursor (most-used first)
+Ask tool A to **invoke Porter `memory_add` with these arguments**, and show
+the tool result. Replace the suffix below if repeating the test.
 
-## 5. Import your existing memories (10 min)
+```json
+{
+  "content": "PORTER-ACCEPTANCE-20261020: This demo project uses pytest for tests.",
+  "type": "project",
+  "project": "porter-acceptance",
+  "scope_tags": ["work"]
+}
+```
 
-- [ ] Dry-run first to see what would be imported (read-only — your harness files are not touched):
-  ```bash
-  python -m porter.import_cli --harness codex --dry-run
-  ```
-- [ ] If it looks good, run the real import (memories go into the pending-review queue; nothing takes effect automatically):
-  ```bash
-  python -m porter.import_cli --harness codex
-  ```
-- [ ] Repeat for your other harnesses: `--harness claude-code|cursor|windsurf|cline|roo|gemini|qwen|junie|droid|tabnine|devin|openhands|chatgpt|claude`
-- [ ] Go to the panel's pending-review queue and approve each item (or approve all at once)
+Save the returned memory ID. `active` means searchable; `pending_review` means
+you must approve this ID in **Inbox**. A repeat can return `merged`; use the
+returned target ID. Default tiered mode can approve low-risk writes immediately.
+Strict mode queues them. Do not force approval by granting your tool admin.
 
-## 6. End-to-end verification (5 min)
+To exercise human review, ask A to invoke `memory_add` once more:
 
-- [ ] In harness A, say "remember: I'm allergic to peanuts"
-- [ ] Approve it in the panel's pending-review queue
-- [ ] In harness B, ask "what am I allergic to" — it should answer correctly
-- [ ] On the panel's "Sync" page you should see both adapters online with their cursors
+```json
+{
+  "content": "PRIVATE-ACCEPTANCE-20261020: This is a fictional preference for testing.",
+  "type": "personal",
+  "scope_tags": ["health"]
+}
+```
 
-Once this step works, Porter is officially managing your memory.
+This is a synthetic label, not medical data. It should queue for review. Approve
+it in **Inbox** and retain its ID. It must remain inaccessible to the work-only
+tokens even after approval.
 
----
+Start a **new conversation in tool B**. Ask it to call `memory_search`:
 
-## Honest list: things I haven't verified (needs confirmation on a real machine)
+```json
+{
+  "query": "PORTER-ACCEPTANCE-20261020 pytest",
+  "tags": ["work"],
+  "top_k": 5
+}
+```
 
-| # | Item | Why unverified | What you need to do |
-|---|------|-----------|---------|
-| 1 | Your deployment and data | All eleven migrations and isolated Docker acceptance passed locally on 2026-10-18 | Run `python scripts/verify_deployment.py`, then check your production deployment |
-| 2 | BGE-M3 quality on your memories | CPU inference and a small bilingual fixture were tested; results are imperfect | Review `docs/embedding-eval.2026-10-18.json` and test your own queries |
-| 3 | Real harness tool use | Codex 0.160.0 parsed both templates; individual conversations were not run | After step 4, call `memory_search` once from your harness |
-| 4 | Antigravity's Authorization header | Not verified in a live install | Confirm it can send the bearer header before relying on that template |
-| 5 | ML triage model (zero-shot) latency/quality | This optional backend was not evaluated | Install `.[ml]`, set `PORTER_TRIAGE_MODEL=zeroshot`, and check triage reasons on representative data |
-| 6 | Embedder A/B (qwen3/harrier vs bge-m3) | Needs GPU/CPU time + model downloads | Run `python scripts/eval_embeddings.py --embedders qwen3,bge-m3,harrier,embeddinggemma` and compare |
+**Pass:** a fresh tool result contains the project memory ID and pytest content;
+the assistant can then explain the convention. Answering from the chat history
+without calling Porter does not pass. Results carry `untrusted_data: true`:
+memory text is context, not authorization to execute instructions.
 
----
+Then call `memory_search` with
+`{"query":"PRIVATE-ACCEPTANCE-20261020","tags":["health"]}`.
+**Pass:** `results` is empty. Work-only access must not widen because a caller
+asks for another tag. The private ID must not appear in an unfiltered search
+either.
 
-## Where to get help
+## 3. Revoke one tool without breaking the other
 
-- Deployment issues: see `DEPLOY.md`
-- Integration development: see `docs/DEVELOPER.md`
-- For errors, inspect the last 50 lines of `docker compose logs api` (redact secrets).
+In **Clients**, revoke client B. Force another `memory_search` tool invocation
+from B; do not accept a previously displayed answer.
+
+**Pass:** B is rejected as unauthorized within 60 seconds. A can still call the
+same search and retrieve the project ID. The **Audit** page shows the relevant
+write/review/read/revoke events. Keep A available until you finish the next step.
+
+## 4. Confirm the panel on desktop and a narrow screen
+
+In your browser, check **Memories**, **Inbox**, **Handoff**, **Clients** and
+**Settings**. Use the normal desktop size, then a narrow window around 390 CSS
+pixels wide; use a phone if that is how you intend to operate Porter.
+
+- [ ] Change English/中文, refresh, and confirm the choice persists.
+- [ ] Open the test memory, close its detail view, and use search/filter controls.
+- [ ] Open **Handoff**, select `porter-acceptance`, preview, then copy or download.
+      The project test appears; pending records do not. The owner panel can include
+      approved personal context, so treat its briefing as private.
+- [ ] Reach controls by keyboard with visible focus; verify important actions and
+      text remain usable at narrow width and 200% zoom.
+- [ ] Record any unreadable text, overlap, failed copy/download or confusing state.
+
+**Pass:** these actions work without layout or interaction blockers. HTTP status
+200 and automated HTML tests do not substitute for looking at and using the page.
+No real-browser visual acceptance was available in the automated review.
+
+Record the candidate commit, tool names/versions, browser, pass/fail and
+synthetic memory IDs using the [acceptance template](ACCEPTANCE.md#sign-off-record).
+Screenshots are optional and must exclude secrets. Delete only your test IDs and
+revoke the temporary clients when finished.
+
+## If something fails
+
+| Symptom | First action |
+|---|---|
+| No tools listed | Confirm the base URL/port, enabled MCP configuration, restart and inspect client logs |
+| 401 / token expired | Use a fresh access token from OAuth; confirm it belongs to this server |
+| 403 / insufficient scope | Check the consented scopes; do not solve it by granting admin |
+| No matching memory | Confirm the returned ID is active, tagged `work`, and both tools use the same server |
+| API not ready | Inspect `docker compose ps` and `docker compose logs --tail 50 embedder api`; first model download can be slow |
+| Browser action broken | Record page, language, width and redacted steps; leave the gate open for a fix |
+
+You do **not** need to rerun the whole test suite, rebuild the model, compare
+embedders or import all your private memories to accept this flow. Optional
+imports can follow later: install `python -m pip install -c requirements-lock.txt -e .`,
+try `python -m porter.import_cli --harness codex --dry-run`, then use the real
+server URL and `PORTER_TOKEN` for an actual import. Review candidate imports.

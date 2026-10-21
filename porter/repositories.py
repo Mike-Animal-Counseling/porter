@@ -893,8 +893,8 @@ class PostgresMemoryRepository(MemoryRepository):
             dup_rows = []
             if not encrypted:
                 dup_rows = await con.fetch(
-                    """
-                    SELECT id, 1 - (embedding <=> $1::vector) AS score
+                    f"""
+                    SELECT {_PG_COLS}, 1 - (embedding <=> $1::vector) AS score
                     FROM memories
                     WHERE id != $2 AND embedding IS NOT NULL
                       AND 1 - (embedding <=> $1::vector) > $3
@@ -906,24 +906,7 @@ class PostgresMemoryRepository(MemoryRepository):
                     DUPLICATE_THRESHOLD,
                 )
         rec = _row_to_record(row)
-        dups = [
-            ScoredMemory(
-                MemoryRecord(
-                    id=r["id"],
-                    content="",
-                    type="",
-                    scope_tags=[],
-                    source={},
-                    confidence=0.0,
-                    status="",
-                    embedding=None,
-                    created_at=_now(),
-                    updated_at=_now(),
-                ),
-                float(r["score"]),
-            )
-            for r in dup_rows
-        ]
+        dups = [ScoredMemory(_row_to_record(r), float(r["score"])) for r in dup_rows]
         return rec, dups
 
     async def find_similar_active(self, vec, *, threshold=0.70, limit=5):
@@ -992,8 +975,8 @@ class PostgresMemoryRepository(MemoryRepository):
                     actor_client_id,
                 )
             dup_rows = await con.fetch(
-                """
-                SELECT id, 1 - (embedding <=> $1::vector) AS score
+                f"""
+                SELECT {_PG_COLS}, 1 - (embedding <=> $1::vector) AS score
                 FROM memories
                 WHERE id != $2 AND embedding IS NOT NULL
                   AND 1 - (embedding <=> $1::vector) > $3
@@ -1005,24 +988,7 @@ class PostgresMemoryRepository(MemoryRepository):
                 DUPLICATE_THRESHOLD,
             )
         rec = _row_to_record(row)
-        dups = [
-            ScoredMemory(
-                MemoryRecord(
-                    id=r["id"],
-                    content="",
-                    type="",
-                    scope_tags=[],
-                    source={},
-                    confidence=0.0,
-                    status="",
-                    embedding=None,
-                    created_at=_now(),
-                    updated_at=_now(),
-                ),
-                float(r["score"]),
-            )
-            for r in dup_rows
-        ]
+        dups = [ScoredMemory(_row_to_record(r), float(r["score"])) for r in dup_rows]
         return rec, dups
 
     async def auto_merge(self, target_id, *, content, confidence, actor_client_id=None):

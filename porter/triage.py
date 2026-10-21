@@ -33,6 +33,7 @@ from typing import Literal
 from uuid import UUID
 
 from .config import settings
+from .visibility import can_read_memory
 
 # ------------------------------------------------------------------ thresholds
 #: Similarity in [CONFLICT_MIN, DUPLICATE_THRESHOLD) -> possible conflict.
@@ -218,6 +219,7 @@ def decide(
     # resolve it from the explicit type and/or the ML classifier;
     # "unknown" triages like the pre-taxonomy default.
     domain: str = "unknown",
+    merge_eligible_ids: set[UUID] | None = None,
 ) -> TriageDecision:
     """Pure policy function — no I/O, fully unit-testable.
 
@@ -293,6 +295,8 @@ def decide(
         for mid, s, tags in sim3:
             if s < AUTO_MERGE_SIMILARITY:
                 break  # sim3 is similarity-descending
+            if merge_eligible_ids is not None and mid not in merge_eligible_ids:
+                continue
             if domain == "project" and my_projects and not (my_projects & _project_names(tags)):
                 continue  # same text, different project: not a merge
             merge_target_id = mid
@@ -386,13 +390,15 @@ async def create_with_triage(
     key_id: str | None = None,
     approval_mode: str | None = None,
     via: str = "api",
-    scopes_used: Sequence[str] = (),
+    scopes_used: Sequence[str] = ("memory.admin",),
 ) -> tuple:
     """Write path shared by REST / MCP / panel: embed -> triage -> branch.
 
     Returns (record, decision). `record` is None only for auto_merge (the
     incoming memory was folded into the target; use decision.merge_target_id).
     Audit entries: "auto_approve" / "write" (queued) / "auto_merge".
+    External callers must pass their verified scopes in ``scopes_used``;
+    the default is for trusted, internal owner operations.
     """
     mode = approval_mode or getattr(settings, "approval_mode", "tiered")
     dup_threshold = getattr(settings, "duplicate_threshold", 0.92)
@@ -420,6 +426,17 @@ async def create_with_triage(
 
     vec = await repo.embedder.aembed_one(content)
     similar = await repo.find_similar_active(vec, threshold=CONFLICT_MIN_SIMILARITY, limit=5)
+    # Similarity is a read: a write-only grant must not become an oracle
+    # for private memory ids, nor refresh a target outside its read grant.
+    similar = [s for s in similar if can_read_memory(s.record, scopes_used)]
+    # Even readable near-duplicates must keep their original domain and
+    # tags. Merging across boundaries would discard the submitted scope
+    # and can touch a workspace the caller never had permission to write.
+    merge_eligible_ids = {
+        s.record.id
+        for s in similar
+        if s.record.type == type and set(s.record.scope_tags or ()) == set(scope_tags)
+    }
     # 3-tuples carry tags for project-scoped conflict checks.
     similar3 = [(s.record.id, s.score, list(s.record.scope_tags or ())) for s in similar]
 
@@ -437,6 +454,7 @@ async def create_with_triage(
         approval_mode=mode,
         duplicate_threshold=dup_threshold,
         domain=first_pass_domain,
+        merge_eligible_ids=merge_eligible_ids,
     )
 
     # ML second opinion: rules are the fast pre-filter — if they already
@@ -466,6 +484,7 @@ async def create_with_triage(
                 duplicate_threshold=dup_threshold,
                 ml_categories=ml_cats,
                 domain=effective_domain,
+                merge_eligible_ids=merge_eligible_ids,
             )
 
     def _audit_meta(extra: dict | None = None) -> dict:
@@ -541,8 +560,16 @@ async def create_with_triage(
     )
     # Merge the repo's own dup list with triage's (same source, keep both
     # consistent — repo list is authoritative for the response).
-    decision.duplicate_ids = [d.record.id for d in dups]
-    decision.duplicate_scores = [(d.record.id, d.score) for d in dups]
+    # Owners can review pending duplicate candidates in the inbox. Scoped
+    # clients can only learn ids of active memories they can already read.
+    visible_dups = [
+        d
+        for d in dups
+        if can_read_memory(d.record, scopes_used)
+        or ("memory.admin" in scopes_used and d.record.status == "pending")
+    ]
+    decision.duplicate_ids = [d.record.id for d in visible_dups]
+    decision.duplicate_scores = [(d.record.id, d.score) for d in visible_dups]
     await repo.audit(
         action="write",
         memory_ids=[rec.id],

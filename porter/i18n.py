@@ -116,6 +116,10 @@ STRINGS: dict[str, dict[str, str]] = {
     "zh": {
         # ---- layout / nav ----
         "panel_name": "Porter 面板",
+        "skip_to_content": "跳到主要内容",
+        "main_navigation": "主要导航",
+        "request_failed": "操作未完成，请重试；若登录已过期，请重新解锁面板。",
+        "copy_failed": "复制未成功，请选中文本后手动复制。",
         "brand_sub": "个人 AI 记忆面板",
         "nav_memories": "记忆",
         "nav_inbox": "待确认队列",
@@ -361,6 +365,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "header_theme": "切换深色 / 浅色",
         "header_lang": "语言",
         "drawer_close": "关闭",
+        "copy_text": "复制",
         "toast_copied": "已复制",
         # ---- redesign: memories ----
         "mem_empty_title": "还没有记忆",
@@ -420,6 +425,10 @@ STRINGS: dict[str, dict[str, str]] = {
     "en": {
         # ---- layout / nav ----
         "panel_name": "Porter Panel",
+        "skip_to_content": "Skip to main content",
+        "main_navigation": "Main navigation",
+        "request_failed": "Could not complete this action. Retry, or unlock the panel if your session expired.",
+        "copy_failed": "Copy failed. Select the text and copy it manually.",
         "brand_sub": "Personal AI memory panel",
         "nav_memories": "Memories",
         "nav_inbox": "Pending inbox",
@@ -665,6 +674,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "header_theme": "Toggle dark / light",
         "header_lang": "Language",
         "drawer_close": "Close",
+        "copy_text": "Copy",
         "toast_copied": "Copied",
         # ---- redesign: memories ----
         "mem_empty_title": "No memories yet",

@@ -38,6 +38,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from .db import json_object
+from .errors import InvalidInput
 from .schemas import (
     MAX_CIPHERTEXT_LEN,
     MAX_CONTENT_LEN,
@@ -45,6 +46,7 @@ from .schemas import (
     MEMORY_TYPES,
     _validate_tags,
 )
+from .teams import validate_workspace_memory
 
 SNAPSHOT_FORMAT = "porter-snapshot/v1"
 MAGIC = b"PORTER1"
@@ -376,6 +378,10 @@ def _validated_entries(body: dict[str, Any]) -> list[dict[str, Any]]:
         except ValueError as exc:
             raise ValueError(f"snapshot entry #{i}: {exc}") from exc
         try:
+            validate_workspace_memory(mtype, tags)
+        except InvalidInput as exc:
+            raise ValueError(f"snapshot entry #{i}: {exc.message}") from exc
+        try:
             confidence = float(m.get("confidence", 0.5))
         except (TypeError, ValueError) as exc:
             raise ValueError(f"snapshot entry #{i} has invalid confidence") from exc
@@ -451,31 +457,32 @@ async def apply_snapshot_file(
     signature_ok = verify_snapshot_body(body)  # raises on tampered signature
     entries = _validated_entries(body)
     imported: list[str] = []
-    for e in entries:
-        source = e["source"]
-        source["imported_via"] = source_label
-        rec, _dups = await repo.create_pending(
-            content=e["content"],
-            type=e["type"],
-            scope_tags=e["scope_tags"],
-            confidence=e["confidence"],
-            source=source,
-            # E2EE (P2): encrypted entries restore the flag verbatim —
-            # ciphertext is never re-embedded or deduplicated.
-            encrypted=e["encrypted"],
-            key_id=e["key_id"],
+    async with repo.atomic([]):
+        for e in entries:
+            source = e["source"]
+            source["imported_via"] = source_label
+            rec, _dups = await repo.create_pending(
+                content=e["content"],
+                type=e["type"],
+                scope_tags=e["scope_tags"],
+                confidence=e["confidence"],
+                source=source,
+                # E2EE (P2): encrypted entries restore the flag verbatim —
+                # ciphertext is never re-embedded or deduplicated.
+                encrypted=e["encrypted"],
+                key_id=e["key_id"],
+            )
+            imported.append(str(rec.id))
+        await audit(
+            action="snapshot_apply",
+            memory_ids=[],
+            scopes_used=["memory.admin"],
+            meta={
+                "file": os.path.basename(path),
+                "imported": len(imported),
+                "signature_ok": bool(signature_ok),
+            },
         )
-        imported.append(str(rec.id))
-    await audit(
-        action="snapshot_apply",
-        memory_ids=[],
-        scopes_used=["memory.admin"],
-        meta={
-            "file": os.path.basename(path),
-            "imported": len(imported),
-            "signature_ok": bool(signature_ok),
-        },
-    )
     report: dict[str, Any] = {"imported": len(imported), "memory_ids": imported}
     if signature_ok is None:
         # Legacy unsigned file: accepted for backward compatibility, but the

@@ -6,7 +6,10 @@ labels: [bug]
 
 ## What happened
 
-<!-- A clear, short description of the bug. -->
+<!-- A clear, short description. English or Chinese is welcome.
+Security vulnerability? Use SECURITY.md and private reporting instead.
+Use synthetic memories. Never include real transcripts, tokens, setup tokens,
+JWT secrets, database credentials, private keys or unredacted .env files. -->
 
 ## Steps to reproduce
 
@@ -24,7 +27,10 @@ labels: [bug]
 - Install method: <!-- docker compose / source -->
 - Python version (if running from source):
 - Harness (if relevant): <!-- e.g. claude-code, codex, cursor -->
+- Operating system:
+- Storage / embedder: <!-- postgres or memory; hash, local model or provider -->
 
 ## Logs
 
-<!-- Paste relevant logs; redact tokens and secrets. -->
+<!-- Paste only relevant, redacted logs. Include the failing request/tool name
+and status code; exclude Authorization/Cookie headers and memory content. -->

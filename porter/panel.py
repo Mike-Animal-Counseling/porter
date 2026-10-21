@@ -242,7 +242,9 @@ async def _layout(
             extra = sync_dot
         cls = "nav__item nav__item--active" if key == active else "nav__item"
         items.append(
-            f'<a href="{url}" class="{cls}">{icon(ic)}<span>{esc(t(label_key, lang))}</span>{extra}</a>'
+            f'<a href="{url}" class="{cls}" aria-label="{esc(t(label_key, lang))}" '
+            f"{'aria-current=page' if key == active else ''}>"
+            f"{icon(ic)}<span>{esc(t(label_key, lang))}</span>{extra}</a>"
         )
     # Settings gets a separated group label.
     nav_html = "".join(items[:-1])
@@ -269,16 +271,17 @@ async def _layout(
 <script src="/panel/static/htmx.min.js" defer></script>
 <script src="/panel/static/js/panel.js" defer></script>
 </head>
-<body>
+<body data-request-failed-msg="{esc(t("request_failed", lang))}" data-copy-failed-msg="{esc(t("copy_failed", lang))}">
+<a class="skip-link" href="#main-content">{esc(t("skip_to_content", lang))}</a>
 <div class="shell">
 <aside class="sidebar" id="sidebar">
   <div class="brand"><div class="brand__name">Porter</div><div class="brand__sub">memory layer</div></div>
-  <nav class="nav">{nav_html}</nav>
+  <nav class="nav" aria-label="{esc(t("main_navigation", lang))}">{nav_html}</nav>
   <div class="sidebar__foot"><span class="version-pill">v{esc(__version__)}</span>{sign_out}</div>
 </aside>
 <div class="main">
   <header class="topbar">
-    <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="menu">{icon("menu")}</button>
+    <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="{esc(t("main_navigation", lang))}" aria-controls="sidebar" aria-expanded="false">{icon("menu")}</button>
     <div class="topbar__crumb">Porter <span class="muted">/</span> <strong>{esc(title)}</strong></div>
     <div class="topbar__spacer"></div>
     <form class="topbar__search" method="get" action="/panel/memories" role="search">
@@ -291,7 +294,7 @@ async def _layout(
     </div>
     <button class="icon-btn" id="theme-toggle" aria-label="{esc(t("header_theme", lang))}" aria-pressed="false">{icon("moon")}</button>
   </header>
-  <main class="page">
+  <main class="page" id="main-content" tabindex="-1">
     <div class="page-head"><h1>{esc(title)}</h1>{sub_html}</div>
     {body}
   </main>
@@ -299,13 +302,13 @@ async def _layout(
 </div>
 </div>
 <div class="drawer-overlay" id="drawer-overlay"></div>
-<aside class="drawer" id="drawer" aria-label="{esc(t("drawer_close", lang))}">
-  <div class="drawer__head"><strong>{esc(title)}</strong>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-hidden="true" tabindex="-1" inert>
+  <div class="drawer__head"><strong id="drawer-title">{esc(t("title_memory_detail", lang))}</strong>
     <button class="icon-btn" data-close-drawer aria-label="{esc(t("drawer_close", lang))}">{icon("x")}</button>
   </div>
   <div class="drawer__body" id="drawer-body"></div>
 </aside>
-<div id="toasts" aria-live="polite"></div>
+<div id="toasts" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>"""
 
@@ -346,7 +349,8 @@ def _copy_btn(value: str, lang: str) -> str:
     return (
         f'<button class="copy-btn" data-copy="{esc(value)}" '
         f'data-copied-msg="{esc(t("toast_copied", lang))}" '
-        f'title="{esc(t("toast_copied", lang))}">{icon("copy", 13)}</button>'
+        f'type="button" title="{esc(t("copy_text", lang))}" '
+        f'aria-label="{esc(t("copy_text", lang))}">{icon("copy", 13)}</button>'
     )
 
 
@@ -469,7 +473,7 @@ async def memories_page(
 <div class="card">
 <form method="get" action="/panel/memories" id="mem-filter-form">
 <div class="toolbar" id="mem-filters">
-<input type="search" name="q" value="{esc(q)}" placeholder="{esc(t("search_placeholder", lang))}"
+<input type="search" name="q" value="{esc(q)}" aria-label="{esc(t("search_placeholder", lang))}" placeholder="{esc(t("search_placeholder", lang))}"
   hx-get="/panel/memories/rows" hx-trigger="input changed delay:300ms"
   hx-target="#mem-rows" hx-swap="innerHTML" hx-include="#mem-filter-form"
   hx-indicator="#mem-skel">
@@ -633,16 +637,16 @@ def _memory_detail_body(m, lang: str) -> str:
 <h2 style="font-size:16px;margin:0 0 6px">{esc(t("h_edit", lang))}</h2>
 <div class="small muted" style="margin-bottom:8px">{esc(t("edit_sub", lang))}</div>
 <form method="post" action="/panel/memories/{m.id}/edit">
-<label class="f">{esc(t("f_content", lang))}</label>
-<textarea name="content">{esc(m.content)}</textarea>
+<label class="f" for="memory-{m.id}-content">{esc(t("f_content", lang))}</label>
+<textarea name="content" id="memory-{m.id}-content">{esc(m.content)}</textarea>
 <div class="row">
-<div style="flex:1;min-width:160px"><label class="f">{esc(t("f_type", lang))}</label>
-<select name="type">{type_opts}</select></div>
-<div style="flex:1;min-width:160px"><label class="f">{esc(t("f_confidence", lang))}</label>
-<input type="number" name="confidence" min="0" max="1" step="0.05" value="{m.confidence}"></div>
+<div style="flex:1;min-width:160px"><label class="f" for="memory-{m.id}-type">{esc(t("f_type", lang))}</label>
+<select name="type" id="memory-{m.id}-type">{type_opts}</select></div>
+<div style="flex:1;min-width:160px"><label class="f" for="memory-{m.id}-confidence">{esc(t("f_confidence", lang))}</label>
+<input type="number" name="confidence" id="memory-{m.id}-confidence" min="0" max="1" step="0.05" value="{m.confidence}"></div>
 </div>
-<label class="f">{esc(t("f_tags", lang))}</label>
-<input type="text" name="scope_tags" value="{esc(",".join(m.scope_tags))}">
+<label class="f" for="memory-{m.id}-tags">{esc(t("f_tags", lang))}</label>
+<input type="text" name="scope_tags" id="memory-{m.id}-tags" value="{esc(",".join(m.scope_tags))}">
 {and_approve_box}
 <div class="row mt"><button class="btn btn--primary" type="submit">{esc(t("btn_save", lang))}</button>
 <a class="btn btn--secondary" href="/panel/memories">{esc(t("btn_back", lang))}</a></div>
@@ -1048,10 +1052,10 @@ async def client_new_form(request: Request, _=Depends(panel_owner)):
 <div class="card page--narrow"><h2>{esc(t("title_client_new", lang))}</h2>
 <div class="card__sub">{esc(t("client_new_sub", lang))}</div>
 <form method="post" action="/panel/clients/new">
-<label class="f">{esc(t("f_name", lang))}</label>
-<input type="text" name="name" maxlength="100" required>
-<label class="f">{esc(t("f_redirect_uris", lang))}</label>
-<textarea name="redirect_uris" style="min-height:70px" placeholder="http://localhost:9999/callback"></textarea>
+<label class="f" for="client-name">{esc(t("f_name", lang))}</label>
+<input type="text" name="name" id="client-name" maxlength="100" required>
+<label class="f" for="client-redirect-uris">{esc(t("f_redirect_uris", lang))}</label>
+<textarea name="redirect_uris" id="client-redirect-uris" style="min-height:70px" placeholder="http://localhost:9999/callback"></textarea>
 <div class="row mt"><button class="btn btn--primary" type="submit">{esc(t("btn_register", lang))}</button>
 <a class="btn btn--secondary" href="/panel/clients">{esc(t("btn_cancel", lang))}</a></div>
 </form></div>"""
@@ -1088,7 +1092,7 @@ async def client_new(
 <div class="meta-grid" style="margin-bottom:4px"><dt>{esc(t("row_name", lang))}</dt><dd>{esc(rec.name)}</dd></div>
 <div class="meta-grid"><dt>client_id</dt><dd><code class="small">{esc(rec.client_id)}</code> {_copy_btn(rec.client_id, lang)}</dd></div>
 </dl>
-<label class="f">client_secret</label>
+<div class="field-label">client_secret</div>
 <pre class="secret"><span>{esc(secret)}</span>{_copy_btn(secret, lang)}</pre>
 <div class="row mt"><a class="btn btn--primary" href="/panel/clients">{esc(t("btn_done", lang))}</a></div>
 </div>"""
@@ -1195,12 +1199,12 @@ async def share_new_form(request: Request, _=Depends(panel_owner)):
 <div class="card page--narrow"><h2>{esc(t("title_share_new", lang))}</h2>
 <div class="card__sub">{esc(t("share_new_sub", lang))}</div>
 <form method="post" action="/panel/shares/new">
-<label class="f">{esc(t("f_share_name", lang))}</label>
-<input type="text" name="name" maxlength="64" required>
-<label class="f">{esc(t("f_share_tags", lang))}</label>
-<div class="checks">{checks}</div>
-<label class="f">{esc(t("f_share_expires", lang))}</label>
-<input type="number" name="expires_in_hours" min="1" max="2160" value="168" style="max-width:200px">
+<label class="f" for="share-name">{esc(t("f_share_name", lang))}</label>
+<input type="text" name="name" id="share-name" maxlength="64" required>
+<fieldset class="field-set"><legend class="f">{esc(t("f_share_tags", lang))}</legend>
+<div class="checks">{checks}</div></fieldset>
+<label class="f" for="share-expires">{esc(t("f_share_expires", lang))}</label>
+<input type="number" name="expires_in_hours" id="share-expires" min="1" max="2160" value="168" style="max-width:200px">
 <div class="row mt"><button class="btn btn--primary" type="submit">{esc(t("btn_mint_share", lang))}</button>
 <a class="btn btn--secondary" href="/panel/shares">{esc(t("btn_cancel", lang))}</a></div>
 </form></div>"""
@@ -1250,7 +1254,7 @@ async def share_new(
 <div class="meta-grid" style="margin-bottom:4px"><dt>{esc(t("th_share_tags", lang))}</dt><dd>{_tag_chips(_share_tags(share.scopes))}</dd></div>
 <div class="meta-grid"><dt>{esc(t("th_share_expires", lang))}</dt><dd class="small muted">{_dt(share.expires_at)}</dd></div>
 </dl>
-<label class="f">token</label>
+<div class="field-label">token</div>
 <pre class="secret"><span>{esc(token)}</span>{_copy_btn(token, lang)}</pre>
 <div class="row mt"><a class="btn btn--primary" href="/panel/shares">{esc(t("btn_done", lang))}</a></div>
 </div>"""
@@ -1367,8 +1371,8 @@ async def audit_page(
 <div class="card">
 <form method="get" action="/panel/audit"><div class="toolbar" style="position:static;padding:0 0 12px">
 <select name="range" aria-label="{esc(t("audit_range_label", lang))}">{ropts}</select>
-<select name="client_id"><option value="">{esc(t("opt_all_sources", lang))}</option>{copts}</select>
-<select name="action"><option value="">{esc(t("opt_all_actions", lang))}</option>{aopts}</select>
+<select name="client_id" aria-label="{esc(t("opt_all_sources", lang))}"><option value="">{esc(t("opt_all_sources", lang))}</option>{copts}</select>
+<select name="action" aria-label="{esc(t("opt_all_actions", lang))}"><option value="">{esc(t("opt_all_actions", lang))}</option>{aopts}</select>
 <button class="btn btn--secondary btn--sm" type="submit">{esc(t("btn_filter", lang))}</button>
 <a class="btn btn--ghost btn--sm" href="/panel/audit.csv?{qs}">{icon("download", 14)} {esc(t("btn_export_csv", lang))}</a>
 </div></form>
@@ -1455,10 +1459,10 @@ async def snapshots_page(request: Request, _=Depends(panel_owner)):
 <div class="card"><h2>{esc(t("h_create_snapshot", lang))}</h2>
 <div class="card__sub">{esc(t("snap_create_sub", lang))}</div>
 <form method="post" action="/panel/snapshots/create">
-<label class="f">{esc(t("f_snap_tags", lang))}</label>
-<div class="checks">{checks}</div>
-<label class="f">{esc(t("f_snap_password", lang))}</label>
-<input type="password" name="password" maxlength="128" autocomplete="new-password" style="max-width:320px">
+<fieldset class="field-set"><legend class="f">{esc(t("f_snap_tags", lang))}</legend>
+<div class="checks">{checks}</div></fieldset>
+<label class="f" for="snapshot-password">{esc(t("f_snap_password", lang))}</label>
+<input type="password" name="password" id="snapshot-password" maxlength="128" autocomplete="new-password" style="max-width:320px">
 <div class="row mt"><button class="btn btn--primary" type="submit">{esc(t("btn_create_snapshot", lang))}</button></div>
 </form></div>
 <div class="row row--between" style="margin:20px 0 12px">
@@ -1513,10 +1517,10 @@ async def snapshots_apply_form(request: Request, _=Depends(panel_owner)):
 <div class="card page--narrow"><h2>{esc(t("h_apply_snapshot", lang))}</h2>
 <div class="card__sub">{esc(t("apply_sub", lang))}</div>
 <form method="post" action="/panel/snapshots/apply" enctype="multipart/form-data">
-<label class="f">{esc(t("f_snap_file", lang))}</label>
-<input type="file" name="file" required accept=".porter,.json">
-<label class="f">{esc(t("f_snap_file_password", lang))}</label>
-<input type="password" name="password" maxlength="128" style="max-width:320px">
+<label class="f" for="snapshot-file">{esc(t("f_snap_file", lang))}</label>
+<input type="file" name="file" id="snapshot-file" required accept=".porter,.json">
+<label class="f" for="snapshot-file-password">{esc(t("f_snap_file_password", lang))}</label>
+<input type="password" name="password" id="snapshot-file-password" maxlength="128" style="max-width:320px">
 <div class="row mt"><button class="btn btn--primary" type="submit">{esc(t("btn_preview", lang))}</button></div>
 </form></div>"""
     return HTMLResponse(
@@ -1584,8 +1588,8 @@ async def snapshots_apply_dryrun(
 <h3 style="font-size:14px;margin:16px 0 8px">{esc(t("dryrun_samples", lang))}</h3><ul style="padding-left:18px">{samples}</ul>
 <form method="post" action="/panel/snapshots/apply/confirm">
 <input type="hidden" name="upload" value="{esc(rel)}">
-<label class="f">{esc(t("f_snap_file_password", lang))}</label>
-<input type="password" name="password" maxlength="128" style="max-width:320px">
+<label class="f" for="snapshot-confirm-password">{esc(t("f_snap_file_password", lang))}</label>
+<input type="password" name="password" id="snapshot-confirm-password" maxlength="128" style="max-width:320px">
 <div class="row mt">
 <button class="btn btn--primary" hx-post="/panel/snapshots/apply/confirm" hx-confirm="{esc(t("confirm_import", lang))}">{esc(t("btn_confirm_import", lang))}</button>
 <a class="btn btn--secondary" href="/panel/snapshots">{esc(t("btn_cancel", lang))}</a></div>
@@ -1781,7 +1785,7 @@ async def settings_page(request: Request, _=Depends(panel_owner)):
     body = f"""
 <div class="card page--narrow"><h2>{esc(t("h_language", lang))}</h2>
 <div class="card__sub">{esc(t("lang_sub", lang))}</div>
-<div class="seg" role="group">
+<div class="seg" role="group" aria-label="{esc(t("header_lang", lang))}">
 <button type="button" data-set-lang="zh" aria-pressed="{str(lang == "zh").lower()}">中文</button>
 <button type="button" data-set-lang="en" aria-pressed="{str(lang == "en").lower()}">EN</button>
 </div></div>
@@ -1793,9 +1797,9 @@ async def settings_page(request: Request, _=Depends(panel_owner)):
 <tbody>{preset_rows}{custom_rows}</tbody></table></div>
 <form method="post" action="/panel/settings/tags/add" class="mt">
 <div class="row">
-<input type="text" name="tag" placeholder="{esc(t("ph_new_tag", lang))}" pattern="[a-z0-9_]{{1,32}}"
+<input type="text" name="tag" aria-label="{esc(t("ph_new_tag", lang))}" placeholder="{esc(t("ph_new_tag", lang))}" pattern="[a-z0-9_]{{1,32}}"
   required style="max-width:260px">
-<input type="text" name="label" placeholder="{esc(t("ph_new_label", lang))}" maxlength="64" required style="max-width:200px">
+<input type="text" name="label" aria-label="{esc(t("ph_new_label", lang))}" placeholder="{esc(t("ph_new_label", lang))}" maxlength="64" required style="max-width:200px">
 <button class="btn btn--secondary btn--sm" type="submit">{esc(t("btn_add", lang))}</button></div></form></div>
 <div class="card"><h2>{esc(t("h_data", lang))}</h2>
 <div class="row">
@@ -1808,14 +1812,14 @@ async def settings_page(request: Request, _=Depends(panel_owner)):
 <p class="small muted" style="margin:0 0 10px">{esc(t("danger_delete_all_d", lang))}</p>
 <form method="post" action="/panel/settings/danger/delete-all-memories">
 <div class="row">
-<input type="text" name="confirm" required autocomplete="off"
+<input type="text" name="confirm" required autocomplete="off" aria-label="{esc(t("danger_delete_all_t", lang))}"
   placeholder="{esc(t("danger_confirm_ph", lang).format(phrase=phrase))}" style="max-width:260px">
 <button class="btn btn--danger-solid btn--sm" type="submit">{esc(t("danger_delete_all_t", lang))}</button></div></form>
 <h3 style="font-size:14px;margin:18px 0 4px">{esc(t("danger_reset_t", lang))}</h3>
 <p class="small muted" style="margin:0 0 10px">{esc(t("danger_reset_d", lang))}</p>
 <form method="post" action="/panel/settings/danger/reset-instance">
 <div class="row">
-<input type="text" name="confirm" required autocomplete="off"
+<input type="text" name="confirm" required autocomplete="off" aria-label="{esc(t("danger_reset_t", lang))}"
   placeholder="{esc(t("danger_confirm_ph", lang).format(phrase=phrase))}" style="max-width:260px">
 <button class="btn btn--danger-solid btn--sm" type="submit">{esc(t("danger_reset_t", lang))}</button></div></form>
 </div>"""

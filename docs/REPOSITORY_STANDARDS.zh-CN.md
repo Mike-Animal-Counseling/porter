@@ -14,6 +14,7 @@ Porter 参考持续维护的 [FastAPI 官方全栈模板](https://github.com/fas
 | 开发环境 | 轻量 `.[dev]`，显式安装 `.[ml]` 才下载模型依赖，Python 3.12 为基准 |
 | 代码风格 | 固定 Ruff 版本，对应用、脚本、Python 客户端和测试统一检查、导入排序与格式化 |
 | 本地检查 | 可选 pre-commit 钩子运行与 CI 相同的 Ruff 命令 |
+| 文档 | CI 检查本地链接及文件名大小写、双语配对、项目元数据和迁移编号唯一性 |
 | 跨平台文件 | `.editorconfig` 与 `.gitattributes` 约定 UTF-8/LF，忽略运行数据 |
 | CI | 只读令牌、不保留 checkout 凭据、Action 固定提交、任务超时、取消被新提交替代的运行 |
 | 验证 | Windows/Linux 测试、真实 Postgres 迁移、隔离 Docker 的 OAuth/MCP/快照/持久化验收，以及安装后 wheel 检查 |
@@ -28,6 +29,9 @@ Porter 参考持续维护的 [FastAPI 官方全栈模板](https://github.com/fas
 [贡献指南](../CONTRIBUTING.zh-CN.md) 中的验证。
 
 这些检查不能替代所有 harness 的实际接入或模型质量评测。
-远程 Actions 与 Dependabot 要在改动进入 GitHub 后才运行；分支保护和私密漏洞报告
-需由维护者在仓库设置中开启。目前没有宣称全项目类型检查通过；现有动态仓库与 SDK
+公开仓库已启用私密漏洞报告、依赖告警和自动安全修复提案。每次推送后，远程 Actions
+验证对应的 PR 提交。分支保护尚未启用，需要先与所有贡献者协调 PR 工作流程。
+详见[维护指南](MAINTAINERS.zh-CN.md)、[依赖审计](DEPENDENCY_AUDIT.zh-CN.md)
+和[第三方组件清单](../THIRD_PARTY.zh-CN.md)。
+目前没有宣称全项目类型检查通过；现有动态仓库与 SDK
 接口需要逐步补齐类型后再引入这一门槛。

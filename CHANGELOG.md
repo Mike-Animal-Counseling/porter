@@ -8,6 +8,27 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Acceptance and open-source readiness (2026-10-20)
+
+- Restrict graph edges, duplicate candidates and update targets to readable
+  memories. Require matching memory types and complete tag sets for automatic
+  merges, and preserve full PostgreSQL candidate metadata for permission checks.
+- Validate an entire snapshot before importing and commit PostgreSQL imports
+  and their audit records atomically. Accept both personal/project memory types
+  in REST filters and clarify OAuth write consent.
+- Improve bilingual form labels, navigation, drawer keyboard handling, mobile
+  controls, copy/error feedback, reduced motion and text/button contrast. Bind
+  graph events once and debounce resize work. Browser visual acceptance remains
+  a separate gate.
+- Update vulnerable certifi/setuptools pins, align shared model constraints and
+  install the CPU PyTorch wheel separately from its PyPI dependencies; enforce
+  dependency consistency and CPU-only PyTorch during the image build.
+- Add bilingual acceptance, maintainer, dependency audit and UI review guides;
+  refresh README, deployment, community and security policies. Add local link,
+  metadata and migration checks to CI and document third-party components.
+- Update the public repository description/topics and enable private security
+  reports, dependency alerts and automated security-fix proposals.
+
 ### Owner handoff and optional extraction
 
 - Use an independent temporary directory for deployment acceptance so a fresh
