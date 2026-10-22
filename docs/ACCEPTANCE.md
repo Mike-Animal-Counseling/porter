@@ -21,6 +21,12 @@ commit batch, not acceptance or functional completion.
   [review report](REVIEW.md) and executable
   [Postgres](../tests/test_postgres_integration.py) /
   [deployment](../tests/test_deployed_api.py) acceptance cases.
+- Verified code baseline:
+  [`08fb424`](https://github.com/Mike-Animal-Counseling/porter/commit/08fb424dadf7f316b5e539d0487c07691acea776)
+  passed all six jobs in [CI run 39552038204](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39552038204):
+  quality, packaging, Linux tests, Windows tests, PostgreSQL and deployment.
+  This evidence applies to that commit; later documentation-only commits
+  also need their own CI status.
 - Historical baseline: all six jobs passed at `c3c5fdf` in [CI run 39385023666](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39385023666):
   quality, packaging, Linux tests, Windows tests, PostgreSQL and deployment.
 - Fourteen migrations were exercised on fresh PostgreSQL, with legacy-name

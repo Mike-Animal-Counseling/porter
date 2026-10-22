@@ -16,6 +16,11 @@
   见 [检查报告](REVIEW.zh-CN.md)，以及可执行的
   [Postgres](../tests/test_postgres_integration.py) /
   [部署验收](../tests/test_deployed_api.py) 用例。
+- 已验证代码基线
+  [`08fb424`](https://github.com/Mike-Animal-Counseling/porter/commit/08fb424dadf7f316b5e539d0487c07691acea776)
+  在 [CI 运行 39552038204](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39552038204)
+  通过全部六项任务：质量、打包、Linux 测试、Windows 测试、PostgreSQL 和部署。
+  此证据对应该提交；后续仅改文档的提交也需核对各自的 CI 状态。
 - 历史基线 `c3c5fdf` 的 [CI 运行 39385023666](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39385023666)
   六项任务均通过：质量、打包、Linux 测试、Windows 测试、PostgreSQL 和部署。
 - 14 个迁移已在新 PostgreSQL 数据库运行，覆盖旧迁移名称接续与合并中断回滚。

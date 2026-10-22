@@ -53,6 +53,18 @@ Docker 运行 API/面板、PostgreSQL/pgvector 和本地 BGE-M3 向量模型服�
 ```bash
 git clone https://github.com/Mike-Animal-Counseling/porter.git
 cd porter
+```
+
+如果正在验收[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1)，且它**仍未合并**，
+请在初始化前切换到来源分支：
+
+```bash
+git switch --track origin/fix/porter-review-hardening
+```
+
+该 PR 合并后使用 `main`，跳过上述切分支步骤。然后初始化并启动所选版本：
+
+```bash
 python scripts/setup_local.py
 docker compose up --build -d
 docker compose ps
@@ -93,6 +105,11 @@ PostgreSQL 和隔离 Docker 验收环境；OAuth、HTTP/stdio MCP、加密恢复
 最终候选版本的结果见 [PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1)、
 [Actions](https://github.com/Mike-Animal-Counseling/porter/actions) 和
 [检查报告](docs/REVIEW.zh-CN.md)。这些是有日期的验证记录，不代表所有客户端和部署环境都已测试。
+
+代码基线
+[`08fb424`](https://github.com/Mike-Animal-Counseling/porter/commit/08fb424dadf7f316b5e539d0487c07691acea776)
+已在 [CI 运行 39552038204](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39552038204)
+通过全部六项任务。后续提交即使只改文档，也需核对各自的 CI 状态。
 
 发布前仍需完成你所用工具的真实对话，以及浏览器视觉和交互验收。BGE-M3 的小样本评估
 也不是通用检索质量保证。[验收标准](docs/ACCEPTANCE.zh-CN.md) 列出了已完成项和少量

@@ -61,6 +61,19 @@ Docker runs the API/panel, PostgreSQL/pgvector and the local BGE-M3 embedder.
 ```bash
 git clone https://github.com/Mike-Animal-Counseling/porter.git
 cd porter
+```
+
+If you are accepting the changes in [PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1)
+**while it is still unmerged**, switch to its source branch before setup:
+
+```bash
+git switch --track origin/fix/porter-review-hardening
+```
+
+After that PR is merged, use `main` and skip this branch step. Then initialize
+and start the selected version:
+
+```bash
 python scripts/setup_local.py
 docker compose up --build -d
 docker compose ps
@@ -113,6 +126,11 @@ PostgreSQL and Docker deployment. Check the final candidate's results on
 [Actions](https://github.com/Mike-Animal-Counseling/porter/actions)
 and the [review report](docs/REVIEW.md); these are dated evidence, not a claim
 that every client and deployment has been tested.
+
+All six jobs passed for code baseline
+[`08fb424`](https://github.com/Mike-Animal-Counseling/porter/commit/08fb424dadf7f316b5e539d0487c07691acea776)
+in [CI run 39552038204](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39552038204).
+Later commits, including documentation changes, need their own CI status.
 
 Remaining release gates include real conversations in your chosen tools and
 browser visual/interaction acceptance. The small BGE-M3 evaluation is not a
