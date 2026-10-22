@@ -166,6 +166,54 @@ HTTP/stdio MCP clients passed deployed acceptance; actual tool conversations
 remain a separate check. For the configuration format, see the
 [official Codex MCP reference](https://developers.openai.com/codex/mcp/).
 
+On 2026-10-22, a separate native Codex CLI 0.160.0 process also completed one
+synthetic `memory_search` call through the live scoped HTTP connection. This
+verifies an actual tool call; the full user-driven save/review/cross-tool
+conversation still needs acceptance. The interactive test requests tool
+approval; the noninteractive probe approved only this specific read tool.
+
+### OpenCode V2 (2.1.2)
+
+On 2026-10-22, OpenCode's official V2 update endpoint reported **2.1.2**, package
+`@opencode/cli`. Use the [official V2 installation guide](https://opencode.ai/v2/docs/),
+then confirm `opencode --version`. The older `opencode-ai` package and
+[`clients/opencode.json`](clients/opencode.json) use the V1 configuration shape;
+do not install V1 or copy its fields when following the V2 instructions.
+
+Copy [`clients/opencode-v2-http.json`](clients/opencode-v2-http.json) to
+`opencode.json` in your acceptance project folder. V2 discovers that project file;
+no global configuration edit is required. Adjust the URL to port 18010 for the
+retained local review service. V2 places servers under `mcp.servers`, uses
+`disabled` instead of V1's `enabled`, and uses snake_case OAuth fields. This
+template sets `oauth: false` because Porter supplies an already-issued bearer
+token; it does not disable Porter's authentication. `codemode: false` exposes
+Porter tools directly for the acceptance conversation. See the
+[official V2 MCP guide](https://opencode.ai/v2/docs/mcp-servers/).
+
+Set `PORTER_TOKEN` for the OpenCode process to that client's own limited access
+token, then start `opencode --standalone PATH_TO_ACCEPTANCE_FOLDER`. The private
+server inherits that environment; a previously running shared server may not.
+Standalone mode alone does not isolate saved accounts: workspace-only review
+launchers must also set private XDG config/data/cache/state directories and
+`OPENCODE_DB` for the child process.
+
+Inside OpenCode, use `/connect` → OpenAI → **Sign in with ChatGPT** when offered,
+complete the browser authorization yourself, then `/models`. The reviewed V2
+source also has a legacy Codex device-code method; available methods are shown
+by `opencode auth login openai --standalone`. This is OpenCode's own provider
+login, separate from its Porter MCP token. Do not copy Codex login files.
+Use `/mcps` to check Porter. Provider setup is documented in the
+[official V2 login guide](https://opencode.ai/v2/docs/cli/providers/).
+
+**Verified locally on 2026-10-22:** OpenCode 2.1.2 loaded the private project
+configuration, substituted the bearer-token environment variable and completed
+the native MCP connection to Porter (`status: connected`). During API-only
+checks, reading `/api/plugin` initialized the built-in plugins before querying
+`/api/mcp`; the earlier empty list was an initialization-order effect, not an
+invalid template. This verifies configuration and transport only. The user's
+OpenCode provider login and a real model conversation invoking Porter remain
+unverified; no subscription model availability is assumed.
+
 ### Trusted local stdio alternative
 
 Install the package in the Python environment that will launch the server:
@@ -218,7 +266,7 @@ No row claims that a real conversation in that product has passed acceptance.
 | ChatGPT export | `conversations.json` or export ZIP | None | `chatgpt --file PATH` |
 | Claude export | `conversations.json` or export ZIP | None | `claude --file PATH` |
 | Zed | No native-store importer | `zed-settings.json` | — |
-| OpenCode | No native-store importer | `opencode.json` | — |
+| OpenCode | No native-store importer | `opencode-v2-http.json` (V2) / `opencode.json` (legacy V1) | — |
 | Amp | No native-store importer | `amp-settings.json` | — |
 | Kilo Code | No native-store importer | `kilocode-mcp.json` | — |
 | Kimi CLI | No native-store importer | `kimi-mcp.json` | — |

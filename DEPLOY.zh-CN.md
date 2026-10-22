@@ -147,6 +147,43 @@ tool_timeout_sec = 60
 独立 HTTP/stdio MCP 客户端已通过部署验收；工具内的真实对话仍需单独检查。
 配置格式参考 [Codex 官方 MCP 文档](https://developers.openai.com/codex/mcp/)。
 
+2026-10-22，独立的原生 Codex CLI 0.160.0 进程已使用受限 HTTP 连接完成一次合成
+`memory_search` 调用。这验证了真实工具调用；用户操作的保存、审核与跨工具完整对话仍待验收。
+交互测试会请求工具操作许可；非交互探针只预先批准了这一项读取工具。
+
+### OpenCode V2（2.1.2）
+
+2026-10-22，OpenCode 官方 V2 更新接口返回版本 **2.1.2**，包名 `@opencode/cli`。
+按 [V2 官方安装指南](https://opencode.ai/v2/docs/) 安装，之后用 `opencode --version` 确认。
+旧包 `opencode-ai` 和 [`clients/opencode.json`](clients/opencode.json) 使用 V1 配置形状；
+按照 V2 步骤操作时，不要安装 V1 或照搬其字段。
+
+将 [`clients/opencode-v2-http.json`](clients/opencode-v2-http.json) 复制为验收项目目录下的
+`opencode.json`；V2 会发现这个项目文件，无需修改全局配置。
+使用保留的本机验收服务时，将 URL 端口改为 18010。
+V2 的服务放在 `mcp.servers` 下，用 `disabled` 替代 V1 的 `enabled`，OAuth 字段改用 snake_case。
+模板的 `oauth: false` 表示使用已取得的 bearer token，不会关闭 Porter 的认证。
+`codemode: false` 让验收对话直接调用 Porter 工具。
+详见 [V2 官方 MCP 指南](https://opencode.ai/v2/docs/mcp-servers/)。
+
+给 OpenCode 进程设置该客户端自己受限的 `PORTER_TOKEN`，然后运行
+`opencode --standalone PATH_TO_ACCEPTANCE_FOLDER`。私有服务会继承这个环境，
+之前运行的共享后台服务未必会继承。standalone 本身不隔离已保存账号；
+若验收要全部保存在工作区，启动器还需为子进程设置私有 XDG 配置/数据/缓存/状态目录和 `OPENCODE_DB`。
+
+在 OpenCode 内输入 `/connect` → OpenAI，出现 **Sign in with ChatGPT** 时选择该项，
+由你本人完成浏览器授权，再输入 `/models`。本轮核对的 V2 源码也有旧 Codex 设备码登录方式；
+运行 `opencode auth login openai --standalone` 可以查看实际提供的选项。
+这是 OpenCode 的模型账号登录，与连接 Porter 的 MCP token 是两件事；不要复制 Codex 的登录文件。
+用 `/mcps` 查看 Porter 状态。模型账号步骤见
+[V2 官方登录指南](https://opencode.ai/v2/docs/cli/providers/)。
+
+**2026-10-22 本环境实测：** OpenCode 2.1.2 已读取私有项目配置、替换 bearer token
+环境变量，并完成原生 Porter MCP 连接，状态为 `connected`。仅通过 API 检查时，
+先读取 `/api/plugin` 初始化内置插件，再查询 `/api/mcp`；先前的空列表来自初始化顺序，
+不是模板格式错误。这只验证配置和传输。用户的 OpenCode 模型账号登录，以及模型在真实对话中
+调用 Porter，仍未验收；不能据此宣称订阅模型已经可用。
+
 ### 可信本机 stdio 方案
 
 在实际启动服务的 Python 环境安装：
@@ -194,7 +231,7 @@ python -m pip install -c requirements-lock.txt -e .
 | ChatGPT 导出 | `conversations.json` 或导出 ZIP | 无 | `chatgpt --file PATH` |
 | Claude 导出 | `conversations.json` 或导出 ZIP | 无 | `claude --file PATH` |
 | Zed | 无原生存储导入器 | `zed-settings.json` | — |
-| OpenCode | 无原生存储导入器 | `opencode.json` | — |
+| OpenCode | 无原生存储导入器 | `opencode-v2-http.json`（V2）/ `opencode.json`（旧 V1） | — |
 | Amp | 无原生存储导入器 | `amp-settings.json` | — |
 | Kilo Code | 无原生存储导入器 | `kilocode-mcp.json` | — |
 | Kimi CLI | 无原生存储导入器 | `kimi-mcp.json` | — |

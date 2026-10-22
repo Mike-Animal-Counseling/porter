@@ -365,6 +365,7 @@ def test_clients_dir_has_all_harnesses():
         "zed-settings.json",
         "claude-code-mcp.json",
         "opencode.json",
+        "opencode-v2-http.json",
         "gemini-settings.json",
         "qwen-settings.json",
         "amp-settings.json",
@@ -394,11 +395,12 @@ def test_clients_dir_has_all_harnesses():
 
 def _load_config(path: Path):
     text = path.read_text(encoding="utf-8")
-    assert "{{PORTER_TOKEN}}" in text, f"{path.name}: placeholder missing"
-    # no real-looking secrets
-    assert "sk-" not in text.replace("{{PORTER_TOKEN}}", ""), (
-        f"{path.name}: suspicious secret-like value"
+    placeholder = (
+        "{env:PORTER_TOKEN}" if path.name == "opencode-v2-http.json" else "{{PORTER_TOKEN}}"
     )
+    assert placeholder in text, f"{path.name}: token placeholder missing"
+    # no real-looking secrets
+    assert "sk-" not in text.replace(placeholder, ""), f"{path.name}: suspicious secret-like value"
     if path.suffix == ".json":
         return json.loads(text)
     if path.suffix == ".toml":
@@ -412,6 +414,8 @@ def _find_porter_server(cfg, path: Path):
     """Locate the porter server entry across the vendor-specific key shapes."""
     if path.name == "opencode.json":
         return cfg["mcp"]["porter"]
+    if path.name == "opencode-v2-http.json":
+        return cfg["mcp"]["servers"]["porter"]
     if path.name == "amp-settings.json":
         return cfg["amp.mcpServers"]["porter"]
     if path.name == "aider-conf.yml":
@@ -426,7 +430,11 @@ def _find_porter_server(cfg, path: Path):
 
 
 def _is_http_only(path: Path) -> bool:
-    return path.name in {"antigravity-mcp_config.json", "codex-http-config.toml"}
+    return path.name in {
+        "antigravity-mcp_config.json",
+        "codex-http-config.toml",
+        "opencode-v2-http.json",
+    }
 
 
 def test_all_client_configs_parse_and_reference_porter():
@@ -448,7 +456,11 @@ def test_all_client_configs_parse_and_reference_porter():
 def test_opencode_uses_mcp_key_not_mcpservers():
     cfg = _load_config(CLIENTS_DIR / "opencode.json")
     assert "mcp" in cfg and "mcpServers" not in cfg
-    assert cfg["mcp"]["porter"]["type"] == "local"
+    entry = cfg["mcp"]["porter"]
+    assert entry["type"] == "local"
+    assert "env" not in entry
+    assert entry["environment"]["PORTER_REPO"] == "postgres"
+    assert entry["environment"]["PORTER_TOKEN"] == "{{PORTER_TOKEN}}"
 
 
 def test_copilot_cli_has_stdio_type_and_caveat():

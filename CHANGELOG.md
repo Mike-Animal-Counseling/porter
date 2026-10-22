@@ -8,6 +8,15 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### OpenCode connection guidance (2026-10-22)
+
+- Add an OpenCode V2 HTTP template and bilingual setup instructions; verify
+  configuration and the native MCP handshake with OpenCode 2.1.2. Model sign-in
+  and cross-tool conversation acceptance remain separate.
+- Correct the legacy OpenCode V1 stdio `environment` field and extend existing
+  template checks to cover the V2 shape and environment-variable credentials.
+- Record a real scoped `memory_search` call from native Codex CLI 0.160.0.
+
 ### Acceptance and open-source readiness (2026-10-20)
 
 - Restrict graph edges, duplicate candidates and update targets to readable
