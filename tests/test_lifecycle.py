@@ -5,8 +5,9 @@ All tests use InMemoryMemoryRepository + HashEmbedder (no model needed).
 Long-idle records are built by backdating ``updated_at`` /
 ``last_retrieved_at`` directly on the stored objects.
 """
+
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -36,7 +37,7 @@ def _run(coro):
 
 
 def _now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _bare_record(**kw):
@@ -95,8 +96,7 @@ def test_half_life_tiers():
     # personal fact is a defined tier (180d); the 90d default is the
     # safety net for (domain, kind) pairs added in the future.
     assert half_life_days(_bare_record()) == 180.0
-    assert HALF_LIVES.get(("personal", "future_kind"),
-                          DEFAULT_HALF_LIFE_DAYS) == 90.0
+    assert HALF_LIVES.get(("personal", "future_kind"), DEFAULT_HALF_LIFE_DAYS) == 90.0
     assert DEFAULT_HALF_LIFE_DAYS == 90.0
 
 
@@ -139,6 +139,7 @@ def test_retrieval_boost_and_idle_reset():
         # 0.8 + 0.05 * (1 - 0.8) = 0.81
         assert rec.confidence == pytest.approx(0.8 + RETRIEVAL_BOOST * 0.2)
         assert rec.last_retrieved_at > before
+
     _run(_run2())
 
 
@@ -153,6 +154,7 @@ def test_retrieval_boost_capped_at_one():
         await record_retrieval(repo, [rec2.id])
         assert rec2.confidence <= 1.0
         assert rec2.confidence > 0.999
+
     _run(_run2())
 
 
@@ -163,6 +165,7 @@ def test_retrieval_skips_missing_and_inactive():
         await repo.archive(rec.id)
         # unknown id + archived id: no crash, no-op
         await record_retrieval(repo, [uuid4(), rec.id])
+
     _run(_run2())
 
 
@@ -175,13 +178,17 @@ def test_sweeper_archives_decayed_and_is_idempotent():
         # Decayed: project task_state (14d half-life), idle 60d ->
         # 0.5 * 0.5**(60/14) ~= 0.026 < 0.2 -> archive.
         old = await _active(
-            repo, "old wip", confidence=0.5,
+            repo,
+            "old wip",
+            confidence=0.5,
             scope_tags=["project:myapp", "task"],
         )
         _backdate(old, 60)
         # Fresh: same kind, idle 1d -> stays.
         fresh = await _active(
-            repo, "fresh wip", confidence=0.9,
+            repo,
+            "fresh wip",
+            confidence=0.9,
             scope_tags=["project:myapp", "task"],
         )
         # Pinned + ancient: never archived.
@@ -199,8 +206,7 @@ def test_sweeper_archives_decayed_and_is_idempotent():
 
         audits = await repo.audit_list()
         entry = next(
-            a for a in audits
-            if a.action == "lifecycle_archive" and old.id in a.memory_ids
+            a for a in audits if a.action == "lifecycle_archive" and old.id in a.memory_ids
         )
         assert entry.meta["reason"] == "half_life_decay"
         assert entry.meta["half_life_days"] == 14.0
@@ -211,6 +217,7 @@ def test_sweeper_archives_decayed_and_is_idempotent():
         assert res2["archived"] == 0
         assert res2["archived_ids"] == []
         assert res2["scanned"] == 2
+
     _run(_run2())
 
 
@@ -220,7 +227,9 @@ def test_sweeper_pagination():
         doomed = []
         for i in range(5):
             rec = await _active(
-                repo, f"stale {i}", confidence=0.5,
+                repo,
+                f"stale {i}",
+                confidence=0.5,
                 scope_tags=["project:myapp", "task"],
             )
             _backdate(rec, 60)
@@ -231,6 +240,7 @@ def test_sweeper_pagination():
         assert res["archived"] == 5
         assert set(res["archived_ids"]) == set(doomed)
         assert (await repo.get(keeper.id)).status == "active"
+
     _run(_run2())
 
 
@@ -249,6 +259,7 @@ def test_contradiction_flag_penalizes_and_audits():
         assert set(entry.memory_ids) == {rec.id, other.id}
         assert entry.meta["old_confidence"] == 0.9
         assert entry.meta["new_confidence"] == round(0.9 * 0.7, 4)
+
     _run(_run2())
 
 
@@ -263,4 +274,5 @@ def test_contradiction_flag_noop_on_missing_or_archived():
         assert rec.confidence == 0.9  # untouched
         audits = await repo.audit_list()
         assert not [a for a in audits if a.action == "contradiction_flag"]
+
     _run(_run2())

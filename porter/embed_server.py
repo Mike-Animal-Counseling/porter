@@ -3,7 +3,10 @@
 Exposes POST /embed {texts: [...]} -> {vectors: [...], dim: N, model: ...}.
 Runs BGE-M3 in its own container so the API stays light.
 """
+
 from __future__ import annotations
+
+import os
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -38,7 +41,7 @@ def create_embed_server(kind: str = "sentence-transformer", **kwargs) -> FastAPI
     return app
 
 
-app = create_embed_server()
+app = create_embed_server(os.getenv("PORTER_EMBEDDER", os.getenv("EMBEDDER_KIND", "bge-m3")))
 
 
 if __name__ == "__main__":

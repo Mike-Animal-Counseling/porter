@@ -1,1 +1,22 @@
-{"_comment":"Porter MCP server for GitHub Copilot CLI. NOTE: the server entry carries \"type\": \"stdio\". HOW TO APPLY: merge into the Copilot CLI MCP config — expected at ~/.config/github-copilot/mcp.json, but VERIFY this path on your real install (UNVERIFIED here; Copilot CLI config layout may differ by version — a fallback is documented in DEPLOY.md). Replace {{PORTER_TOKEN}} with a real Porter access token.","mcpServers":{"porter":{"args":["-m","porter.mcp_stdio"],"command":"python","env":{"PORTER_TOKEN":"{{PORTER_TOKEN}}"},"type":"stdio"}}}
+{
+  "_comment": "Porter MCP server for GitHub Copilot CLI. NOTE: the server entry carries \"type\": \"stdio\". HOW TO APPLY: merge into the Copilot CLI MCP config — expected at ~/.config/github-copilot/mcp.json, but VERIFY this path on your real install (UNVERIFIED here; Copilot CLI config layout may differ by version — a fallback is documented in DEPLOY.md). Replace {{PORTER_TOKEN}} with a real Porter access token.",
+  "mcpServers": {
+    "porter": {
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "command": "python",
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}",
+        "PORTER_REPO": "postgres",
+        "DATABASE_URL": "postgresql://porter:porter@localhost:5432/porter",
+        "PORTER_JWT_SECRET": "{{PORTER_JWT_SECRET}}",
+        "PORTER_EMBEDDER": "http",
+        "EMBEDDER_URL": "http://localhost:8001",
+        "PYTHONPATH": "/path/to/porter"
+      },
+      "type": "stdio"
+    }
+  }
+}

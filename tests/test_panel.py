@@ -4,6 +4,7 @@ The panel is the owner interface: localhost-only gate + owner context.
 Tests run against the in-memory backends; TestClient's host is "testclient",
 which the gate allows (see test_panel_localhost_gate for the deny path).
 """
+
 from __future__ import annotations
 
 import io
@@ -53,8 +54,11 @@ def oapp():
 
 async def _make_active(repo, content="用户不吃香菜", tags=("dietary",)):
     rec, _dups = await repo.create_pending(
-        content=content, type="preference", scope_tags=list(tags),
-        confidence=0.9, source={"client_id": "codex"},
+        content=content,
+        type="preference",
+        scope_tags=list(tags),
+        confidence=0.9,
+        source={"client_id": "codex"},
     )
     return await repo.approve(rec.id)
 
@@ -65,24 +69,41 @@ def _setup_headers():
 
 def _oauth_token_pair(c: TestClient, scopes: str):
     """Full authorization-code flow; returns (client_pk, access, refresh, cid, secret)."""
-    r = c.post("/api/v1/clients", json={"name": "t", "redirect_uris": [REDIRECT]},
-               headers=_setup_headers())
+    r = c.post(
+        "/api/v1/clients", json={"name": "t", "redirect_uris": [REDIRECT]}, headers=_setup_headers()
+    )
     assert r.status_code == 201, r.text
     body = r.json()
     cid, secret = body["client_id"], body["client_secret"]
-    r = c.get("/oauth/authorize", params={
-        "client_id": cid, "redirect_uri": REDIRECT, "scope": scopes, "state": "s"})
+    r = c.get(
+        "/oauth/authorize",
+        params={"client_id": cid, "redirect_uri": REDIRECT, "scope": scopes, "state": "s"},
+    )
     assert r.status_code == 200, r.text
-    r = c.post("/oauth/authorize", data={
-        "client_id": cid, "redirect_uri": REDIRECT, "state": "s",
-        "decision": "approve",
-        "granted_scopes": scopes.split(), "requested_scopes": scopes.split(),
-    }, follow_redirects=False)
+    r = c.post(
+        "/oauth/authorize",
+        data={
+            "client_id": cid,
+            "redirect_uri": REDIRECT,
+            "state": "s",
+            "decision": "approve",
+            "granted_scopes": scopes.split(),
+            "requested_scopes": scopes.split(),
+        },
+        follow_redirects=False,
+    )
     assert r.status_code == 302, r.text
     code = parse_qs(urlparse(r.headers["location"]).query)["code"][0]
-    r = c.post("/oauth/token", data={
-        "grant_type": "authorization_code", "code": code,
-        "redirect_uri": REDIRECT, "client_id": cid, "client_secret": secret})
+    r = c.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": REDIRECT,
+            "client_id": cid,
+            "client_secret": secret,
+        },
+    )
     assert r.status_code == 200, r.text
     tok = r.json()
     return body["id"], tok["access_token"], tok["refresh_token"], cid, secret
@@ -91,10 +112,16 @@ def _oauth_token_pair(c: TestClient, scopes: str):
 # ------------------------------------------------------------------ gate
 def test_panel_localhost_gate_denies_remote():
     import asyncio
+
     scope = {
-        "type": "http", "http_version": "1.1", "method": "GET", "path": "/panel/",
-        "headers": [], "client": ("203.0.113.7", 4242),
-        "server": ("127.0.0.1", 8000), "scheme": "http",
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "path": "/panel/",
+        "headers": [],
+        "client": ("203.0.113.7", 4242),
+        "server": ("127.0.0.1", 8000),
+        "scheme": "http",
     }
     with pytest.raises(Unauthorized):
         asyncio.run(panel_owner(Request(scope)))
@@ -107,18 +134,23 @@ def test_every_panel_route_has_localhost_gate():
     for route in panel_router.routes:
         path = getattr(route, "path", "")
         dep_names = {
-            getattr(getattr(d, "call", None), "__name__", "")
-            for d in route.dependant.dependencies
+            getattr(getattr(d, "call", None), "__name__", "") for d in route.dependant.dependencies
         }
         assert "panel_owner" in dep_names, f"{path} is missing the localhost gate"
 
 
 def test_panel_localhost_gate_allows_testclient():
     import asyncio
+
     scope = {
-        "type": "http", "http_version": "1.1", "method": "GET", "path": "/panel/",
-        "headers": [], "client": ("testclient", 50000),
-        "server": ("testserver", 80), "scheme": "http",
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "path": "/panel/",
+        "headers": [],
+        "client": ("testclient", 50000),
+        "server": ("testserver", 80),
+        "scheme": "http",
     }
     asyncio.run(panel_owner(Request(scope)))  # must not raise
 
@@ -145,8 +177,7 @@ def test_memories_rows_htmx(pclient, papp):
     r = pclient.get("/panel/memories/rows", params={"q": "香菜", "mode": "text"})
     assert r.status_code == 200
     assert "香菜" in r.text
-    r = pclient.get("/panel/memories/rows",
-                    params={"q": "香菜", "mode": "semantic"})
+    r = pclient.get("/panel/memories/rows", params={"q": "香菜", "mode": "semantic"})
     assert r.status_code == 200
     assert "香菜" in r.text
 
@@ -162,10 +193,16 @@ def test_memory_detail_edit_history_chain(pclient, papp):
     assert r.status_code == 200
     assert "美式" in r.text
 
-    r = pclient.post(f"/panel/memories/{old_id}/edit", data={
-        "content": "用户爱喝拿铁", "type": "preference",
-        "scope_tags": "general", "confidence": "0.8",
-    }, follow_redirects=False)
+    r = pclient.post(
+        f"/panel/memories/{old_id}/edit",
+        data={
+            "content": "用户爱喝拿铁",
+            "type": "preference",
+            "scope_tags": "general",
+            "confidence": "0.8",
+        },
+        follow_redirects=False,
+    )
     assert r.status_code == 302, r.text
 
     async def check():
@@ -177,8 +214,8 @@ def test_memory_detail_edit_history_chain(pclient, papp):
         assert old.superseded_by == new.id
         # audit kept
         rows = await repo.audit_list(limit=10)
-        assert any(x.action == "write" and x.meta.get("revised_from") == str(old_id)
-                   for x in rows)
+        assert any(x.action == "write" and x.meta.get("revised_from") == str(old_id) for x in rows)
+
     asyncio.run(check())
 
 
@@ -200,6 +237,7 @@ def test_memory_delete_confirm_flow(pclient, papp):
         assert await repo.get(rec.id) is None
         rows = await repo.audit_list(limit=10)
         assert any(x.action == "delete" for x in rows)
+
     asyncio.run(check())
 
 
@@ -208,8 +246,7 @@ def test_revise_api_endpoint(pclient, papp):
 
     _app, repo, _store, _snap = papp
     rec = asyncio.run(_make_active(repo))
-    r = pclient.patch(f"/api/v1/memories/{rec.id}",
-                      json={"content": "改过的内容"})
+    r = pclient.patch(f"/api/v1/memories/{rec.id}", json={"content": "改过的内容"})
     assert r.status_code == 200, r.text
     # US7: PATCH now returns MemoryReviseOut {memory, conflict, loser_pending_id}
     assert r.json()["memory"]["content"] == "改过的内容"
@@ -220,6 +257,35 @@ def test_revise_api_endpoint(pclient, papp):
 
 
 # ------------------------------------------------------------------ inbox
+def test_inbox_reuses_stored_vectors_without_model_or_retrieval_updates(pclient, papp, monkeypatch):
+    import asyncio
+
+    _app, repo, _store, _snap = papp
+
+    async def seed():
+        active = await _make_active(repo, "A duplicate memory for inbox review", ("general",))
+        await repo.create_pending(
+            content=active.content,
+            type="preference",
+            scope_tags=["general"],
+            confidence=1,
+            source={"client_id": "inbox-test"},
+        )
+        return active
+
+    active = asyncio.run(seed())
+    retrieved_at = active.last_retrieved_at
+
+    async def unavailable_model(_text):
+        raise AssertionError("Rendering the inbox must not call an embedding model")
+
+    monkeypatch.setattr(repo.embedder, "aembed_one", unavailable_model)
+    response = pclient.get("/panel/inbox")
+    assert response.status_code == 200
+    assert f"href='/panel/memories/{active.id}'" in response.text
+    assert active.last_retrieved_at == retrieved_at
+
+
 def test_inbox_approve_and_reject(pclient, papp):
     import asyncio
 
@@ -227,10 +293,13 @@ def test_inbox_approve_and_reject(pclient, papp):
 
     async def seed():
         a, _ = await repo.create_pending(
-            content="待批准A", type="fact", scope_tags=[], confidence=1.0, source={})
+            content="待批准A", type="fact", scope_tags=[], confidence=1.0, source={}
+        )
         b, _ = await repo.create_pending(
-            content="待拒绝B", type="fact", scope_tags=[], confidence=1.0, source={})
+            content="待拒绝B", type="fact", scope_tags=[], confidence=1.0, source={}
+        )
         return a, b
+
     a, b = asyncio.run(seed())
 
     r = pclient.get("/panel/inbox")
@@ -245,14 +314,17 @@ def test_inbox_approve_and_reject(pclient, papp):
     async def check():
         assert (await repo.get(a.id)).status == "active"
         assert await repo.get(b.id) is None
+
     asyncio.run(check())
 
 
 # ------------------------------------------------------------------ clients + revoke wiring
 def test_panel_client_register_shows_secret_once(pclient):
-    r = pclient.post("/panel/clients/new", data={
-        "name": "Codex", "redirect_uris": "http://localhost:9999/callback"},
-        follow_redirects=False)
+    r = pclient.post(
+        "/panel/clients/new",
+        data={"name": "Codex", "redirect_uris": "http://localhost:9999/callback"},
+        follow_redirects=False,
+    )
     assert r.status_code == 200
     assert "only this once" in r.text  # en default (client_new_done_warn)
     assert "porter_" in r.text
@@ -261,12 +333,10 @@ def test_panel_client_register_shows_secret_once(pclient):
 def test_panel_revoke_kills_tokens_end_to_end(oapp):
     """US3 via the panel: revoke -> the client's token gets 401 immediately."""
     c, repo, store = oapp
-    client_pk, access, _refresh, _cid, _secret = _oauth_token_pair(
-        c, "memory.read memory.write")
+    client_pk, access, _refresh, _cid, _secret = _oauth_token_pair(c, "memory.read memory.write")
 
     # Sanity: the token works before revoke.
-    r = c.get("/api/v1/memories",
-              headers={"Authorization": f"Bearer {access}"})
+    r = c.get("/api/v1/memories", headers={"Authorization": f"Bearer {access}"})
     assert r.status_code == 200, r.text
 
     # Panel one-click revoke (owner context, no bearer needed).
@@ -274,8 +344,7 @@ def test_panel_revoke_kills_tokens_end_to_end(oapp):
     assert r.status_code == 302, r.text
 
     # The same access token is now dead.
-    r = c.get("/api/v1/memories",
-              headers={"Authorization": f"Bearer {access}"})
+    r = c.get("/api/v1/memories", headers={"Authorization": f"Bearer {access}"})
     assert r.status_code == 401, r.text
     assert r.json()["error"]["code"] == "token_revoked"
 
@@ -342,15 +411,20 @@ def test_scope_tags_api_and_panel(pclient):
 def test_custom_tag_scope_validates_in_consent(oapp):
     c, _repo, _store = oapp
     # scope-tags API needs memory.admin; the panel (owner) can manage tags:
-    r = c.post("/panel/settings/tags/add",
-               data={"tag": "parenting", "label": "育儿"})
+    r = c.post("/panel/settings/tags/add", data={"tag": "parenting", "label": "育儿"})
     assert r.status_code in (302, 200), r.text
 
     _pk, _a, _r, cid, _s = _oauth_token_pair(c, "memory.read.parenting")
     # consent screen renders the custom tag description
-    r = c.get("/oauth/authorize", params={
-        "client_id": cid, "redirect_uri": REDIRECT,
-        "scope": "memory.read.parenting", "state": "s"})
+    r = c.get(
+        "/oauth/authorize",
+        params={
+            "client_id": cid,
+            "redirect_uri": REDIRECT,
+            "scope": "memory.read.parenting",
+            "state": "s",
+        },
+    )
     assert r.status_code == 200
     assert "育儿" in r.text
 
@@ -373,6 +447,7 @@ def test_panel_export_download(pclient, papp):
 # ------------------------------------------------------------------ snapshots
 def test_snapshot_create_download_apply_flow(pclient, papp, tmp_path):
     import asyncio
+
     from porter import config as config_mod
 
     _app, repo, store, snap = papp
@@ -380,9 +455,11 @@ def test_snapshot_create_download_apply_flow(pclient, papp, tmp_path):
     config_mod.settings.snapshot_dir = str(tmp_path)
 
     # create via panel
-    r = pclient.post("/panel/snapshots/create",
-                     data={"password": "s3cret", "tags": ["general"]},
-                     follow_redirects=False)
+    r = pclient.post(
+        "/panel/snapshots/create",
+        data={"password": "s3cret", "tags": ["general"]},
+        follow_redirects=False,
+    )
     assert r.status_code == 302, r.text
 
     r = pclient.get("/panel/snapshots")
@@ -394,6 +471,7 @@ def test_snapshot_create_download_apply_flow(pclient, papp, tmp_path):
         recs = await snap.list(limit=5)
         assert len(recs) == 1
         return recs[0]
+
     rec = asyncio.run(get_rec())
 
     # download
@@ -402,27 +480,29 @@ def test_snapshot_create_download_apply_flow(pclient, papp, tmp_path):
     assert r.content.startswith(b"PORTER1")  # encrypted magic
 
     # apply: upload -> dry-run -> confirm
-    files = {"file": ("snap.porter", io.BytesIO(r.content),
-                      "application/octet-stream")}
-    r = pclient.post("/panel/snapshots/apply", files=files,
-                     data={"password": "s3cret"})
+    files = {"file": ("snap.porter", io.BytesIO(r.content), "application/octet-stream")}
+    r = pclient.post("/panel/snapshots/apply", files=files, data={"password": "s3cret"})
     assert r.status_code == 200
     assert "Dry-run" in r.text
     assert "Confirm import" in r.text  # en default
 
     # extract the hidden upload field and confirm
     import re
+
     m = re.search(r'name="upload" value="([^"]+)"', r.text)
     assert m, "dry-run page must carry the upload reference"
-    r = pclient.post("/panel/snapshots/apply/confirm",
-                     data={"upload": m.group(1), "password": "s3cret"},
-                     follow_redirects=False)
+    r = pclient.post(
+        "/panel/snapshots/apply/confirm",
+        data={"upload": m.group(1), "password": "s3cret"},
+        follow_redirects=False,
+    )
     assert r.status_code == 302, r.text
     assert "/panel/inbox" in r.headers["location"]
 
     async def check_inbox():
         pend = await repo.list(status="pending", limit=100)
         assert any("快照测试记忆" in x.content for x in pend)
+
     asyncio.run(check_inbox())
 
     config_mod.settings.snapshot_dir = "snapshots"  # restore default
@@ -430,23 +510,22 @@ def test_snapshot_create_download_apply_flow(pclient, papp, tmp_path):
 
 def test_snapshot_apply_wrong_password_rejected(pclient, papp, tmp_path):
     import asyncio
+
     from porter import config as config_mod
 
     _app, repo, _store, snap = papp
     asyncio.run(_make_active(repo))
     config_mod.settings.snapshot_dir = str(tmp_path)
-    r = pclient.post("/panel/snapshots/create", data={"password": "right"},
-                     follow_redirects=False)
+    r = pclient.post("/panel/snapshots/create", data={"password": "right"}, follow_redirects=False)
     assert r.status_code == 302
 
     async def get_rec():
         return (await snap.list(limit=5))[0]
+
     rec = asyncio.run(get_rec())
     r = pclient.get(f"/panel/snapshots/{rec.id}/download")
-    files = {"file": ("s.porter", io.BytesIO(r.content),
-                      "application/octet-stream")}
-    r = pclient.post("/panel/snapshots/apply", files=files,
-                     data={"password": "WRONG"})
+    files = {"file": ("s.porter", io.BytesIO(r.content), "application/octet-stream")}
+    r = pclient.post("/panel/snapshots/apply", files=files, data={"password": "WRONG"})
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "invalid_input"
     config_mod.settings.snapshot_dir = "snapshots"
@@ -455,72 +534,91 @@ def test_snapshot_apply_wrong_password_rejected(pclient, papp, tmp_path):
 # ------------------------------------------------- review fixes (F4/F3 deep)
 def test_panel_edit_enforces_content_limit(pclient, papp):
     import asyncio
+
     _app, repo, _store, _snap = papp
     rec = asyncio.run(_make_active(repo))
-    r = pclient.post(f"/panel/memories/{rec.id}/edit",
-                     data={"content": "x" * 20001, "type": "fact",
-                           "scope_tags": "", "confidence": "0.5"},
-                     follow_redirects=False)
+    r = pclient.post(
+        f"/panel/memories/{rec.id}/edit",
+        data={"content": "x" * 20001, "type": "fact", "scope_tags": "", "confidence": "0.5"},
+        follow_redirects=False,
+    )
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "invalid_input"
 
 
 def test_panel_edit_validates_tags(pclient, papp):
     import asyncio
+
     _app, repo, _store, _snap = papp
     rec = asyncio.run(_make_active(repo))
-    r = pclient.post(f"/panel/memories/{rec.id}/edit",
-                     data={"content": "ok", "type": "fact",
-                           "scope_tags": "x" * 100, "confidence": "0.5"},
-                     follow_redirects=False)
+    r = pclient.post(
+        f"/panel/memories/{rec.id}/edit",
+        data={"content": "ok", "type": "fact", "scope_tags": "x" * 100, "confidence": "0.5"},
+        follow_redirects=False,
+    )
     assert r.status_code == 422
 
 
 def test_panel_rejects_cross_origin_post(pclient, papp):
     import asyncio
+
     _app, repo, _store, _snap = papp
     rec = asyncio.run(_make_active(repo))
     # forged cross-site POST (browser would send Origin: evil.com)
-    r = pclient.post(f"/panel/memories/{rec.id}/delete",
-                     headers={"Origin": "http://evil.com"},
-                     follow_redirects=False)
+    r = pclient.post(
+        f"/panel/memories/{rec.id}/delete",
+        headers={"Origin": "http://evil.com"},
+        follow_redirects=False,
+    )
     assert r.status_code == 401
     assert r.json()["error"]["code"] == "invalid_token"
     # memory untouched
     assert asyncio.run(repo.get(rec.id)) is not None
     # same-origin and headerless (curl) requests still work
-    r = pclient.post(f"/panel/memories/{rec.id}/delete",
-                     headers={"Origin": "http://127.0.0.1:8000"},
-                     follow_redirects=False)
+    r = pclient.post(
+        f"/panel/memories/{rec.id}/delete",
+        headers={"Origin": str(pclient.base_url).rstrip("/")},
+        follow_redirects=False,
+    )
     assert r.status_code == 302
     assert asyncio.run(repo.get(rec.id)) is None
 
 
 def test_snapshot_apply_rejects_malformed_entries(pclient, papp, tmp_path):
     import json as _json
+
     from porter import config as config_mod
 
     _app, repo, _store, _snap = papp
     config_mod.settings.snapshot_dir = str(tmp_path)
     try:
-        bad = {"format": "porter-snapshot/v1", "memories": [
-            {"type": "fact"},                                        # missing content
-        ]}
+        bad = {
+            "format": "porter-snapshot/v1",
+            "memories": [
+                {"type": "fact"},  # missing content
+            ],
+        }
         files = {"file": ("bad.porter.json", _json.dumps(bad), "application/json")}
         r = pclient.post("/panel/snapshots/apply", files=files, data={})
         assert r.status_code == 422, r.text
         assert r.json()["error"]["code"] == "invalid_input"
 
-        bad2 = {"format": "porter-snapshot/v1", "memories": [
-            {"content": "x" * 20001, "type": "fact"},                # oversized
-        ]}
+        bad2 = {
+            "format": "porter-snapshot/v1",
+            "memories": [
+                {"content": "x" * 20001, "type": "fact"},  # oversized
+            ],
+        }
         files = {"file": ("bad2.porter.json", _json.dumps(bad2), "application/json")}
         r = pclient.post("/panel/snapshots/apply", files=files, data={})
         assert r.status_code == 422
 
-        bad3 = {"format": "porter-snapshot/v1", "memories": [
-            {"content": "ok", "type": "nonsense"},                   # bad type
-        ]}
+        bad3 = {
+            "format": "porter-snapshot/v1",
+            "memories": [
+                {"content": "ok", "type": "nonsense"},  # bad type
+            ],
+        }
         files = {"file": ("bad3.porter.json", _json.dumps(bad3), "application/json")}
         r = pclient.post("/panel/snapshots/apply", files=files, data={})
         assert r.status_code == 422

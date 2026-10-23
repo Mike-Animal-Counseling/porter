@@ -13,4 +13,10 @@
 (setq mcp-hub-servers
       '(("porter" :command "python"
          :args ("-m" "porter.mcp_stdio")
-         :env (("PORTER_TOKEN" . "{{PORTER_TOKEN}}")))))
+         :env (("PORTER_TOKEN" . "{{PORTER_TOKEN}}")
+               ("PORTER_REPO" . "postgres")
+               ("DATABASE_URL" . "postgresql://porter:porter@localhost:5432/porter")
+               ("PORTER_JWT_SECRET" . "{{PORTER_JWT_SECRET}}")
+               ("PORTER_EMBEDDER" . "http")
+               ("EMBEDDER_URL" . "http://localhost:8001")
+               ("PYTHONPATH" . "/path/to/porter")))))

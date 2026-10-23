@@ -3,81 +3,172 @@
 </p>
 
 <h1 align="center">Porter</h1>
-<p align="center"><i>Your memory, packed. Carry it to any harness.</i></p>
+<p align="center">Carry project context between AI coding tools.</p>
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT"></a>
-  <img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+">
-  <img src="https://img.shields.io/badge/docker-ready-blue.svg" alt="Docker ready">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12 or newer">
+  <img src="https://img.shields.io/badge/status-alpha-orange.svg" alt="Alpha software">
 </p>
 
-**Porter** is a self-hosted memory layer for AI coding assistants — the
-porter's luggage for your AI tools. Every coding harness builds up memory:
-your preferences, plus the working memory of each project (conventions,
-decisions, codebase knowledge, AGENTS.md/CLAUDE.md-style instructions).
-Today that memory is locked inside each tool. Switch from Claude Code to
-Codex mid-project and you start from zero. Porter packs it all and carries
-it with you.
+**Porter is a self-hosted memory service for AI coding assistants.** Save project
+decisions, conventions and preferences once; retrieve them from another tool
+through MCP, or export a handoff briefing. You control the database, approvals
+and each client's access.
 
-[![Watch the demo](assets/poster.png)](assets/porter-promo.mp4)
+Porter supplies tools and configuration templates. Connecting MCP **does not
+automatically capture conversations, run background sync or inject memories into
+every prompt**. Your assistant must call the tools, or an adapter must implement
+that workflow. There are templates for 27 tools; these are not 27 verified live
+integrations.
 
-## Two pieces of luggage
+## What you can do
 
-- **Personal** — your own memories: preferences, health, finance, PII.
-  Sensitivity-gated, human-reviewed. Yours, everywhere.
-- **Project** — a project's entire working memory: conventions, decisions,
-  task state, codebase knowledge. Tagged `project:<name>`, auto-approved,
-  and pulled by whichever harness you're in. This is the luggage that
-  follows you across tools.
+- **Share project context:** save `project` memories with `project:<name>` tags;
+  search them or prepare a bilingual handoff at `/panel/handoff`.
+- **Control publication:** default tiered approval can publish low-risk writes
+  and merge very close project duplicates; personal, sensitive and conflicting
+  candidates queue for review. Set `PORTER_APPROVAL_MODE=strict` to review every
+  new write. Inspect the returned status rather than assuming approval.
+- **Limit clients:** OAuth access tokens support read, write and tag-restricted
+  read scopes, with revocation and audit records. Prefer HTTP MCP so clients
+  need only their own token.
+- **Retrieve and migrate:** PostgreSQL/pgvector semantic search, one-time imports
+  of supported memory files, and a sync feed for adapter developers.
+- **Back up and inspect:** signed snapshots with optional password encryption,
+  restore into the review queue, and an English/Chinese owner panel.
 
-Approval keeps junk out, not you out: low-risk memories flow automatically,
-only sensitive or conflicting ones wait for your OK. See SPECS.md §7.1.1.
+Normal memories are plaintext on your server. The optional client-encrypted
+memory format is stored without embedding or semantic search; it does not make
+ordinary writes end-to-end encrypted. Workspace roles and device key envelopes
+are early building blocks, not a finished multi-user service.
+
+## How it fits together
+
+```mermaid
+flowchart LR
+    C["Coding tools: explicit MCP calls"] -->|scoped token| P["Porter API"]
+    O["Owner panel"] -->|review, revoke, handoff| P
+    P --> D["PostgreSQL + pgvector"]
+    P --> E["Local embedding service"]
+```
 
 ## Quickstart
 
+Use Docker Engine/Desktop with Compose **2.24.4+**, Git and Python **3.12+**.
+Python runs the setup helper; the HTTP client path needs no local package install.
+Docker runs the API/panel, PostgreSQL/pgvector and the local BGE-M3 embedder.
+
 ```bash
-git clone https://github.com/Mike-Animal-Counseling/porter.git && cd porter
-docker compose up -d          # API + Postgres/pgvector + web panel
-# open http://127.0.0.1:8000/panel
+git clone https://github.com/Mike-Animal-Counseling/porter.git
+cd porter
 ```
 
-Connect a harness: copy its template from [`clients/`](clients/), paste in your token, restart the harness. Full walkthrough: [`docs/USER_SETUP_CHECKLIST.md`](docs/USER_SETUP_CHECKLIST.md).
+If you are accepting the changes in [PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1)
+**while it is still unmerged**, switch to its source branch before setup:
 
-## Features
-
-- **Tiered approval** — low-risk memories auto-approve (audited, reversible); sensitive/conflicting ones queue for you
-- **MCP-native, 27 harnesses** — stdio + Streamable HTTP transports
-- **Cross-harness sync** — write in A, readable in B within 60s; pull one project's memory with `sync_delta(project="…")`
-- **Memory importers** — one-time ingest of each harness's native memory files (AGENTS.md, CLAUDE.md, `.cursorrules`, …)
-- **Semantic search + dedup** — pgvector recall; near-duplicates flagged, never silently merged
-- **Scoped OAuth 2.0** — per-harness tokens, per-tag read scopes, one-click revoke
-- **E2EE memories** — XChaCha20-Poly1305; the server only ever sees ciphertext
-- **Signed snapshots** — Ed25519-signed, AES-256-GCM-encrypted backup & restore
-- **Bilingual panel** — English / 中文 toggle in Settings
-
-## How it works
-
-```
-┌─────────┐   MCP (scoped token)   ┌────────┐
-│ harness │ ─────────────────────▶ │ Porter │ ──▶ Postgres + pgvector
-│ Codex…  │ ◀───────────────────── │  API   │      (your machine)
-└─────────┘   approved memories    └────────┘
+```bash
+git switch --track origin/fix/porter-review-hardening
 ```
 
-## Docs
+After that PR is merged, use `main` and skip this branch step. Then initialize
+and start the selected version:
 
-| Doc | What's inside |
+```bash
+python scripts/setup_local.py
+docker compose up --build -d
+docker compose ps
+```
+
+Open **http://127.0.0.1:8000/panel**. If prompted, unlock with
+`PORTER_SETUP_TOKEN` from your local `.env`. The setup helper generates stable
+random credentials and preserves an existing `.env`; complete missing values
+using [`.env.example`](.env.example). Keep this file private.
+
+The first launch needs network access for images, Python packages and model
+weights. The measured BGE-M3 cache was about **3.8 GB**; image layers need
+additional disk space. CPU inference is supported. Compose limits the embedder
+container to **4 GB RAM**; PostgreSQL, the API and Docker need additional memory.
+These are measured/configured values, not a guaranteed whole-machine minimum.
+Initial download time depends on your connection.
+
+If startup is slow, inspect `docker compose logs --tail 50 embedder api`.
+Wait for healthy services and `GET /healthz` to return 200. Do not delete volumes
+to fix startup errors. [Deployment and troubleshooting](DEPLOY.md) explains
+credentials, ports, model downloads and recovery.
+
+Then connect **one** tool using the [setup checklist](docs/USER_SETUP_CHECKLIST.md).
+For Codex, start with [`clients/codex-http-config.toml`](clients/codex-http-config.toml).
+Create an OAuth client, complete consent/code exchange and use the resulting
+access token; the client secret is not that token. Tokens expire after one hour
+and require refresh. Do not distribute the server's JWT signing key or database
+password to HTTP clients.
+
+## Is it right for you?
+
+Porter fits a developer who uses multiple AI tools, wants explicit control over
+shared memory and can operate a local Docker service. It currently requires
+client configuration and deliberate tool use. It is not yet a zero-setup plugin,
+a complete chat archive, a hosted team product or a guarantee that every coding
+assistant will remember context automatically.
+
+Ollama extraction is **optional and disabled by default**. It proposes facts for
+human review when a client calls `memory_capture`; it is not required for saving,
+searching or handing off memories. See [extraction](docs/EXTRACTION.md).
+
+## Status and acceptance
+
+**v0.1.0 alpha.** The 2026-10-20 review recorded **650 local tests passing, with no skips**,
+including real PostgreSQL and the isolated Docker acceptance stack. OAuth,
+HTTP/stdio MCP, encrypted restore and persistence across API recreation were
+verified. The six-job CI checks quality, packaging, Linux/Windows tests,
+PostgreSQL and Docker deployment. Check the final candidate's results on
+[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1) and
+[Actions](https://github.com/Mike-Animal-Counseling/porter/actions)
+and the [review report](docs/REVIEW.md); these are dated evidence, not a claim
+that every client and deployment has been tested.
+
+All six jobs passed for code baseline
+[`08fb424`](https://github.com/Mike-Animal-Counseling/porter/commit/08fb424dadf7f316b5e539d0487c07691acea776)
+in [CI run 39552038204](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39552038204).
+Later commits, including documentation changes, need their own CI status.
+
+On 2026-10-22, installed **Codex 0.160.0** saved a synthetic project memory and
+a fresh **OpenCode 2.1.2** conversation retrieved the same ID through HTTP MCP.
+OpenCode used its saved ChatGPT OAuth login for the model provider, with no
+inherited OpenAI API key; Porter access used separate scoped credentials.
+Read-scope isolation and revocation passed: a revoked reader could no longer
+connect, while the original two clients could still retrieve the same ID.
+See the [native-client acceptance record](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md)
+for the tested flow and limits. These were explicit tool calls, not automatic
+conversation capture or context injection.
+
+Browser visual/interaction acceptance and user sign-off remain open.
+Other tool versions/configurations still need their own checks.
+The small BGE-M3 evaluation is not a general retrieval-quality benchmark. See
+the [acceptance criteria](docs/ACCEPTANCE.md) for completed and remaining gates.
+If reviewing an open PR before merge, use its head branch: the default branch
+may not include these fixes yet.
+
+## Documentation and contributing
+
+| Start here | Purpose |
 |---|---|
-| [DEPLOY.md](DEPLOY.md) | Docker setup, first boot, production notes |
-| [docs/DEVELOPER.md](docs/DEVELOPER.md) | OAuth flow, MCP tools, Python/TypeScript clients |
-| [SPECS.md](SPECS.md) | Full protocol spec, PRD §14 threat model |
-| [SECURITY.md](SECURITY.md) | Trust assumptions, disclosure policy |
-| [docs/USER_SETUP_CHECKLIST.md](docs/USER_SETUP_CHECKLIST.md) | Step-by-step: what you do on your machine |
-| [CHANGELOG.md](CHANGELOG.md) | Release history |
+| [Setup checklist](docs/USER_SETUP_CHECKLIST.md) | Connect your tools and run a short synthetic acceptance scenario |
+| [Acceptance criteria](docs/ACCEPTANCE.md) | Release gates, evidence, ownership and remaining gaps |
+| [Deploy guide](DEPLOY.md) | Docker, OAuth, client templates, backups and troubleshooting |
+| [Developer guide](docs/DEVELOPER.md) | REST/MCP contracts and client integration |
+| [Security policy](SECURITY.md) | Trust boundaries, deployment assumptions and private disclosure |
+| [Contributing](CONTRIBUTING.md) | Development setup and required checks |
+| [Repository standards](docs/REPOSITORY_STANDARDS.md) | Packaging, CI, formatting and dependency maintenance |
+| [Maintainer guide](docs/MAINTAINERS.md) | Release checks, rollback and repository settings |
+| [Dependency audit](docs/DEPENDENCY_AUDIT.md) · [UI review](docs/UI_REVIEW.md) | Dated findings, fixes and verification limits |
+| [Changelog](CHANGELOG.md) · [Specification](SPECS.md) | Changes and design intent; implemented status is tracked above |
 
-## Status
-
-v0.1.0 · 372 tests passing. A few items (real-Postgres migrations, embedding quality on real hardware, physical harness handshakes) still await verification on a real machine — tracked in [DEPLOY.md](DEPLOY.md).
+For reproducible bugs or feature requests, [open an issue](https://github.com/Mike-Animal-Counseling/porter/issues).
+Include the commit, platform and redacted steps; never attach tokens or private
+memories. Security reports follow [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[MIT](LICENSE). Dependencies and model weights retain their own licenses; see
+[third-party components](THIRD_PARTY.md).

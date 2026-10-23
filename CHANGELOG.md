@@ -8,6 +8,124 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Native-client acceptance and embedding failures (2026-10-22)
+
+- Verify native Codex CLI 0.160.0 saving project context and a fresh OpenCode
+  2.1.2 conversation retrieving the exact same ID over HTTP. OpenCode used
+  saved ChatGPT OAuth with the inherited API key removed from its test children.
+- Verify synthetic sensitive-record review, scoped read/write denials,
+  persistence through API recreation and revocation of a disposable credential
+  while the original Codex/OpenCode clients remain usable. Publish a
+  [sanitized bilingual record](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md);
+  browser interaction and owner sign-off remain open.
+- Map HTTP embedding timeouts to safe 504 errors and connection, upstream HTTP
+  and invalid-JSON failures to safe 503 errors. Keep existing timeout defaults
+  and add no automatic retry; cold-model latency still needs consideration.
+- Add an OpenCode V2 HTTP template and bilingual setup/login instructions,
+  verified with OpenCode 2.1.2.
+- Correct the legacy OpenCode V1 stdio `environment` field and extend existing
+  template checks to cover the V2 shape and environment-variable credentials.
+
+### Acceptance and open-source readiness (2026-10-20)
+
+- Restrict graph edges, duplicate candidates and update targets to readable
+  memories. Require matching memory types and complete tag sets for automatic
+  merges, and preserve full PostgreSQL candidate metadata for permission checks.
+- Validate an entire snapshot before importing and commit PostgreSQL imports
+  and their audit records atomically. Accept both personal/project memory types
+  in REST filters and clarify OAuth write consent.
+- Improve bilingual form labels, navigation, drawer keyboard handling, mobile
+  controls, copy/error feedback, reduced motion and text/button contrast. Bind
+  graph events once and debounce resize work. Browser visual acceptance remains
+  a separate gate.
+- Update vulnerable certifi/setuptools pins, align shared model constraints and
+  install the CPU PyTorch wheel separately from its PyPI dependencies; enforce
+  dependency consistency and CPU-only PyTorch during the image build.
+- Add bilingual acceptance, maintainer, dependency audit and UI review guides;
+  refresh README, deployment, community and security policies. Add local link,
+  metadata and migration checks to CI and document third-party components.
+- Update the public repository description/topics and enable private security
+  reports, dependency alerts and automated security-fix proposals.
+
+### Owner handoff and optional extraction
+
+- Use an independent temporary directory for deployment acceptance so a fresh
+  CI checkout does not require the developer's local virtual-environment path.
+- Add an owner handoff page with project suggestions, bilingual preview,
+  copy/download and audited exports; enforce owner access, CSRF and no-store.
+- Persist lifecycle feedback atomically across both repositories, and apply
+  the workspace personal boundary to legacy preference records too.
+- Add opt-in local Ollama structured extraction off the API event loop.
+  Validate bounded outputs, require review for every model fact and save
+  PostgreSQL capture batches transactionally. Keep the rules backend as default.
+
+### Switching integration (2026-10-19)
+
+- Integrate upstream through `4000dd5`, retaining its workspace/key migrations
+  and upgrading earlier review databases without deleting data.
+- Filter handoff, contradictions and writeback by scopes; default to preview
+  and require owner permissions for filesystem writes, merge and key management.
+- Enforce workspace write roles and reject personal memories in workspaces.
+- Persist archive provenance and make PostgreSQL merge/resolve transactional.
+  Repair envelope-claim SQL, install API crypto dependencies and preserve
+  Windows writeback files through atomic replacement.
+
+### Runtime hardening (2026-10-19)
+
+- Render inbox duplicate hints from stored vectors without model requests,
+  retrieval timestamp updates or confidence decay. Return full Postgres
+  similarity records so project tags and labels match the memory backend.
+- Add a recommended Codex HTTP template requiring only a scoped access token;
+  both transports parse in Codex CLI 0.160.0. Use the canonical embedder flag
+  in stdio templates so an inherited setting cannot override their HTTP backend.
+
+- Reject unknown HTTP hosts before owner/auth routing; custom domains require
+  login even behind a loopback proxy. Support explicit public origins for TLS
+  termination and disable forwarded-header trust in bundled launch commands.
+- Reject malformed Origin/Referer headers cleanly and normalize default ports.
+- Parse authentication flags consistently across HTTP and stdio. Invalid flags
+  and repository modes now stop startup instead of disabling auth or selecting
+  temporary storage. Use the package version in OpenAPI metadata.
+
+### Repository standards
+
+- Standardize Python packaging, version metadata, lightweight development and optional ML dependencies.
+- Apply Ruff lint/import sorting/formatting and add matching pre-commit hooks, UTF-8/LF conventions and Dependabot updates.
+- Harden CI permissions and action references; add source/wheel build and installed-package verification.
+- Correct deployment, contribution and security documentation to reflect the actual PostgreSQL, Docker and BGE-M3 acceptance results.
+
+### Fixed and verified (2026-10-18)
+
+- Repair real startup failures: trailing comment-only SQL, resumable OAuth
+  migrations, and the text default blocking the cursor's bigint conversion.
+- Fix the model Dockerfile's nested requirements file, use CPU PyTorch by
+  default, constrain verified model dependencies, and trim the build context.
+- Remove memory plaintext from auto-merge audit metadata.
+- Add reproducible Docker acceptance covering real Postgres, OAuth,
+  HTTP/stdio MCP, encrypted snapshots and container recreation. The complete
+  local suite passed all 404 tests; BGE-M3 also passed live end-to-end checks.
+- Add HTTP-based embedding evaluation with JSON results. On the small
+  bilingual fixture BGE-M3 achieved R@5=1.0 and R@1=0.583; this is not a
+  general benchmark. Keep review gates for semantic duplicate candidates.
+
+### Fixed (2026-10-14)
+
+- Prevent sync pagination and concurrent database commits from dropping changes;
+  acknowledge filtered pages, scope deletion events, and retire archived IDs.
+- Complete persistent memory/audit enums and asyncpg JSON decoding; preserve pins
+  on edits and serialize startup migrations across API/stdio processes.
+- Repair Windows binary snapshot writes, support both new memory types, avoid
+  same-second filename collisions, and validate malformed snapshot metadata.
+- Wire Docker secrets, localhost dependency ports, and durable settings/snapshots.
+  Add owner unlock sessions for container gateway peers and same-origin consent.
+- Share persistent configuration across stdio templates; fix HTTP embedder setup,
+  add installable packaging, and generate stable random local credentials.
+- Move embedding inference off the event loop; retry transient triage errors.
+  Guard client key paths and prevent accidental key replacement.
+- Add Windows/Linux CI, real Postgres/pgvector regressions and dependency
+  constraints. Correct setup instructions and distinguish templates/prototypes
+  from integrations that have been validated on a real machine.
+
 ### Added
 
 **New embedding challengers** — `porter/embeddings.py` gains

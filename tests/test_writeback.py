@@ -6,6 +6,7 @@ sensitive-personal exclusion, active-only gating, idempotent re-writes,
 symlink refusal, and per-writer target paths — all against fake harness
 dirs under tmp_path (never the real home directory).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,6 +50,46 @@ def _mem(
 
 def _run(writer, memories, **kw):
     return asyncio.run(writer.write(memories, **kw))
+
+
+def test_writeback_preserves_crlf_outside_zone_and_literal_backslashes(tmp_path):
+    target = tmp_path / "AGENTS.md"
+    target.write_bytes(
+        b"Human header\r\n<!-- porter-sync:start -->old<!-- porter-sync:end -->\r\nHuman footer\r\n"
+    )
+    content = r"Use C:\projects\notes\1 as data"
+    result = _run(GenericAgentsMdWriter(), [_mem(content=content)], project=str(tmp_path))
+    assert result.written_files
+    updated = target.read_bytes()
+    assert updated.startswith(b"Human header\r\n")
+    assert updated.endswith(b"\r\nHuman footer\r\n")
+    assert content.encode() in updated
+
+
+def test_writeback_rejects_non_utf8_without_replacing_user_bytes(tmp_path):
+    target = tmp_path / "AGENTS.md"
+    original = b"User data\xff\xfe\r\n"
+    target.write_bytes(original)
+    result = _run(GenericAgentsMdWriter(), [_mem()], project=str(tmp_path))
+    assert result.skipped and not result.written_files
+    assert target.read_bytes() == original
+
+
+def test_writeback_replace_failure_keeps_original_and_removes_temp(tmp_path, monkeypatch):
+    from porter import writeback
+
+    target = tmp_path / "AGENTS.md"
+    original = b"Human instructions\r\n"
+    target.write_bytes(original)
+
+    def fail(*_args):
+        raise OSError("simulated replacement failure")
+
+    monkeypatch.setattr(writeback.os, "replace", fail)
+    result = _run(GenericAgentsMdWriter(), [_mem()], project=str(tmp_path))
+    assert result.skipped and not result.written_files
+    assert target.read_bytes() == original
+    assert not list(tmp_path.glob(".porter-write-*"))
 
 
 # ---------------------------------------------------------------------------
@@ -110,8 +151,7 @@ def test_existing_zone_replaced_user_content_untouched(tmp_path):
         encoding="utf-8",
     )
 
-    res = _run(GenericAgentsMdWriter(), [_mem(content="New synced fact.")],
-               project=str(proj))
+    res = _run(GenericAgentsMdWriter(), [_mem(content="New synced fact.")], project=str(proj))
 
     assert str(agents) in res.written_files
     text = agents.read_text(encoding="utf-8")
@@ -197,9 +237,7 @@ def test_only_active_memories_written(tmp_path):
             _mem(id="x", status="archived", content="Archived one."),
         ],
     )
-    text = (tmp_path / ".codex" / "memories" / "porter.md").read_text(
-        encoding="utf-8"
-    )
+    text = (tmp_path / ".codex" / "memories" / "porter.md").read_text(encoding="utf-8")
     assert "Prefer tabs" in text
     assert "Pending one." not in text and "Archived one." not in text
     assert any(s.startswith("p:") for s in res.skipped)
@@ -214,13 +252,9 @@ def test_sensitive_personal_skipped_by_default(tmp_path):
         content="My SSN is 123-45-6789.",
         triage_reasons=["sensitive_content"],
     )
-    plain_personal = _mem(
-        id="s2", type="personal", content="I like dark mode."
-    )
+    plain_personal = _mem(id="s2", type="personal", content="I like dark mode.")
     res = _run(w, [sensitive, plain_personal])
-    text = (tmp_path / ".codex" / "memories" / "porter.md").read_text(
-        encoding="utf-8"
-    )
+    text = (tmp_path / ".codex" / "memories" / "porter.md").read_text(encoding="utf-8")
     assert "123-45-6789" not in text
     assert "dark mode" in text  # non-sensitive personal is fine
     assert any("s1" in s and "sensitive" in s for s in res.skipped)
@@ -235,9 +269,7 @@ def test_sensitive_personal_included_with_opt_in(tmp_path):
         triage_reasons=["ml_sensitive:health"],
     )
     res = _run(w, [sensitive], include_sensitive=True)
-    text = (tmp_path / ".codex" / "memories" / "porter.md").read_text(
-        encoding="utf-8"
-    )
+    text = (tmp_path / ".codex" / "memories" / "porter.md").read_text(encoding="utf-8")
     assert "peanuts" in text
     assert res.written_files
 

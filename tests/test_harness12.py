@@ -5,6 +5,7 @@ NO_NATIVE_STORE honesty + clients/ config snippet validation +
 adversarial parser cases (huge files, weird frontmatter, symlinks,
 secret-scrubber bypass attempts).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -22,15 +23,20 @@ except ModuleNotFoundError:  # Python < 3.11 fallback
 from porter.embeddings import HashEmbedder
 from porter.import_cli import main as import_main
 from porter.importers import (
-    NO_NATIVE_STORE,
     IMPORTERS,
+    NO_NATIVE_STORE,
     AiderImporter,
     ClaudeCodeImporter,
     ClineImporter,
     CursorImporter,
+    DevinImporter,
+    DroidImporter,
     GeminiImporter,
+    JunieImporter,
+    OpenHandsImporter,
     QwenImporter,
     RooImporter,
+    TabnineImporter,
     WarpImporter,
     WindsurfImporter,
     _decode_claude_project_dir,
@@ -50,14 +56,14 @@ def claude_home(tmp_path):
     mem = proj / "memory"
     mem.mkdir(parents=True)
     (mem / "notes.md").write_text(
-        "---\ntitle: Project notes\ntags: workflow\n---\n\n"
-        "Always run tests before committing.\n")
+        "---\ntitle: Project notes\ntags: workflow\n---\n\nAlways run tests before committing.\n"
+    )
     (mem / "plain.md").write_text("No frontmatter here, just text.\n")
     (proj / "MEMORY.md").write_text("# Proj memory\n\nUses pnpm.\n")
-    (home / "CLAUDE.md").write_text(
-        "# Instructions\n\nBe concise. Prefer ripgrep.\n")
+    (home / "CLAUDE.md").write_text("# Instructions\n\nBe concise. Prefer ripgrep.\n")
     (home / "settings.json").write_text(
-        json.dumps({"autoMemoryDirectory": str(tmp_path / "auto-mem")}))
+        json.dumps({"autoMemoryDirectory": str(tmp_path / "auto-mem")})
+    )
     auto = tmp_path / "auto-mem"
     auto.mkdir()
     (auto / "extra.md").write_text("From the override dir.\n")
@@ -76,8 +82,7 @@ def windsurf_home(tmp_path):
 def cline_proj(tmp_path):
     mb = tmp_path / "proj" / "memory-bank"
     mb.mkdir(parents=True)
-    (mb / "brief.md").write_text(
-        "---\ntitle: Brief\ntype: episode\n---\n\nDid the thing.\n")
+    (mb / "brief.md").write_text("---\ntitle: Brief\ntype: episode\n---\n\nDid the thing.\n")
     return tmp_path / "proj"
 
 
@@ -180,20 +185,17 @@ def test_roo_scan_rules_as_skill_ref(roo_proj):
     imp = RooImporter([roo_proj])
     candidates, note = imp.scan()
     assert len(candidates) == 2, note
-    rule = next(c for c in candidates
-                if c.source.get("kind") == "rule")
+    rule = next(c for c in candidates if c.source.get("kind") == "rule")
     assert rule.type == "skill_ref"
     assert "rule" in rule.scope_tags
     assert rule.source["client_id"] == "roo"
-    mem = next(c for c in candidates
-               if c.source.get("kind") != "rule")
+    mem = next(c for c in candidates if c.source.get("kind") != "rule")
     assert mem.type == "fact"
 
 
 # ------------------------------------------------------------ gemini / qwen
 def test_gemini_scan(gemini_home):
-    imp = GeminiImporter(gemini_home / ".gemini",
-                         [gemini_home / "proj"])
+    imp = GeminiImporter(gemini_home / ".gemini", [gemini_home / "proj"])
     candidates, note = imp.scan()
     assert len(candidates) == 2, note
     assert all(c.type == "project" for c in candidates)
@@ -275,10 +277,20 @@ def test_aider_chat_history_scan(tmp_path):
 # ------------------------------------------------------------ honesty registry
 def test_no_native_store_registry():
     assert set(NO_NATIVE_STORE) == {
-        "opencode", "amp", "kilo", "kimi", "copilot-cli", "aider",
+        "opencode",
+        "amp",
+        "kilo",
+        "kimi",
+        "copilot-cli",
+        "aider",
         # batch 2 (2026-10-12): MCP implant only
-        "continue", "zencoder", "neovim", "emacs",
-        "antigravity", "kiro", "augment",
+        "continue",
+        "zencoder",
+        "neovim",
+        "emacs",
+        "antigravity",
+        "kiro",
+        "augment",
     }
     for name, reason in NO_NATIVE_STORE.items():
         assert "MCP" in reason  # every reason points at the MCP path
@@ -286,38 +298,44 @@ def test_no_native_store_registry():
 
 def test_importers_registry_complete():
     assert set(IMPORTERS) >= {
-        "codex", "cursor", "zed", "claude-code", "windsurf",
-        "cline", "roo", "gemini", "qwen",
+        "codex",
+        "cursor",
+        "zed",
+        "claude-code",
+        "windsurf",
+        "cline",
+        "roo",
+        "gemini",
+        "qwen",
         # batch 2 (2026-10-12)
-        "junie", "droid", "tabnine", "devin", "openhands",
+        "junie",
+        "droid",
+        "tabnine",
+        "devin",
+        "openhands",
     }
 
 
 # ------------------------------------------------------------ read-only
-def test_new_importers_never_write_source_files(claude_home,
-                                                windsurf_home):
+def test_new_importers_never_write_source_files(claude_home, windsurf_home):
     """READ-ONLY: source trees byte-identical after scan+import."""
+
     async def _run():
         targets = [claude_home, windsurf_home.parent]
-        before = {p: p.read_bytes()
-                  for t in targets for p in t.rglob("*.md")
-                  if p.is_file()}
+        before = {p: p.read_bytes() for t in targets for p in t.rglob("*.md") if p.is_file()}
         repo = InMemoryMemoryRepository(HashEmbedder())
-        for imp in (ClaudeCodeImporter(claude_home),
-                    WindsurfImporter(windsurf_home)):
+        for imp in (ClaudeCodeImporter(claude_home), WindsurfImporter(windsurf_home)):
             candidates, _ = imp.scan()
             await run_import(repo, candidates)
-        after = {p: p.read_bytes()
-                 for t in targets for p in t.rglob("*.md")
-                 if p.is_file()}
+        after = {p: p.read_bytes() for t in targets for p in t.rglob("*.md") if p.is_file()}
         assert before == after
+
     asyncio.run(_run())
 
 
 # ------------------------------------------------------------ CLI dry-run
 def test_cli_dry_run_new_harnesses(claude_home, capsys):
-    rc = import_main(["--harness", "claude-code", "--dry-run",
-                      "--claude-home", str(claude_home)])
+    rc = import_main(["--harness", "claude-code", "--dry-run", "--claude-home", str(claude_home)])
     assert rc == 0
     out = capsys.readouterr().out
     assert "claude-code" in out
@@ -326,8 +344,7 @@ def test_cli_dry_run_new_harnesses(claude_home, capsys):
 
 def test_cli_all_includes_new(claude_home, capsys, monkeypatch):
     monkeypatch.setenv("HOME", str(claude_home.parent))
-    rc = import_main(["--harness", "all", "--dry-run",
-                      "--claude-home", str(claude_home)])
+    rc = import_main(["--harness", "all", "--dry-run", "--claude-home", str(claude_home)])
     assert rc == 0
     out = capsys.readouterr().out
     assert "[claude-code]" in out
@@ -342,28 +359,48 @@ def _all_configs():
 def test_clients_dir_has_all_harnesses():
     names = {p.name for p in _all_configs()}
     for expected in [
-        "codex-config.toml", "cursor-mcp.json", "zed-settings.json",
-        "claude-code-mcp.json", "opencode.json", "gemini-settings.json",
-        "qwen-settings.json", "amp-settings.json",
-        "windsurf-mcp_config.json", "roo-mcp.json", "cline-mcp.json",
-        "kilocode-mcp.json", "kimi-mcp.json", "copilot-cli-mcp.json",
+        "codex-config.toml",
+        "codex-http-config.toml",
+        "cursor-mcp.json",
+        "zed-settings.json",
+        "claude-code-mcp.json",
+        "opencode.json",
+        "opencode-v2-http.json",
+        "gemini-settings.json",
+        "qwen-settings.json",
+        "amp-settings.json",
+        "windsurf-mcp_config.json",
+        "roo-mcp.json",
+        "cline-mcp.json",
+        "kilocode-mcp.json",
+        "kimi-mcp.json",
+        "copilot-cli-mcp.json",
         "aider-conf.yml",
         # batch 2 (2026-10-12)
-        "devin-mcp_config.json", "continue-config.json", "junie-mcp.json",
-        "droid-mcp.json", "openhands-mcp.json", "tabnine-settings.json",
-        "zencoder-settings.json", "neovim-mcphub-servers.json",
-        "emacs-gptel-mcp.el", "antigravity-mcp_config.json",
-        "kiro-mcp.json", "augment-mcp.json",
+        "devin-mcp_config.json",
+        "continue-config.json",
+        "junie-mcp.json",
+        "droid-mcp.json",
+        "openhands-mcp.json",
+        "tabnine-settings.json",
+        "zencoder-settings.json",
+        "neovim-mcphub-servers.json",
+        "emacs-gptel-mcp.el",
+        "antigravity-mcp_config.json",
+        "kiro-mcp.json",
+        "augment-mcp.json",
     ]:
         assert expected in names, f"missing {expected}"
 
 
 def _load_config(path: Path):
     text = path.read_text(encoding="utf-8")
-    assert "{{PORTER_TOKEN}}" in text, f"{path.name}: placeholder missing"
+    placeholder = (
+        "{env:PORTER_TOKEN}" if path.name == "opencode-v2-http.json" else "{{PORTER_TOKEN}}"
+    )
+    assert placeholder in text, f"{path.name}: token placeholder missing"
     # no real-looking secrets
-    assert "sk-" not in text.replace("{{PORTER_TOKEN}}", ""), \
-        f"{path.name}: suspicious secret-like value"
+    assert "sk-" not in text.replace(placeholder, ""), f"{path.name}: suspicious secret-like value"
     if path.suffix == ".json":
         return json.loads(text)
     if path.suffix == ".toml":
@@ -377,6 +414,8 @@ def _find_porter_server(cfg, path: Path):
     """Locate the porter server entry across the vendor-specific key shapes."""
     if path.name == "opencode.json":
         return cfg["mcp"]["porter"]
+    if path.name == "opencode-v2-http.json":
+        return cfg["mcp"]["servers"]["porter"]
     if path.name == "amp-settings.json":
         return cfg["amp.mcpServers"]["porter"]
     if path.name == "aider-conf.yml":
@@ -391,8 +430,11 @@ def _find_porter_server(cfg, path: Path):
 
 
 def _is_http_only(path: Path) -> bool:
-    # Antigravity only supports the HTTP transport (serverUrl key).
-    return path.name == "antigravity-mcp_config.json"
+    return path.name in {
+        "antigravity-mcp_config.json",
+        "codex-http-config.toml",
+        "opencode-v2-http.json",
+    }
 
 
 def test_all_client_configs_parse_and_reference_porter():
@@ -403,7 +445,7 @@ def test_all_client_configs_parse_and_reference_porter():
         entry = _find_porter_server(cfg, path)
         blob = json.dumps(entry)
         if _is_http_only(path):
-            assert "serverUrl" in entry, path.name
+            assert entry.get("serverUrl") or entry.get("url"), path.name
             assert "127.0.0.1:8000/mcp" in blob, path.name
         else:
             # stdio shape sanity: some command/args invoking porter.mcp_stdio
@@ -414,7 +456,11 @@ def test_all_client_configs_parse_and_reference_porter():
 def test_opencode_uses_mcp_key_not_mcpservers():
     cfg = _load_config(CLIENTS_DIR / "opencode.json")
     assert "mcp" in cfg and "mcpServers" not in cfg
-    assert cfg["mcp"]["porter"]["type"] == "local"
+    entry = cfg["mcp"]["porter"]
+    assert entry["type"] == "local"
+    assert "env" not in entry
+    assert entry["environment"]["PORTER_REPO"] == "postgres"
+    assert entry["environment"]["PORTER_TOKEN"] == "{{PORTER_TOKEN}}"
 
 
 def test_copilot_cli_has_stdio_type_and_caveat():
@@ -440,7 +486,7 @@ def test_weird_frontmatter_no_crash(tmp_path):
     d.mkdir(parents=True)
     (d / "a.md").write_text("---\nno closing fence\njust text\n")
     (d / "b.md").write_text("---\ntitle: x\n: weird\n:::\n---\nbody\n")
-    (d / "c.md").write_text("\x00\x01 binary \xff\xfe stuff\n")
+    (d / "c.md").write_text("\x00\x01 binary \xff\xfe stuff\n", encoding="utf-8")
     (d / "empty.md").write_text("   \n  \n")
     candidates, _ = WindsurfImporter(d).scan()
     # a/b/c parse (best-effort), empty skipped — key point: no crash
@@ -463,27 +509,28 @@ def test_title_and_tag_caps(tmp_path):
     d = tmp_path / ".codeium" / "windsurf" / "memories"
     d.mkdir(parents=True)
     tags = ", ".join(f"t{i}" for i in range(30))
-    (d / "x.md").write_text(
-        f"---\ntitle: {'T' * 500}\ntags: {tags}\n---\n\nbody\n")
+    (d / "x.md").write_text(f"---\ntitle: {'T' * 500}\ntags: {tags}\n---\n\nbody\n")
     (candidates, _) = WindsurfImporter(d).scan()
     assert len(candidates[0].title) <= 200
     assert len(candidates[0].scope_tags) <= 20
 
 
-@pytest.mark.parametrize("text", [
-    'API_KEY: sk-abcdef1234567890abcdef',
-    'api-key = "sk-abcdef1234567890abcdef"',
-    'password: hunter2hunter',
-    'client_secret=hunter2hunter',
-    'auth_token: abcdef1234567890',
-])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "API_KEY: sk-abcdef1234567890abcdef",
+        'api-key = "sk-abcdef1234567890abcdef"',
+        "password: hunter2hunter",
+        "client_secret=hunter2hunter",
+        "auth_token: abcdef1234567890",
+    ],
+)
 def test_scrubber_kv_variants(text):
     scrubbed, n = scrub_secrets(text)
     assert n >= 1, text
     assert "[REDACTED]" in scrubbed
     # the secret VALUE must be gone (key name may survive by design)
-    for token in ("sk-abcdef1234567890abcdef", "hunter2hunter",
-                  "abcdef1234567890"):
+    for token in ("sk-abcdef1234567890abcdef", "hunter2hunter", "abcdef1234567890"):
         assert token not in scrubbed, text
 
 
@@ -493,6 +540,7 @@ def test_symlinked_project_memory_md_refused(tmp_path):
     """_parse_markdown_file is the choke point: symlinks refused even for
     direct paths like per-project MEMORY.md."""
     from porter.importers import _parse_markdown_file
+
     outside = tmp_path / "evil.md"
     outside.write_text("EVIL\n")
     link = tmp_path / "MEMORY.md"
@@ -514,10 +562,8 @@ def test_symlinked_claude_project_memory_md_refused(tmp_path):
 def test_dry_run_never_prints_raw_secrets(tmp_path, capsys):
     mem = tmp_path / "mem"
     mem.mkdir()
-    (mem / "s.md").write_text(
-        "note: api_key = hunter2hunter2 do not share\n")
-    rc = import_main(["--harness", "windsurf", "--dry-run",
-                      "--windsurf-dir", str(mem)])
+    (mem / "s.md").write_text("note: api_key = hunter2hunter2 do not share\n")
+    rc = import_main(["--harness", "windsurf", "--dry-run", "--windsurf-dir", str(mem)])
     assert rc == 0
     out = capsys.readouterr().out
     assert "hunter2hunter2" not in out
@@ -526,15 +572,6 @@ def test_dry_run_never_prints_raw_secrets(tmp_path, capsys):
 
 # ------------------------------------------------------------ batch 2 (2026-10-12):
 # junie / droid / tabnine / devin / openhands seed importers
-from porter.importers import (
-    DevinImporter,
-    DroidImporter,
-    JunieImporter,
-    OpenHandsImporter,
-    TabnineImporter,
-)
-
-
 @pytest.fixture()
 def junie_home(tmp_path):
     j = tmp_path / ".junie"
@@ -543,7 +580,8 @@ def junie_home(tmp_path):
     proj = tmp_path / "proj"
     (proj / ".junie").mkdir(parents=True)
     (proj / ".junie" / "guidelines.md").write_text(
-        "# Project guidelines\n\nNo emojis in commit messages.\n")
+        "# Project guidelines\n\nNo emojis in commit messages.\n"
+    )
     return tmp_path
 
 
@@ -571,13 +609,12 @@ def batch2_proj(tmp_path):
 
 
 def test_junie_scan_global_and_project(junie_home):
-    cands, note = JunieImporter(
-        junie_home / ".junie", [junie_home / "proj"]).scan()
+    cands, note = JunieImporter(junie_home / ".junie", [junie_home / "proj"]).scan()
     assert len(cands) == 2
     assert all(c.confidence == 0.4 for c in cands)
     assert all("seed" in c.scope_tags for c in cands)
     assert all(c.source["client_id"] == "junie" for c in cands)
-    paths = {c.source["imported_from"] for c in cands}
+    paths = {c.source["imported_from"].replace("\\", "/") for c in cands}
     assert any(p.endswith(".junie/guidelines.md") for p in paths)
 
 
@@ -587,8 +624,7 @@ def test_junie_absent_is_normal(tmp_path):
 
 
 def test_droid_scan(droid_home):
-    cands, _ = DroidImporter(
-        droid_home / ".factory", [droid_home / "droid-proj"]).scan()
+    cands, _ = DroidImporter(droid_home / ".factory", [droid_home / "droid-proj"]).scan()
     assert len(cands) == 2
     assert all("seed" in c.scope_tags for c in cands)
     assert all(c.source["client_id"] == "droid" for c in cands)
@@ -625,19 +661,16 @@ def test_openhands_skills_as_skill_ref(batch2_proj):
     assert c.source["kind"] == "skill"
 
 
-def test_batch2_importers_never_write_source_files(
-        junie_home, droid_home, batch2_proj):
+def test_batch2_importers_never_write_source_files(junie_home, droid_home, batch2_proj):
     """READ-ONLY: source trees byte-identical after scan+import."""
+
     async def _run():
         targets = [junie_home, droid_home, batch2_proj]
-        before = {p: p.read_bytes()
-                  for t in targets for p in t.rglob("*.md")
-                  if p.is_file()}
+        before = {p: p.read_bytes() for t in targets for p in t.rglob("*.md") if p.is_file()}
         repo = InMemoryMemoryRepository(HashEmbedder())
         importers = [
             JunieImporter(junie_home / ".junie", [junie_home / "proj"]),
-            DroidImporter(droid_home / ".factory",
-                          [droid_home / "droid-proj"]),
+            DroidImporter(droid_home / ".factory", [droid_home / "droid-proj"]),
             TabnineImporter(droid_home / ".tabnine", [batch2_proj]),
             DevinImporter([batch2_proj]),
             OpenHandsImporter([batch2_proj]),
@@ -645,38 +678,50 @@ def test_batch2_importers_never_write_source_files(
         for imp in importers:
             candidates, _ = imp.scan()
             await run_import(repo, candidates)
-        after = {p: p.read_bytes()
-                 for t in targets for p in t.rglob("*.md")
-                 if p.is_file()}
+        after = {p: p.read_bytes() for t in targets for p in t.rglob("*.md") if p.is_file()}
         assert before == after
+
     asyncio.run(_run())
 
 
 # ------------------------------------------------------------ batch 2 CLI
 def test_cli_dry_run_batch2(junie_home, batch2_proj, capsys):
-    rc = import_main(["--harness", "junie", "--dry-run",
-                      "--junie-dir", str(junie_home / ".junie"),
-                      "--project-root", str(junie_home / "proj")])
+    rc = import_main(
+        [
+            "--harness",
+            "junie",
+            "--dry-run",
+            "--junie-dir",
+            str(junie_home / ".junie"),
+            "--project-root",
+            str(junie_home / "proj"),
+        ]
+    )
     assert rc == 0
     assert "junie" in capsys.readouterr().out
 
-    rc = import_main(["--harness", "devin", "--dry-run",
-                      "--project-root", str(batch2_proj)])
+    rc = import_main(["--harness", "devin", "--dry-run", "--project-root", str(batch2_proj)])
     assert rc == 0
     assert "devin" in capsys.readouterr().out
 
-    rc = import_main(["--harness", "openhands", "--dry-run",
-                      "--project-root", str(batch2_proj)])
+    rc = import_main(["--harness", "openhands", "--dry-run", "--project-root", str(batch2_proj)])
     assert rc == 0
     assert "openhands" in capsys.readouterr().out
 
 
-def test_cli_all_includes_batch2(junie_home, batch2_proj, capsys,
-                                 monkeypatch):
+def test_cli_all_includes_batch2(junie_home, batch2_proj, capsys, monkeypatch):
     monkeypatch.setenv("HOME", str(junie_home))
-    rc = import_main(["--harness", "all", "--dry-run",
-                      "--junie-dir", str(junie_home / ".junie"),
-                      "--project-root", str(batch2_proj)])
+    rc = import_main(
+        [
+            "--harness",
+            "all",
+            "--dry-run",
+            "--junie-dir",
+            str(junie_home / ".junie"),
+            "--project-root",
+            str(batch2_proj),
+        ]
+    )
     assert rc == 0
     out = capsys.readouterr().out
     for h in ["[junie]", "[droid]", "[tabnine]", "[devin]", "[openhands]"]:
@@ -727,8 +772,7 @@ def test_emacs_elisp_shape():
 
 
 def test_no_native_store_covers_batch2_implant_only():
-    for h in ["continue", "zencoder", "neovim", "emacs",
-              "antigravity", "kiro", "augment"]:
+    for h in ["continue", "zencoder", "neovim", "emacs", "antigravity", "kiro", "augment"]:
         assert h in NO_NATIVE_STORE, f"{h} missing from NO_NATIVE_STORE"
     # devin/junie/droid/tabnine/openhands have importers -> NOT here
     for h in ["devin", "junie", "droid", "tabnine", "openhands"]:
@@ -760,7 +804,8 @@ def test_junie_weird_frontmatter_no_crash(tmp_path):
     j = tmp_path / ".junie"
     j.mkdir()
     (j / "guidelines.md").write_text(
-        "---\ntitle: [unclosed\n: bad: : yaml: :\n---\n\nBody text here.\n")
+        "---\ntitle: [unclosed\n: bad: : yaml: :\n---\n\nBody text here.\n"
+    )
     cands, _ = JunieImporter(j).scan()
     assert len(cands) == 1
     assert "Body text here." in cands[0].content

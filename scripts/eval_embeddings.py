@@ -20,9 +20,11 @@ Usage:
     python scripts/eval_embeddings.py --embedders hash,qwen3,bge-m3,harrier,embeddinggemma
     python scripts/eval_embeddings.py --threshold 0.90 --top-k 1,3,5
 """
+
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import traceback
 from pathlib import Path
@@ -48,7 +50,7 @@ CORPUS: list[tuple[str, str]] = [
     ("m10", "User writes styles with Tailwind CSS"),
     ("m11", "User lives in San Jose and has no car"),
     ("m12", "Coffee: americano only"),
-    ("m13", "用户喜欢深色模式"),          # cross-lingual dup of m07
+    ("m13", "用户喜欢深色模式"),  # cross-lingual dup of m07
     ("m14", "User is allergic to peanuts"),  # cross-lingual dup of m02
 ]
 
@@ -60,14 +62,14 @@ DUP_PAIRS: list[tuple[str, str]] = [
     ("用户偏好用 Tailwind 写样式", "用户写样式喜欢用 Tailwind"),
     ("用户住在 San Jose，没有车", "用户住 San Jose，无车"),
     ("用户只喝美式咖啡", "用户喝咖啡只喝美式"),
-    ("User prefers dark mode, finds white backgrounds harsh",
-     "User likes dark theme, dislikes glaring white backgrounds"),
+    (
+        "User prefers dark mode, finds white backgrounds harsh",
+        "User likes dark theme, dislikes glaring white backgrounds",
+    ),
     ("User is allergic to peanuts", "The user has a peanut allergy"),
-    ("No meetings on Friday afternoons",
-     "User blocks Friday afternoons for no meetings"),
+    ("No meetings on Friday afternoons", "User blocks Friday afternoons for no meetings"),
     ("User writes styles with Tailwind CSS", "User prefers Tailwind for styling"),
-    ("User lives in San Jose and has no car",
-     "User is carless, based in San Jose"),
+    ("User lives in San Jose and has no car", "User is carless, based in San Jose"),
     ("Coffee: americano only", "The user drinks only americano"),
     # cross-lingual duplicates (multilingual check)
     ("用户喜欢深色模式", "User prefers dark mode"),
@@ -106,11 +108,12 @@ QUERIES: list[tuple[str, str]] = [
 ]
 
 
-def _load_embedder(kind: str) -> Embedder | None:
+def _load_embedder(kind: str, http_url: str | None = None) -> Embedder | None:
     from porter.embeddings import build_embedder
 
     try:
-        emb = build_embedder(kind)
+        kwargs = {"base_url": http_url} if kind == "http" else {}
+        emb = build_embedder(kind, **kwargs)
         # Force one encode so lazy model download/failure surfaces now.
         emb.embed_one("porter embedding smoke test 冒烟测试")
         return emb
@@ -158,39 +161,81 @@ def eval_recall(emb: Embedder, ks: list[int]) -> dict[int, float]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Porter bilingual embedding eval")
-    ap.add_argument("--embedders", default="hash,qwen3,bge-m3,harrier,embeddinggemma",
-                    help="comma-separated embedder kinds")
-    ap.add_argument("--threshold", type=float, default=0.92,
-                    help="duplicate cosine threshold (default 0.92)")
-    ap.add_argument("--top-k", default="1,3,5",
-                    help="recall cutoffs, comma-separated")
+    ap.add_argument(
+        "--embedders",
+        default="hash,qwen3,bge-m3,harrier,embeddinggemma",
+        help="comma-separated embedder kinds",
+    )
+    ap.add_argument(
+        "--threshold", type=float, default=0.92, help="duplicate cosine threshold (default 0.92)"
+    )
+    ap.add_argument("--top-k", default="1,3,5", help="recall cutoffs, comma-separated")
+    ap.add_argument(
+        "--http-url",
+        default="http://localhost:8001",
+        help="running embedding service for --embedders http",
+    )
+    ap.add_argument("--output", help="write evaluation metrics as JSON")
     args = ap.parse_args()
     ks = [int(x) for x in args.top_k.split(",")]
 
-    print(f"eval set: {len(CORPUS)} memories, {len(DUP_PAIRS)} dup pairs, "
-          f"{len(DISTINCT_PAIRS)} distinct pairs, {len(QUERIES)} queries")
+    print(
+        f"eval set: {len(CORPUS)} memories, {len(DUP_PAIRS)} dup pairs, "
+        f"{len(DISTINCT_PAIRS)} distinct pairs, {len(QUERIES)} queries"
+    )
     print(f"duplicate threshold: {args.threshold}")
-    print(f"{'embedder':<10} {'dedup-P':>8} {'dedup-R':>8} "
-          + " ".join(f"R@{k:<5}" for k in ks))
+    print(f"{'embedder':<10} {'dedup-P':>8} {'dedup-R':>8} " + " ".join(f"R@{k:<5}" for k in ks))
     print("-" * 60)
 
     ran = 0
+    results = []
     for kind in [k.strip() for k in args.embedders.split(",") if k.strip()]:
-        emb = _load_embedder(kind)
+        emb = _load_embedder(kind, args.http_url)
         if emb is None:
             continue
         ran += 1
         prec, rec, tp, fp = eval_dedup(emb, args.threshold)
         recalls = eval_recall(emb, ks)
         r_str = " ".join(f"{recalls[k]:<7.3f}" for k in ks)
-        print(f"{kind:<10} {prec:>8.3f} {rec:>8.3f} {r_str} "
-              f"(tp={tp} fp={fp})")
+        print(f"{kind:<10} {prec:>8.3f} {rec:>8.3f} {r_str} (tp={tp} fp={fp})")
+        results.append(
+            {
+                "embedder": kind,
+                "model": getattr(emb, "model_id", getattr(emb, "MODEL_ID", kind)),
+                "dimension": emb.dim,
+                "dedup_precision": prec,
+                "dedup_recall": rec,
+                "true_positives": tp,
+                "false_positives": fp,
+                "recall_at": recalls,
+            }
+        )
+
+    if args.output:
+        Path(args.output).write_text(
+            json.dumps(
+                {
+                    "memories": len(CORPUS),
+                    "queries": len(QUERIES),
+                    "duplicate_pairs": len(DUP_PAIRS),
+                    "distinct_pairs": len(DISTINCT_PAIRS),
+                    "threshold": args.threshold,
+                    "results": results,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     if ran == 0:
-        print("\nNo embedder could run. On a real machine: "
-              "pip install sentence-transformers torch, then re-run — "
-              "qwen3/bge-m3/harrier/embeddinggemma download from HuggingFace "
-              "on first use.")
+        print(
+            "\nNo embedder could run. On a real machine: "
+            "pip install sentence-transformers torch, then re-run — "
+            "qwen3/bge-m3/harrier/embeddinggemma download from HuggingFace "
+            "on first use."
+        )
         return 2
     return 0
 

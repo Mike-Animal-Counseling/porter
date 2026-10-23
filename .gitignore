@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 .venv/
+.review-venv/
 venv/
 *.egg-info/
 dist/
@@ -15,6 +16,9 @@ build/
 
 # Pytest / coverage
 .pytest_cache/
+.ruff_cache/
+.pre-commit-cache/
+.mypy_cache/
 .coverage
 htmlcov/
 

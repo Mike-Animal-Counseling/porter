@@ -74,7 +74,7 @@ import binascii
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from nacl.public import PrivateKey, PublicKey, SealedBox
 from nacl.utils import random as random_bytes
@@ -95,6 +95,7 @@ MAX_DEVICE_ID_LEN = 128
 
 
 # ------------------------------------------------------------------- helpers
+
 
 def _b64e(raw: bytes) -> str:
     return base64.b64encode(raw).decode("ascii")
@@ -125,8 +126,7 @@ def _check_public_key(public_key_b64: str) -> PublicKey:
     raw = _b64d(public_key_b64, "device public key")
     if len(raw) != X25519_PUBLIC_KEY_SIZE:
         raise InvalidInput(
-            f"X25519 public key must be {X25519_PUBLIC_KEY_SIZE} bytes, "
-            f"got {len(raw)}"
+            f"X25519 public key must be {X25519_PUBLIC_KEY_SIZE} bytes, got {len(raw)}"
         )
     return PublicKey(raw)
 
@@ -135,13 +135,13 @@ def _check_private_key(private_key_b64: str) -> PrivateKey:
     raw = _b64d(private_key_b64, "device private key")
     if len(raw) != X25519_PUBLIC_KEY_SIZE:
         raise InvalidInput(
-            f"X25519 private key must be {X25519_PUBLIC_KEY_SIZE} bytes, "
-            f"got {len(raw)}"
+            f"X25519 private key must be {X25519_PUBLIC_KEY_SIZE} bytes, got {len(raw)}"
         )
     return PrivateKey(raw)
 
 
 # ------------------------------------------------- device keypairs & sealing
+
 
 def generate_device_keypair() -> tuple[str, str]:
     """Generate an X25519 device keypair.
@@ -190,6 +190,7 @@ def open_sealed_key(sealed_b64: str, recipient_private_b64: str) -> bytes:
 
 # ----------------------------------------------------------------- envelopes
 
+
 @dataclass
 class KeyEnvelope:
     """One sealed data-key envelope in transit through the hub."""
@@ -197,7 +198,7 @@ class KeyEnvelope:
     id: str
     to_device: str
     from_device: str
-    sealed: str                      # base64 sealed box; opaque to the hub
+    sealed: str  # base64 sealed box; opaque to the hub
     created_at: datetime
     claimed_at: datetime | None = None
 
@@ -207,10 +208,8 @@ class DeviceRecord:
     """A registered device: id + public key. The hub never holds privates."""
 
     device_id: str
-    public_key: str                  # base64 X25519 public key
-    created_at: datetime = field(
-        default_factory=lambda: datetime.now(timezone.utc)
-    )
+    public_key: str  # base64 X25519 public key
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class EnvelopeStore(ABC):
@@ -226,17 +225,13 @@ class EnvelopeStore(ABC):
         ...
 
     @abstractmethod
-    async def get_device(self, device_id: str) -> DeviceRecord | None:
-        ...
+    async def get_device(self, device_id: str) -> DeviceRecord | None: ...
 
     @abstractmethod
-    async def list_devices(self) -> list[DeviceRecord]:
-        ...
+    async def list_devices(self) -> list[DeviceRecord]: ...
 
     @abstractmethod
-    async def post_envelope(
-        self, to_device: str, from_device: str, sealed_b64: str
-    ) -> KeyEnvelope:
+    async def post_envelope(self, to_device: str, from_device: str, sealed_b64: str) -> KeyEnvelope:
         """Store one sealed envelope addressed to ``to_device``."""
         ...
 
@@ -263,7 +258,7 @@ class InMemoryEnvelopeStore(EnvelopeStore):
         rec = DeviceRecord(
             device_id=device_id,
             public_key=public_key_b64,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         self._devices[device_id] = rec
         return rec
@@ -274,9 +269,7 @@ class InMemoryEnvelopeStore(EnvelopeStore):
     async def list_devices(self) -> list[DeviceRecord]:
         return list(self._devices.values())
 
-    async def post_envelope(
-        self, to_device: str, from_device: str, sealed_b64: str
-    ) -> KeyEnvelope:
+    async def post_envelope(self, to_device: str, from_device: str, sealed_b64: str) -> KeyEnvelope:
         to_device = _check_device_id(to_device)
         from_device = _check_device_id(from_device)
         _b64d(sealed_b64, "sealed envelope")  # shape check only; hub stays blind
@@ -285,14 +278,14 @@ class InMemoryEnvelopeStore(EnvelopeStore):
             to_device=to_device,
             from_device=from_device,
             sealed=sealed_b64,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         self._envelopes[env.id] = env
         return env
 
     async def claim_envelopes(self, device_id: str) -> list[KeyEnvelope]:
         device_id = _check_device_id(device_id)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         claimed: list[KeyEnvelope] = []
         for env in self._envelopes.values():
             if env.to_device == device_id and env.claimed_at is None:
@@ -357,9 +350,7 @@ class PostgresEnvelopeStore(EnvelopeStore):
             for r in rows
         ]
 
-    async def post_envelope(
-        self, to_device: str, from_device: str, sealed_b64: str
-    ) -> KeyEnvelope:
+    async def post_envelope(self, to_device: str, from_device: str, sealed_b64: str) -> KeyEnvelope:
         to_device = _check_device_id(to_device)
         from_device = _check_device_id(from_device)
         _b64d(sealed_b64, "sealed envelope")
@@ -387,11 +378,13 @@ class PostgresEnvelopeStore(EnvelopeStore):
         # so two racing claimers can never receive the same envelope.
         rows = await self._pool.fetch(
             """
-            UPDATE key_envelopes
-            SET claimed_at = now()
-            WHERE to_device = $1 AND claimed_at IS NULL
-            RETURNING id, to_device, from_device, sealed, created_at, claimed_at
-            ORDER BY created_at
+            WITH claimed AS (
+                UPDATE key_envelopes
+                SET claimed_at = now()
+                WHERE to_device = $1 AND claimed_at IS NULL
+                RETURNING id, to_device, from_device, sealed, created_at, claimed_at
+            )
+            SELECT * FROM claimed ORDER BY created_at
             """,
             _check_device_id(device_id),
         )
@@ -409,6 +402,7 @@ class PostgresEnvelopeStore(EnvelopeStore):
 
 
 # ------------------------------------------------------------------ rotation
+
 
 def rotate_plan(
     old_key_id: str,
@@ -441,7 +435,7 @@ def rotate_plan(
         "old_key_id": old_key_id,
         "new_key_id": new_key_id,
         "new_key": generate_data_key(),  # 32 bytes; client-held, never uploaded
-        "repost_to": targets,            # devices needing a fresh sealed envelope
+        "repost_to": targets,  # devices needing a fresh sealed envelope
         "client_steps": [
             "save_key(new_key_id, new_key) locally (0600)",
             "seal new_key for each device in repost_to and POST sealed envelopes",

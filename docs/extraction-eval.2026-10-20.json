@@ -1,0 +1,66 @@
+{
+  "model": "qwen3:0.6b",
+  "ollama_version": "0.33.2",
+  "synthetic_only": true,
+  "options": {
+    "think": false,
+    "num_ctx": 16384,
+    "num_predict": 2048,
+    "temperature": 0
+  },
+  "results": [
+    {
+      "fixture": "en",
+      "status": "ok",
+      "facts": [
+        {
+          "content": "User: I prefer dark mode.",
+          "type": "fact",
+          "scope_tags": [],
+          "confidence": 0.7
+        }
+      ],
+      "seconds": 1.23
+    },
+    {
+      "fixture": "zh",
+      "status": "ok",
+      "facts": [
+        {
+          "content": "用户：我不喜欢香菜。",
+          "type": "fact",
+          "scope_tags": [],
+          "confidence": 0.7
+        }
+      ],
+      "seconds": 0.8
+    },
+    {
+      "fixture": "chatter",
+      "status": "ok",
+      "facts": [
+        {
+          "content": "User: Hello. Assistant: Hello!",
+          "type": "fact",
+          "scope_tags": [],
+          "confidence": 0.7
+        }
+      ],
+      "seconds": 0.8
+    },
+    {
+      "fixture": "project",
+      "status": "ok",
+      "facts": [
+        {
+          "content": "User: We decided to use pytest in project demo.",
+          "type": "fact",
+          "scope_tags": [],
+          "confidence": 0.7
+        }
+      ],
+      "seconds": 0.8
+    }
+  ],
+  "note": "Small protocol and quality sample; not a general extraction benchmark."
+}

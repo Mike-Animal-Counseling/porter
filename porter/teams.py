@@ -51,6 +51,7 @@ Suggested REST wiring (not implemented here — app.py is untouched):
   validate_workspace_memory(type, tags) must run BEFORE triage — the
   personal-domain red line holds even for memory.admin callers.
 """
+
 from __future__ import annotations
 
 import logging
@@ -58,12 +59,12 @@ import re
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import jwt
 
-from .errors import Conflict, InvalidInput, NotFound
+from .errors import Conflict, InsufficientScope, InvalidInput, NotFound
 from .oauth import jwt_signing_key, mint_share_token
 from .oauth_store import OAuthStore, ShareRecord
 from .repositories import MemoryRepository
@@ -109,7 +110,7 @@ def validate_workspace_memory(memory_type: str, tags) -> None:
     workspace, no matter who writes them. Project memories and
     non-workspace tags are unaffected.
     """
-    if memory_type == "personal" and any(is_workspace_tag(t) for t in (tags or [])):
+    if memory_type in {"personal", "preference"} and any(is_workspace_tag(t) for t in (tags or [])):
         raise InvalidInput(
             "personal memories must not carry workspace tags: "
             "the personal domain never enters a team workspace"
@@ -122,7 +123,7 @@ class WorkspaceRecord:
     id: UUID
     name: str
     owner_client_id: UUID
-    project_tag: str          # e.g. workspace:a3f9k2x1; also the OAuth scope tag
+    project_tag: str  # e.g. workspace:a3f9k2x1; also the OAuth scope tag
     created_at: datetime
 
 
@@ -130,7 +131,7 @@ class WorkspaceRecord:
 class WorkspaceMemberRecord:
     workspace_id: UUID
     client_id: UUID
-    role: str                 # one of ROLES
+    role: str  # one of ROLES
     joined_at: datetime
 
 
@@ -151,9 +152,7 @@ class TeamStore(ABC):
     """
 
     @abstractmethod
-    async def create_workspace(
-        self, *, name: str, owner_client_id: UUID
-    ) -> WorkspaceRecord:
+    async def create_workspace(self, *, name: str, owner_client_id: UUID) -> WorkspaceRecord:
         """Insert a workspace row; id and project_tag are generated here."""
 
     @abstractmethod
@@ -164,9 +163,7 @@ class TeamStore(ABC):
         """Reverse lookup tag -> workspace (for the REST/memory-write path)."""
 
     @abstractmethod
-    async def list_workspaces_for_client(
-        self, client_id: UUID
-    ) -> list[WorkspaceRecord]: ...
+    async def list_workspaces_for_client(self, client_id: UUID) -> list[WorkspaceRecord]: ...
 
     @abstractmethod
     async def add_member(
@@ -174,9 +171,7 @@ class TeamStore(ABC):
     ) -> WorkspaceMemberRecord: ...
 
     @abstractmethod
-    async def remove_member(
-        self, *, workspace_id: UUID, client_id: UUID
-    ) -> bool:
+    async def remove_member(self, *, workspace_id: UUID, client_id: UUID) -> bool:
         """Returns True when a membership row was actually removed."""
 
     @abstractmethod
@@ -186,9 +181,7 @@ class TeamStore(ABC):
         """Change a member's role. Raises KeyError for non-members."""
 
     @abstractmethod
-    async def list_members(
-        self, workspace_id: UUID
-    ) -> list[WorkspaceMemberRecord]: ...
+    async def list_members(self, workspace_id: UUID) -> list[WorkspaceMemberRecord]: ...
 
     @abstractmethod
     async def get_member(
@@ -213,7 +206,7 @@ class InMemoryTeamStore(TeamStore):
         self._members: dict[tuple[UUID, UUID], WorkspaceMemberRecord] = {}
 
     def _now(self) -> datetime:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     async def create_workspace(self, *, name, owner_client_id):
         ws_id = uuid4()
@@ -223,8 +216,11 @@ class InMemoryTeamStore(TeamStore):
             ws_id = uuid4()
             tag = workspace_tag(ws_id)
         rec = WorkspaceRecord(
-            id=ws_id, name=name, owner_client_id=owner_client_id,
-            project_tag=tag, created_at=self._now(),
+            id=ws_id,
+            name=name,
+            owner_client_id=owner_client_id,
+            project_tag=tag,
+            created_at=self._now(),
         )
         self._workspaces[ws_id] = rec
         self._by_tag[tag] = ws_id
@@ -238,9 +234,7 @@ class InMemoryTeamStore(TeamStore):
         return self._workspaces.get(ws_id) if ws_id else None
 
     async def list_workspaces_for_client(self, client_id):
-        ws_ids = {
-            wid for (wid, cid) in self._members if cid == client_id
-        }
+        ws_ids = {wid for (wid, cid) in self._members if cid == client_id}
         return sorted(
             (self._workspaces[wid] for wid in ws_ids if wid in self._workspaces),
             key=lambda w: w.created_at,
@@ -254,8 +248,10 @@ class InMemoryTeamStore(TeamStore):
         if key in self._members:
             raise Conflict(f"client {client_id} is already a member")
         rec = WorkspaceMemberRecord(
-            workspace_id=workspace_id, client_id=client_id,
-            role=role, joined_at=self._now(),
+            workspace_id=workspace_id,
+            client_id=client_id,
+            role=role,
+            joined_at=self._now(),
         )
         self._members[key] = rec
         return rec
@@ -285,9 +281,7 @@ class InMemoryTeamStore(TeamStore):
             return False
         for key in [k for k in self._members if k[0] == workspace_id]:
             del self._members[key]
-        self._by_tag = {
-            t: wid for t, wid in self._by_tag.items() if wid != workspace_id
-        }
+        self._by_tag = {t: wid for t, wid in self._by_tag.items() if wid != workspace_id}
         return True
 
 
@@ -301,15 +295,20 @@ class PostgresTeamStore(TeamStore):
     @staticmethod
     def _ws_row(r) -> WorkspaceRecord:
         return WorkspaceRecord(
-            id=r["id"], name=r["name"], owner_client_id=r["owner_client_id"],
-            project_tag=r["project_tag"], created_at=r["created_at"],
+            id=r["id"],
+            name=r["name"],
+            owner_client_id=r["owner_client_id"],
+            project_tag=r["project_tag"],
+            created_at=r["created_at"],
         )
 
     @staticmethod
     def _mem_row(r) -> WorkspaceMemberRecord:
         return WorkspaceMemberRecord(
-            workspace_id=r["workspace_id"], client_id=r["client_id"],
-            role=r["role"], joined_at=r["joined_at"],
+            workspace_id=r["workspace_id"],
+            client_id=r["client_id"],
+            role=r["role"],
+            joined_at=r["joined_at"],
         )
 
     async def create_workspace(self, *, name, owner_client_id):
@@ -326,7 +325,10 @@ class PostgresTeamStore(TeamStore):
                         VALUES ($1, $2, $3, $4)
                         RETURNING id, name, owner_client_id, project_tag, created_at
                         """,
-                        ws_id, name, owner_client_id, workspace_tag(ws_id),
+                        ws_id,
+                        name,
+                        owner_client_id,
+                        workspace_tag(ws_id),
                     )
                     return self._ws_row(row)
                 except Exception as e:
@@ -374,7 +376,9 @@ class PostgresTeamStore(TeamStore):
                     VALUES ($1, $2, $3)
                     RETURNING workspace_id, client_id, role, joined_at
                     """,
-                    workspace_id, client_id, role,
+                    workspace_id,
+                    client_id,
+                    role,
                 )
             except Exception as e:
                 msg = str(e)
@@ -389,7 +393,8 @@ class PostgresTeamStore(TeamStore):
         async with self.pool.acquire() as con:
             res = await con.execute(
                 "DELETE FROM workspace_members WHERE workspace_id = $1 AND client_id = $2",
-                workspace_id, client_id,
+                workspace_id,
+                client_id,
             )
         return res == "DELETE 1"
 
@@ -402,7 +407,9 @@ class PostgresTeamStore(TeamStore):
                 WHERE workspace_id = $1 AND client_id = $2
                 RETURNING workspace_id, client_id, role, joined_at
                 """,
-                workspace_id, client_id, role,
+                workspace_id,
+                client_id,
+                role,
             )
         if row is None:
             raise KeyError(f"client {client_id} is not a member")
@@ -423,22 +430,19 @@ class PostgresTeamStore(TeamStore):
             row = await con.fetchrow(
                 "SELECT workspace_id, client_id, role, joined_at"
                 " FROM workspace_members WHERE workspace_id = $1 AND client_id = $2",
-                workspace_id, client_id,
+                workspace_id,
+                client_id,
             )
         return self._mem_row(row) if row else None
 
     async def delete_workspace(self, workspace_id):
         async with self.pool.acquire() as con:
-            res = await con.execute(
-                "DELETE FROM workspaces WHERE id = $1", workspace_id
-            )
+            res = await con.execute("DELETE FROM workspaces WHERE id = $1", workspace_id)
         return res == "DELETE 1"
 
 
 # ---------------------------------------------------------------- access control
-async def check_access(
-    store: TeamStore, *, workspace_id: UUID, client_id: UUID, need: str
-) -> bool:
+async def check_access(store: TeamStore, *, workspace_id: UUID, client_id: UUID, need: str) -> bool:
     """Role-based access check for a workspace (pure-ish: reads the store).
 
     Permission semantics:
@@ -463,6 +467,23 @@ async def check_access(
 
 
 # ---------------------------------------------------------------- business functions
+async def require_memory_write(store, *, client_id, memory_type, tags, is_admin=False):
+    """Enforce the personal boundary and current workspace role at writes."""
+    validate_workspace_memory(memory_type, tags)
+    for tag in {tag for tag in tags if is_workspace_tag(tag)}:
+        if is_admin:
+            continue
+        workspace = await store.get_workspace_by_tag(tag) if store is not None else None
+        if (
+            workspace is None
+            or client_id is None
+            or not await check_access(
+                store, workspace_id=workspace.id, client_id=client_id, need="write"
+            )
+        ):
+            raise InsufficientScope("workspace editor membership required")
+
+
 def _ws_dict(ws: WorkspaceRecord) -> dict:
     return {
         "id": str(ws.id),
@@ -499,12 +520,8 @@ async def create_workspace(
     """
     if not name or not name.strip():
         raise InvalidInput("workspace name must not be empty")
-    ws = await store.create_workspace(
-        name=name.strip(), owner_client_id=owner_client_id
-    )
-    await store.add_member(
-        workspace_id=ws.id, client_id=owner_client_id, role="owner"
-    )
+    ws = await store.create_workspace(name=name.strip(), owner_client_id=owner_client_id)
+    await store.add_member(workspace_id=ws.id, client_id=owner_client_id, role="owner")
     await repo.audit(
         action="workspace_create",
         client_id=owner_client_id,
@@ -560,7 +577,10 @@ async def invite(
     )
     log.info(
         "workspace invite: %s -> %s as %s (by %s)",
-        workspace_id, client_id, role, actor_client_id,
+        workspace_id,
+        client_id,
+        role,
+        actor_client_id,
     )
     return _member_dict(member)
 
@@ -598,9 +618,7 @@ async def mint_member_token(
     tag = workspace.project_tag
     if not is_workspace_tag(tag):
         raise InvalidInput(f"not a workspace tag: {tag!r}")
-    await oauth_store.add_custom_tag(
-        tag=tag, label=f"Team workspace: {workspace.name}"
-    )
+    await oauth_store.add_custom_tag(tag=tag, label=f"Team workspace: {workspace.name}")
     token_name = name or f"workspace {workspace.name} ({role})"
     if role == "viewer":
         return await mint_share_token(
@@ -613,15 +631,13 @@ async def mint_member_token(
     # oauth.mint_share_token (jti == share.id, sub == "share"); only the
     # scope list differs, which mint_share_token cannot express.
     scopes = [f"memory.read.{tag}", f"memory.write.{tag}"]
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_in_hours)
-    share = await oauth_store.create_share(
-        name=token_name, scopes=scopes, expires_at=expires_at
-    )
+    expires_at = datetime.now(UTC) + timedelta(hours=expires_in_hours)
+    share = await oauth_store.create_share(name=token_name, scopes=scopes, expires_at=expires_at)
     now = int(time.time())
     payload = {
         "jti": str(share.id),
-        "sub": "share",                    # marks share tokens (not a clients.id UUID)
-        "cid": f"share:{share.id}",        # public identity, used for rate-limit buckets
+        "sub": "share",  # marks share tokens (not a clients.id UUID)
+        "cid": f"share:{share.id}",  # public identity, used for rate-limit buckets
         "scopes": sorted(scopes),
         "iat": now,
         "exp": int(expires_at.timestamp()),

@@ -4,8 +4,9 @@ Covers: InsufficientScope shape, unified 422 error format (PRD §11),
 input size limits, tag validation, audit filters, approve auditing,
 and scopes_used honesty.
 """
+
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -49,25 +50,25 @@ def test_content_max_length_rejected(client: TestClient):
 
 
 def test_query_max_length_rejected(client: TestClient):
-    r = client.post("/api/v1/memories/search",
-                    json={"query": "x" * 2_001, "top_k": 5})
+    r = client.post("/api/v1/memories/search", json={"query": "x" * 2_001, "top_k": 5})
     assert r.status_code == 422
     assert r.json()["error"]["code"] == "invalid_input"
 
 
 def test_tag_validation(client: TestClient):
     # empty tag
-    r = client.post("/api/v1/memories",
-                    json={"content": "hi", "type": "fact", "scope_tags": [""]})
+    r = client.post("/api/v1/memories", json={"content": "hi", "type": "fact", "scope_tags": [""]})
     assert r.status_code == 422
     # too many tags
-    r = client.post("/api/v1/memories",
-                    json={"content": "hi", "type": "fact",
-                          "scope_tags": [f"t{i}" for i in range(21)]})
+    r = client.post(
+        "/api/v1/memories",
+        json={"content": "hi", "type": "fact", "scope_tags": [f"t{i}" for i in range(21)]},
+    )
     assert r.status_code == 422
     # tag too long
-    r = client.post("/api/v1/memories",
-                    json={"content": "hi", "type": "fact", "scope_tags": ["x" * 65]})
+    r = client.post(
+        "/api/v1/memories", json={"content": "hi", "type": "fact", "scope_tags": ["x" * 65]}
+    )
     assert r.status_code == 422
 
 
@@ -81,29 +82,26 @@ def test_audit_list_filters(repo: InMemoryMemoryRepository):
         by_client = await repo.audit_list(client_id=c1)
         assert len(by_client) == 2
         assert all(r.client_id == c1 for r in by_client)
-        future = datetime.now(timezone.utc) + timedelta(seconds=60)
+        future = datetime.now(UTC) + timedelta(seconds=60)
         assert await repo.audit_list(since=future) == []
-        past = datetime.now(timezone.utc) - timedelta(seconds=60)
+        past = datetime.now(UTC) - timedelta(seconds=60)
         assert len(await repo.audit_list(since=past)) == 3
 
     asyncio.run(_run())
 
 
 def test_approve_writes_audit_entry(client: TestClient):
-    r = client.post("/api/v1/memories",
-                    json={"content": "approve me", "type": "fact"})
+    r = client.post("/api/v1/memories", json={"content": "approve me", "type": "fact"})
     mid = r.json()["id"]
     client.post(f"/api/v1/memories/{mid}/approve")
     r = client.get("/api/v1/audit-log", params={"limit": 20})
-    transitions = [e for e in r.json()
-                   if e.get("meta", {}).get("transition") == "pending->active"]
+    transitions = [e for e in r.json() if e.get("meta", {}).get("transition") == "pending->active"]
     assert transitions and mid in transitions[0]["memory_ids"]
     assert transitions[0]["scopes_used"]  # honestly recorded
 
 
 def test_delete_audit_carries_scopes(client: TestClient):
-    r = client.post("/api/v1/memories",
-                    json={"content": "delete me", "type": "fact"})
+    r = client.post("/api/v1/memories", json={"content": "delete me", "type": "fact"})
     mid = r.json()["id"]
     client.delete(f"/api/v1/memories/{mid}")
     r = client.get("/api/v1/audit-log", params={"limit": 20})
@@ -113,7 +111,6 @@ def test_delete_audit_carries_scopes(client: TestClient):
 
 
 def test_audit_log_query_filters(client: TestClient):
-    r = client.get("/api/v1/audit-log",
-                   params={"since": "2999-01-01T00:00:00+00:00"})
+    r = client.get("/api/v1/audit-log", params={"since": "2999-01-01T00:00:00+00:00"})
     assert r.status_code == 200
     assert r.json() == []

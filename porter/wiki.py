@@ -18,15 +18,16 @@ Security notes (prototype inherits the repo's guarantees):
 - Encrypted (E2EE) memories are NEVER indexed: the server is
   ciphertext-blind, so there is nothing meaningful to extract.
 - Graph expansion respects the same tag/active filters as the base search.
-- The graph stores entity *names* derived from memory text; names are
-  metadata, not secrets, but they are still only readable through the
-  memory.read-scoped MCP tool below.
+- Entity names and relation provenance can reveal memory contents.
+  The MCP graph tool applies the originating memory's visibility to
+  every returned edge, including active-only and tag restrictions.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from .llm import BaseLLMExtractor
@@ -34,7 +35,7 @@ from .repositories import MemoryRecord, ScoredMemory
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -70,7 +71,10 @@ class WikiStore(ABC):
 
     @abstractmethod
     async def add_edge(
-        self, src_id: UUID, dst_id: UUID, relation: str,
+        self,
+        src_id: UUID,
+        dst_id: UUID,
+        relation: str,
         memory_id: UUID | None,
     ) -> None:
         """Record a directed relation edge (deduped per memory)."""
@@ -92,9 +96,9 @@ class InMemoryWikiStore(WikiStore):
     """Test/dev store. Mirrors the SQL schema in dicts."""
 
     def __init__(self) -> None:
-        self._entities: dict[str, WikiEntity] = {}          # name -> entity
+        self._entities: dict[str, WikiEntity] = {}  # name -> entity
         self._by_id: dict[UUID, WikiEntity] = {}
-        self._mem_entities: dict[UUID, set[UUID]] = {}      # memory_id -> entity ids
+        self._mem_entities: dict[UUID, set[UUID]] = {}  # memory_id -> entity ids
         self._edges: set[tuple[UUID, UUID, str, str]] = set()  # (src,dst,rel,mem)
 
     async def upsert_entity(self, name: str, kind: str) -> UUID:
@@ -129,10 +133,13 @@ class InMemoryWikiStore(WikiStore):
         out: list[WikiNeighbor] = []
         for src, dst, rel, mem in self._edges:
             if src == ent.id and dst in self._by_id:
-                out.append(WikiNeighbor(
-                    entity=self._by_id[dst], relation=rel,
-                    via_memory_id=UUID(mem) if mem else None,
-                ))
+                out.append(
+                    WikiNeighbor(
+                        entity=self._by_id[dst],
+                        relation=rel,
+                        via_memory_id=UUID(mem) if mem else None,
+                    )
+                )
         return out
 
 
@@ -151,7 +158,8 @@ class PostgresWikiStore(WikiStore):
                 ON CONFLICT (name) DO UPDATE SET kind = EXCLUDED.kind
                 RETURNING id
                 """,
-                name, kind,
+                name,
+                kind,
             )
             return row["id"]
 
@@ -162,7 +170,8 @@ class PostgresWikiStore(WikiStore):
                 INSERT INTO wiki_memory_entities (memory_id, entity_id)
                 VALUES ($1, $2) ON CONFLICT DO NOTHING
                 """,
-                memory_id, entity_id,
+                memory_id,
+                entity_id,
             )
 
     async def add_edge(self, src_id, dst_id, relation, memory_id) -> None:
@@ -174,7 +183,10 @@ class PostgresWikiStore(WikiStore):
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT DO NOTHING
                 """,
-                src_id, dst_id, relation, memory_id,
+                src_id,
+                dst_id,
+                relation,
+                memory_id,
             )
 
     async def memory_ids_for_entity(self, name: str) -> list[UUID]:
@@ -207,10 +219,14 @@ class PostgresWikiStore(WikiStore):
                     "SELECT memory_id FROM wiki_memory_entities WHERE entity_id = $1",
                     r["id"],
                 )
-                out.append(WikiEntity(
-                    id=r["id"], name=r["name"], kind=r["kind"],
-                    memories=[m["memory_id"] for m in mem_rows],
-                ))
+                out.append(
+                    WikiEntity(
+                        id=r["id"],
+                        name=r["name"],
+                        kind=r["kind"],
+                        memories=[m["memory_id"] for m in mem_rows],
+                    )
+                )
             return out
 
     async def neighbors(self, name: str) -> list[WikiNeighbor]:
@@ -231,14 +247,18 @@ class PostgresWikiStore(WikiStore):
                     "SELECT memory_id FROM wiki_memory_entities WHERE entity_id = $1",
                     r["id"],
                 )
-                out.append(WikiNeighbor(
-                    entity=WikiEntity(
-                        id=r["id"], name=r["name"], kind=r["kind"],
-                        memories=[m["memory_id"] for m in mem_rows],
-                    ),
-                    relation=r["relation"],
-                    via_memory_id=r["memory_id"],
-                ))
+                out.append(
+                    WikiNeighbor(
+                        entity=WikiEntity(
+                            id=r["id"],
+                            name=r["name"],
+                            kind=r["kind"],
+                            memories=[m["memory_id"] for m in mem_rows],
+                        ),
+                        relation=r["relation"],
+                        via_memory_id=r["memory_id"],
+                    )
+                )
             return out
 
 
@@ -279,7 +299,7 @@ class WikiService:
         """
         if not self.enabled or record.encrypted:
             return 0
-        mentions = self.extractor.extract_entities(record.content or "")
+        mentions = await self.extractor.aextract_entities(record.content or "")
         if not mentions:
             return 0
         name_to_id: dict[str, UUID] = {}
@@ -315,14 +335,20 @@ class WikiService:
            max score, dedupe, truncate to top_k.
         """
         base = await repo.search(
-            query=query, top_k=top_k * 3, tags=tags, types=types,
+            query=query,
+            top_k=top_k * 3,
+            tags=tags,
+            types=types,
             active_only=active_only,
         )
         if not self.enabled:
             return base[:top_k]
-        q_entities = {
-            e.name for e in self.extractor.extract_entities(query)
-        }
+        from .llm_ollama import ExtractionUnavailable
+
+        try:
+            q_entities = {e.name for e in await self.extractor.aextract_entities(query)}
+        except ExtractionUnavailable:
+            return base[:top_k]
         if not q_entities:
             return base[:top_k]
 
@@ -344,15 +370,12 @@ class WikiService:
                 shared = await self._shared_entity_count(mid, q_entities)
                 merged[mid] = ScoredMemory(
                     rec,
-                    self.EXPANSION_SCORE
-                    + self.EXPANSION_BONUS_PER_ENTITY * shared,
+                    self.EXPANSION_SCORE + self.EXPANSION_BONUS_PER_ENTITY * shared,
                 )
         ranked = sorted(merged.values(), key=lambda s: s.score, reverse=True)
         return ranked[:top_k]
 
-    async def _shared_entity_count(
-        self, memory_id: UUID, names: set[str]
-    ) -> int:
+    async def _shared_entity_count(self, memory_id: UUID, names: set[str]) -> int:
         ents = await self.store.entities_for_memory(memory_id)
         have = {e.name for e in ents}
         return len(have & names)
@@ -366,12 +389,12 @@ def build_wiki_service(
     extractor_kind: str = "stub",
 ) -> WikiService:
     """Factory. repo_kind: "postgres" | "memory". The extractor defaults to
-    the deterministic stub; pass extractor_kind="ollama" etc. once wired."""
+    the deterministic stub; Ollama requires its explicit model configuration."""
     from .llm import build_extractor
 
-    store: WikiStore = (
-        PostgresWikiStore(pool) if repo_kind == "postgres" else InMemoryWikiStore()
-    )
+    store: WikiStore = PostgresWikiStore(pool) if repo_kind == "postgres" else InMemoryWikiStore()
     return WikiService(
-        store, build_extractor(extractor_kind), enabled=enabled,
+        store,
+        build_extractor(extractor_kind),
+        enabled=enabled,
     )

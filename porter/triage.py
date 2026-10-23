@@ -22,15 +22,18 @@ Security notes (T3):
 - Extracted facts (memory_capture) go through the exact same triage;
   extraction cannot escalate privilege.
 """
+
 from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Literal, Sequence
+from typing import Literal
 from uuid import UUID
 
 from .config import settings
+from .visibility import can_read_memory
 
 # ------------------------------------------------------------------ thresholds
 #: Similarity in [CONFLICT_MIN, DUPLICATE_THRESHOLD) -> possible conflict.
@@ -115,9 +118,7 @@ _SENSITIVE_PATTERNS: list[tuple[str, str]] = [
     ),
 ]
 
-_COMPILED_SENSITIVE = [
-    (name, re.compile(pat)) for name, pat in _SENSITIVE_PATTERNS
-]
+_COMPILED_SENSITIVE = [(name, re.compile(pat)) for name, pat in _SENSITIVE_PATTERNS]
 
 
 def detect_sensitive_content(text: str) -> list[str]:
@@ -158,7 +159,7 @@ def project_names(tags: Sequence[str]) -> set[str]:
     for t in tags:
         norm = _norm_tag(t)
         if norm.startswith("project:"):
-            name = norm[len("project:"):].strip()
+            name = norm[len("project:") :].strip()
             if name:
                 out.add(name)
     return out
@@ -182,7 +183,7 @@ def project_tag(name: str) -> str:
 def has_project_tag(tags: Sequence[str]) -> bool:
     """True when any tag is a `project:<name>` tag (normalized)."""
     return any(
-        _norm_tag(t).startswith("project:") and _norm_tag(t)[len("project:"):].strip()
+        _norm_tag(t).startswith("project:") and _norm_tag(t)[len("project:") :].strip()
         for t in tags
     )
 
@@ -218,6 +219,7 @@ def decide(
     # resolve it from the explicit type and/or the ML classifier;
     # "unknown" triages like the pre-taxonomy default.
     domain: str = "unknown",
+    merge_eligible_ids: set[UUID] | None = None,
 ) -> TriageDecision:
     """Pure policy function — no I/O, fully unit-testable.
 
@@ -271,14 +273,14 @@ def decide(
         # Conflicts only matter within the same project: instructions for
         # project A never conflict with project B's.
         conflict_ids = [
-            mid for mid, s, tags in sim3
+            mid
+            for mid, s, tags in sim3
             if CONFLICT_MIN_SIMILARITY <= s < duplicate_threshold
             and (my_projects & _project_names(tags))
         ]
     else:
         conflict_ids = [
-            mid for mid, s, _ in sim3
-            if CONFLICT_MIN_SIMILARITY <= s < duplicate_threshold
+            mid for mid, s, _ in sim3 if CONFLICT_MIN_SIMILARITY <= s < duplicate_threshold
         ]
 
     # Near-identical -> merge, but NEVER when any sensitivity/low-confidence
@@ -293,8 +295,9 @@ def decide(
         for mid, s, tags in sim3:
             if s < AUTO_MERGE_SIMILARITY:
                 break  # sim3 is similarity-descending
-            if (domain == "project" and my_projects
-                    and not (my_projects & _project_names(tags))):
+            if merge_eligible_ids is not None and mid not in merge_eligible_ids:
+                continue
+            if domain == "project" and my_projects and not (my_projects & _project_names(tags)):
                 continue  # same text, different project: not a merge
             merge_target_id = mid
             break
@@ -354,18 +357,19 @@ async def _ml_second_opinion(
             _asyncio.to_thread(_tm.cached_score, model, content, scope_tags),
             timeout=timeout,
         )
-    except _asyncio.TimeoutError:
+    except TimeoutError:
         meta["fallback"] = "timeout"
         return [], "unknown", meta
     except Exception:
         meta["fallback"] = "error"
         return [], "unknown", meta
     meta["latency_ms"] = score.latency_ms
+    if score.latency_ms < 0:
+        meta["fallback"] = "error"
+        return [], "unknown", meta
     meta["predicted_domain"] = score.domain
     threshold = float(getattr(settings, "triage_model_threshold", 0.65))
-    flagged = sorted(
-        c for c, s in score.categories.items() if s >= threshold
-    )
+    flagged = sorted(c for c, s in score.categories.items() if s >= threshold)
     # Heuristic backend reports 1.0 for hits / nothing otherwise, so the
     # threshold check is a no-op for it; zeroshot needs it.
     if score.backend == "heuristic":
@@ -386,36 +390,55 @@ async def create_with_triage(
     key_id: str | None = None,
     approval_mode: str | None = None,
     via: str = "api",
-    scopes_used: Sequence[str] = (),
+    scopes_used: Sequence[str] = ("memory.admin",),
 ) -> tuple:
     """Write path shared by REST / MCP / panel: embed -> triage -> branch.
 
     Returns (record, decision). `record` is None only for auto_merge (the
     incoming memory was folded into the target; use decision.merge_target_id).
     Audit entries: "auto_approve" / "write" (queued) / "auto_merge".
+    External callers must pass their verified scopes in ``scopes_used``;
+    the default is for trusted, internal owner operations.
     """
     mode = approval_mode or getattr(settings, "approval_mode", "tiered")
     dup_threshold = getattr(settings, "duplicate_threshold", 0.92)
 
     if encrypted:
         rec, dups = await repo.create_pending(
-            content=content, type=type, scope_tags=scope_tags,
-            confidence=confidence, source=source,
-            actor_client_id=actor_client_id, encrypted=True, key_id=key_id,
+            content=content,
+            type=type,
+            scope_tags=scope_tags,
+            confidence=confidence,
+            source=source,
+            actor_client_id=actor_client_id,
+            encrypted=True,
+            key_id=key_id,
         )
         decision = TriageDecision(action="queue", reasons=["encrypted"])
         await repo.audit(
-            action="write", memory_ids=[rec.id], scopes_used=list(scopes_used),
+            action="write",
+            memory_ids=[rec.id],
+            scopes_used=list(scopes_used),
             client_id=actor_client_id,
             meta={"via": via, "triage": decision.reasons},
         )
         return rec, decision
 
-    vec = repo.embedder.embed_one(content)
+    vec = await repo.embedder.aembed_one(content)
     similar = await repo.find_similar_active(vec, threshold=CONFLICT_MIN_SIMILARITY, limit=5)
+    # Similarity is a read: a write-only grant must not become an oracle
+    # for private memory ids, nor refresh a target outside its read grant.
+    similar = [s for s in similar if can_read_memory(s.record, scopes_used)]
+    # Even readable near-duplicates must keep their original domain and
+    # tags. Merging across boundaries would discard the submitted scope
+    # and can touch a workspace the caller never had permission to write.
+    merge_eligible_ids = {
+        s.record.id
+        for s in similar
+        if s.record.type == type and set(s.record.scope_tags or ()) == set(scope_tags)
+    }
     # 3-tuples carry tags for project-scoped conflict checks.
-    similar3 = [(s.record.id, s.score, list(s.record.scope_tags or ()))
-                for s in similar]
+    similar3 = [(s.record.id, s.score, list(s.record.scope_tags or ())) for s in similar]
 
     # Dimension 1 resolution: explicit new-taxonomy type wins; v1
     # "preference" maps to the personal domain; otherwise the ML model gets
@@ -423,11 +446,15 @@ async def create_with_triage(
     explicit_domain = type if type in NEW_TAXONOMY else OLD_TYPE_TO_NEW.get(type)
     first_pass_domain = explicit_domain or "unknown"
     decision = decide(
-        content=content, scope_tags=scope_tags, confidence=confidence,
+        content=content,
+        scope_tags=scope_tags,
+        confidence=confidence,
         encrypted=False,
         similar=similar3,
-        approval_mode=mode, duplicate_threshold=dup_threshold,
+        approval_mode=mode,
+        duplicate_threshold=dup_threshold,
         domain=first_pass_domain,
+        merge_eligible_ids=merge_eligible_ids,
     )
 
     # ML second opinion: rules are the fast pre-filter — if they already
@@ -448,12 +475,16 @@ async def create_with_triage(
             # and blocks auto-merge; a refined domain re-evaluates the
             # project-tag and personal rules.
             decision = decide(
-                content=content, scope_tags=scope_tags, confidence=confidence,
+                content=content,
+                scope_tags=scope_tags,
+                confidence=confidence,
                 encrypted=False,
                 similar=similar3,
-                approval_mode=mode, duplicate_threshold=dup_threshold,
+                approval_mode=mode,
+                duplicate_threshold=dup_threshold,
                 ml_categories=ml_cats,
                 domain=effective_domain,
+                merge_eligible_ids=merge_eligible_ids,
             )
 
     def _audit_meta(extra: dict | None = None) -> dict:
@@ -465,7 +496,8 @@ async def create_with_triage(
     if decision.action == "auto_merge":
         assert decision.merge_target_id is not None
         target = await repo.auto_merge(
-            decision.merge_target_id, content=content,
+            decision.merge_target_id,
+            content=content,
             confidence=confidence,
             actor_client_id=actor_client_id,
         )
@@ -473,7 +505,8 @@ async def create_with_triage(
             # Lost a race (target deleted/archived between probe and merge):
             # fall back to the safe path — queue for a human.
             decision = TriageDecision(
-                action="queue", reasons=["merge_target_gone"],
+                action="queue",
+                reasons=["merge_target_gone"],
                 duplicate_ids=decision.duplicate_ids,
                 duplicate_scores=decision.duplicate_scores,
             )
@@ -481,26 +514,34 @@ async def create_with_triage(
             import hashlib
 
             await repo.audit(
-                action="auto_merge", memory_ids=[target.id],
-                scopes_used=list(scopes_used), client_id=actor_client_id,
-                meta=_audit_meta({
-                    "similarity": round(similar[0].score, 4),
-                    "content_sha256": hashlib.sha256(
-                        content.encode("utf-8", "replace")).hexdigest(),
-                    "content_preview": content[:200],
-                }),
+                action="auto_merge",
+                memory_ids=[target.id],
+                scopes_used=list(scopes_used),
+                client_id=actor_client_id,
+                meta=_audit_meta(
+                    {
+                        "similarity": round(similar[0].score, 4),
+                        "content_sha256": hashlib.sha256(
+                            content.encode("utf-8", "replace")
+                        ).hexdigest(),
+                    }
+                ),
             )
             return None, decision
 
     if decision.action == "auto_approve":
         rec, _dups = await repo.create_active(
-            content=content, type=type, scope_tags=scope_tags,
-            confidence=confidence, source=source,
+            content=content,
+            type=type,
+            scope_tags=scope_tags,
+            confidence=confidence,
+            source=source,
             actor_client_id=actor_client_id,
             triage_reasons=decision.reasons,
         )
         await repo.audit(
-            action="auto_approve", memory_ids=[rec.id],
+            action="auto_approve",
+            memory_ids=[rec.id],
             scopes_used=list(scopes_used),
             client_id=actor_client_id,
             meta=_audit_meta(),
@@ -509,17 +550,30 @@ async def create_with_triage(
 
     # queue (default, incl. strict mode)
     rec, dups = await repo.create_pending(
-        content=content, type=type, scope_tags=scope_tags,
-        confidence=confidence, source=source,
+        content=content,
+        type=type,
+        scope_tags=scope_tags,
+        confidence=confidence,
+        source=source,
         actor_client_id=actor_client_id,
         triage_reasons=decision.reasons,
     )
     # Merge the repo's own dup list with triage's (same source, keep both
     # consistent — repo list is authoritative for the response).
-    decision.duplicate_ids = [d.record.id for d in dups]
-    decision.duplicate_scores = [(d.record.id, d.score) for d in dups]
+    # Owners can review pending duplicate candidates in the inbox. Scoped
+    # clients can only learn ids of active memories they can already read.
+    visible_dups = [
+        d
+        for d in dups
+        if can_read_memory(d.record, scopes_used)
+        or ("memory.admin" in scopes_used and d.record.status == "pending")
+    ]
+    decision.duplicate_ids = [d.record.id for d in visible_dups]
+    decision.duplicate_scores = [(d.record.id, d.score) for d in visible_dups]
     await repo.audit(
-        action="write", memory_ids=[rec.id], scopes_used=list(scopes_used),
+        action="write",
+        memory_ids=[rec.id],
+        scopes_used=list(scopes_used),
         client_id=actor_client_id,
         meta=_audit_meta(),
     )

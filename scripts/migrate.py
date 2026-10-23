@@ -1,4 +1,5 @@
 """Apply pending SQL migrations. Usage: python scripts/migrate.py"""
+
 import asyncio
 import os
 import sys

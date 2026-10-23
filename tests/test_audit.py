@@ -6,6 +6,7 @@ Two layers:
 2. The in-memory repository mirrors the rule (lock_audit) so the domain
    invariant is tested without Postgres.
 """
+
 from pathlib import Path
 
 import pytest
@@ -15,8 +16,7 @@ from porter.repositories import InMemoryMemoryRepository
 
 
 def test_migration_defines_append_only_triggers():
-    sql = Path(__file__).resolve().parent.parent.joinpath(
-        "migrations", "001_init.sql").read_text()
+    sql = Path(__file__).resolve().parent.parent.joinpath("migrations", "001_init.sql").read_text()
     assert "forbid_audit_mutation" in sql
     assert "BEFORE UPDATE ON audit_log" in sql
     assert "BEFORE DELETE ON audit_log" in sql
@@ -36,10 +36,14 @@ def test_inmemory_audit_rejects_mutation_after_lock(repo: InMemoryMemoryReposito
 
 
 def test_delete_keeps_audit_event_without_content(client: TestClient):
-    r = client.post("/api/v1/memories", json={
-        "content": "secret memory to be deleted", "type": "fact",
-        "scope_tags": ["general"],
-    })
+    r = client.post(
+        "/api/v1/memories",
+        json={
+            "content": "secret memory to be deleted",
+            "type": "fact",
+            "scope_tags": ["general"],
+        },
+    )
     mid = r.json()["id"]
     client.post(f"/api/v1/memories/{mid}/approve")
     client.delete(f"/api/v1/memories/{mid}")

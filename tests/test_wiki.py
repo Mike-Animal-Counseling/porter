@@ -1,6 +1,7 @@
 """LLM Wiki layer (prototype): entity extraction, graph store, hybrid
 search, and the memory_graph MCP tool. All tests use the deterministic
 StubLLMExtractor + HashEmbedder so they run without a model on the box."""
+
 import asyncio
 import json
 
@@ -24,8 +25,13 @@ def _svc(**kw):
 
 async def _approved_mem(repo, content, tags=("general",), **kw):
     rec, _ = await repo.create_pending(
-        content=content, type="preference", scope_tags=list(tags),
-        confidence=0.9, source={"via": "test"}, **kw)
+        content=content,
+        type="preference",
+        scope_tags=list(tags),
+        confidence=0.9,
+        source={"via": "test"},
+        **kw,
+    )
     return await repo.approve(rec.id)
 
 
@@ -80,6 +86,7 @@ def test_on_approved_indexes_entities():
         assert "tailwind" in {e.name for e in ents}
         mids = await svc.store.memory_ids_for_entity("tailwind")
         assert rec.id in mids
+
     asyncio.run(_run())
 
 
@@ -90,19 +97,21 @@ def test_on_approved_noop_when_disabled():
         rec = await _approved_mem(repo, "User prefers Tailwind CSS")
         assert await svc.on_approved(rec) == 0
         assert await svc.store.entities_for_memory(rec.id) == []
+
     asyncio.run(_run())
 
 
 def test_on_approved_skips_encrypted():
     """E2EE: the server is ciphertext-blind; never index ciphertext."""
+
     async def _run():
         repo = InMemoryMemoryRepository(HashEmbedder())
         svc = _svc()
-        rec = await _approved_mem(
-            repo, "aGVsbG8gd29ybGQ=", encrypted=True, key_id="k1")
+        rec = await _approved_mem(repo, "aGVsbG8gd29ybGQ=", encrypted=True, key_id="k1")
         assert rec.encrypted
         assert await svc.on_approved(rec) == 0
         assert await svc.store.entities_for_memory(rec.id) == []
+
     asyncio.run(_run())
 
 
@@ -115,6 +124,7 @@ def test_neighbors_follow_cooccurrence_edges():
         neigh = await svc.store.neighbors("tailwind")
         assert "react" in {n.entity.name for n in neigh}
         assert all(n.relation == "co_occurs" for n in neigh)
+
     asyncio.run(_run())
 
 
@@ -129,8 +139,7 @@ class _NarrowRepo:
         self._mems = {mem_a.id: mem_a, mem_b.id: mem_b}
         self._a = mem_a
 
-    async def search(self, *, query, top_k=5, tags=(), types=(),
-                     active_only=True):
+    async def search(self, *, query, top_k=5, tags=(), types=(), active_only=True):
         return [ScoredMemory(self._a, 0.9)]
 
     async def get(self, mid):
@@ -154,6 +163,7 @@ def test_hybrid_search_expands_missed_memory_via_shared_entity():
         # base hit keeps its embedding score; expansion gets the floor score
         assert by_id[mem_a.id].score == pytest.approx(0.9)
         assert by_id[mem_b.id].score >= svc.EXPANSION_SCORE
+
     asyncio.run(_run())
 
 
@@ -166,6 +176,7 @@ def test_hybrid_search_disabled_matches_base():
         base = await repo.search(query="tailwind", top_k=5)
         assert [s.record.id for s in out] == [s.record.id for s in base]
         assert mem_a.id in [s.record.id for s in out]
+
     asyncio.run(_run())
 
 
@@ -173,17 +184,15 @@ def test_hybrid_search_respects_tag_filter_on_expansion():
     async def _run():
         repo = InMemoryMemoryRepository(HashEmbedder())
         svc = _svc()
-        mem_a = await _approved_mem(
-            repo, "User prefers Tailwind CSS", tags=("coding_style",))
-        mem_b = await _approved_mem(
-            repo, "Team standardized on Tailwind", tags=("work",))
+        mem_a = await _approved_mem(repo, "User prefers Tailwind CSS", tags=("coding_style",))
+        mem_b = await _approved_mem(repo, "Team standardized on Tailwind", tags=("work",))
         await svc.on_approved(mem_a)
         await svc.on_approved(mem_b)
         narrow = _NarrowRepo(mem_a, mem_b)
-        out = await svc.hybrid_search(
-            narrow, "tailwind adoption", top_k=5, tags=("coding_style",))
+        out = await svc.hybrid_search(narrow, "tailwind adoption", top_k=5, tags=("coding_style",))
         ids = [s.record.id for s in out]
         assert mem_a.id in ids and mem_b.id not in ids
+
     asyncio.run(_run())
 
 
@@ -194,12 +203,17 @@ def test_hybrid_search_skips_pending_and_encrypted_on_expansion():
         mem_a = await _approved_mem(repo, "User prefers Tailwind CSS")
         # pending (never approved) but manually indexed — must not surface
         pend, _ = await repo.create_pending(
-            content="Tailwind is great", type="fact", scope_tags=["general"],
-            confidence=0.9, source={})
+            content="Tailwind is great",
+            type="fact",
+            scope_tags=["general"],
+            confidence=0.9,
+            source={},
+        )
         await svc.on_approved(pend)
         narrow = _NarrowRepo(mem_a, pend)
         out = await svc.hybrid_search(narrow, "tailwind", top_k=5)
         assert [s.record.id for s in out] == [mem_a.id]
+
     asyncio.run(_run())
 
 
@@ -266,8 +280,7 @@ def _mcp_server_with_wiki(repo, wiki):
     from porter.app import create_app
     from porter.oauth_store import InMemoryOAuthStore
 
-    app = create_app(repo, InMemoryOAuthStore(), auth_enabled=False,
-                     wiki_service=wiki)
+    app = create_app(repo, InMemoryOAuthStore(), auth_enabled=False, wiki_service=wiki)
     return build_mcp_server(
         MCPDeps(
             repo_fn=lambda: repo,
@@ -295,6 +308,7 @@ def test_mcp_memory_graph_entity_mode():
         assert "react" in {n["name"] for n in payload["neighbors"]}
         assert str(rec.id) in {m["id"] for m in payload["memories"]}
         assert payload["untrusted_data"] is True
+
     asyncio.run(_run())
 
 
@@ -306,11 +320,11 @@ def test_mcp_memory_graph_memory_mode():
         await svc.on_approved(rec)
         server = _mcp_server_with_wiki(repo, svc)
 
-        result = await server.call_tool(
-            "memory_graph", {"memory_id": str(rec.id)})
+        result = await server.call_tool("memory_graph", {"memory_id": str(rec.id)})
         assert not result.is_error
         payload = json.loads(result.content[0].text)
         assert "tailwind" in {e["name"] for e in payload["entities"]}
+
     asyncio.run(_run())
 
 
@@ -323,8 +337,8 @@ def test_mcp_memory_graph_requires_exactly_one_arg():
         with pytest.raises(ToolError, match="exactly one of"):
             await server.call_tool("memory_graph", {})
         with pytest.raises(ToolError, match="exactly one of"):
-            await server.call_tool(
-                "memory_graph", {"entity": "x", "memory_id": "y"})
+            await server.call_tool("memory_graph", {"entity": "x", "memory_id": "y"})
+
     asyncio.run(_run())
 
 
@@ -342,9 +356,9 @@ def test_mcp_memory_graph_disabled_returns_clear_error():
         with pytest.raises(ToolError, match="wiki_disabled"):
             await server.call_tool("memory_graph", {"entity": "tailwind"})
         # wiki_boost with no wiki service is a silent no-op, not an error
-        result = await server.call_tool(
-            "memory_search", {"query": "x", "wiki_boost": True})
+        result = await server.call_tool("memory_search", {"query": "x", "wiki_boost": True})
         assert not result.is_error
+
     asyncio.run(_run())
 
 
@@ -352,12 +366,11 @@ def test_mcp_memory_search_wiki_boost_flag():
     async def _run():
         repo = InMemoryMemoryRepository(HashEmbedder())
         svc = _svc()
-        await svc.on_approved(
-            await _approved_mem(repo, "User prefers Tailwind CSS"))
+        await svc.on_approved(await _approved_mem(repo, "User prefers Tailwind CSS"))
         server = _mcp_server_with_wiki(repo, svc)
-        result = await server.call_tool(
-            "memory_search", {"query": "tailwind", "wiki_boost": True})
+        result = await server.call_tool("memory_search", {"query": "tailwind", "wiki_boost": True})
         assert not result.is_error
         payload = json.loads(result.content[0].text)
         assert len(payload["results"]) >= 1
+
     asyncio.run(_run())

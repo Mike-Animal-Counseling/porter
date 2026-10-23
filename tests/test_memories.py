@@ -1,4 +1,5 @@
 """CRUD + pending->approve lifecycle (PRD §8 F1, US2, US5)."""
+
 from fastapi.testclient import TestClient
 
 MEM = {
@@ -73,8 +74,15 @@ def test_hard_delete_removes_row_and_vector(client: TestClient):
 
 def test_list_filters(client: TestClient):
     _write(client, {**MEM, "scope_tags": ["dietary"], "type": "preference"})
-    _write(client, {**MEM, "content": "User prefers pnpm over npm",
-                    "scope_tags": ["coding_style"], "type": "fact"})
+    _write(
+        client,
+        {
+            **MEM,
+            "content": "User prefers pnpm over npm",
+            "scope_tags": ["coding_style"],
+            "type": "fact",
+        },
+    )
     r = client.get("/api/v1/memories", params={"tag": "dietary"})
     assert r.status_code == 200
     assert len(r.json()) == 1

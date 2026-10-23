@@ -1,1 +1,21 @@
-{"_comment":"Porter MCP server for Roo Code (VS Code extension). HOW TO APPLY: paste the mcpServers.porter block into Roo Code's MCP settings (VS Code settings JSON, Roo Code section). Replace {{PORTER_TOKEN}} with a real Porter access token. UNVERIFIED: not tested against a live Roo Code install here.","mcpServers":{"porter":{"args":["-m","porter.mcp_stdio"],"command":"python","env":{"PORTER_TOKEN":"{{PORTER_TOKEN}}"}}}}
+{
+  "_comment": "Porter MCP server for Roo Code (VS Code extension). HOW TO APPLY: paste the mcpServers.porter block into Roo Code's MCP settings (VS Code settings JSON, Roo Code section). Replace {{PORTER_TOKEN}} with a real Porter access token. UNVERIFIED: not tested against a live Roo Code install here.",
+  "mcpServers": {
+    "porter": {
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "command": "python",
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}",
+        "PORTER_REPO": "postgres",
+        "DATABASE_URL": "postgresql://porter:porter@localhost:5432/porter",
+        "PORTER_JWT_SECRET": "{{PORTER_JWT_SECRET}}",
+        "PORTER_EMBEDDER": "http",
+        "EMBEDDER_URL": "http://localhost:8001",
+        "PYTHONPATH": "/path/to/porter"
+      }
+    }
+  }
+}

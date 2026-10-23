@@ -1,1 +1,23 @@
-{"_comment":"Porter MCP server for OpenCode. NOTE: OpenCode uses a top-level \"mcp\" key (NOT \"mcpServers\"). HOW TO APPLY: merge the mcp.porter block into ~/.config/opencode/opencode.json (global) or ./opencode.json (project). Replace {{PORTER_TOKEN}} with a real Porter access token. Ensure the porter package is importable (pip install -e <repo> or PYTHONPATH). UNVERIFIED: config key layout validated against OpenCode docs 2026-10-11; not tested against a live OpenCode install in this environment.","mcp":{"porter":{"type":"local","command":["python","-m","porter.mcp_stdio"],"enabled":true,"env":{"PORTER_TOKEN":"{{PORTER_TOKEN}}"}}}}
+{
+  "_comment": "Legacy OpenCode V1 stdio template. For OpenCode V2, prefer opencode-v2-http.json. V1 uses top-level mcp.porter and the environment field for process variables. HOW TO APPLY: merge the mcp.porter block into your V1 project opencode.json or existing global config. Replace {{PORTER_TOKEN}} and {{PORTER_JWT_SECRET}}, the matching database credentials, embedder URL and repository path. Make Porter importable in the configured Python environment. Official V1 MCP fields reviewed 2026-10-22; this legacy template has not been tested in an installed V1 client.",
+  "mcp": {
+    "porter": {
+      "type": "local",
+      "command": [
+        "python",
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "enabled": true,
+      "environment": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}",
+        "PORTER_REPO": "postgres",
+        "DATABASE_URL": "postgresql://porter:porter@localhost:5432/porter",
+        "PORTER_JWT_SECRET": "{{PORTER_JWT_SECRET}}",
+        "PORTER_EMBEDDER": "http",
+        "EMBEDDER_URL": "http://localhost:8001",
+        "PYTHONPATH": "/path/to/porter"
+      }
+    }
+  }
+}

@@ -1,0 +1,8 @@
+include *.md *.txt VERSION
+include .env.example .dockerignore .python-version .editorconfig .gitattributes .pre-commit-config.yaml
+include docker-compose*.yml
+recursive-include api Dockerfile *.txt
+recursive-include clients *.py *.ts *.json *.toml *.yml *.el
+recursive-include scripts *.py
+recursive-include docs *.md *.json
+global-exclude *.py[cod]

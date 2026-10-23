@@ -9,6 +9,7 @@ Backend selection mirrors the REST API:
   PORTER_REPO=postgres  shared Postgres+pgvector (production; same DB as the
                         API, so memories are shared across transports)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -21,18 +22,27 @@ log = logging.getLogger("porter.mcp_stdio")
 
 async def _build_deps():
     from .auth import RevocationCache
+    from .config import env_bool, repository_kind, settings
     from .embeddings import build_embedder
+    from .llm import build_extractor
     from .mcp_server import MCPDeps
     from .oauth_store import InMemoryOAuthStore, PostgresOAuthStore
     from .ratelimit import TokenBucket
     from .repositories import InMemoryMemoryRepository, PostgresMemoryRepository
 
-    kind = os.getenv("PORTER_REPO", "memory")
-    embed_kind = os.getenv("EMBEDDER_KIND", "hash")
-    embedder = build_embedder(embed_kind)
+    kind = repository_kind()
+    auth_enabled = env_bool("AUTH_ENABLED", True)
+    build_extractor(os.getenv("PORTER_LLM_EXTRACTOR", "stub"))
+
+    embed_kind = os.getenv("PORTER_EMBEDDER", os.getenv("EMBEDDER_KIND", "hash"))
+    kwargs = {}
+    if embed_kind == "http":
+        kwargs["base_url"] = settings.embedder_url
+    elif embed_kind == "openai":
+        kwargs["api_key"] = settings.openai_api_key
+    embedder = build_embedder(embed_kind, **kwargs)
     pool = None
     if kind == "postgres":
-        from .config import settings
         from .db import create_pool, run_migrations
 
         await run_migrations(settings.database_url)
@@ -42,11 +52,12 @@ async def _build_deps():
     else:
         repo, store = InMemoryMemoryRepository(embedder), InMemoryOAuthStore()
 
-    rate_limiter = TokenBucket(
-        int(os.getenv("PORTER_RATE_LIMIT_PER_MINUTE", "60"))
-    )
+    rate_limiter = TokenBucket(int(os.getenv("PORTER_RATE_LIMIT_PER_MINUTE", "60")))
     revocation_cache = RevocationCache(ttl_seconds=30)
-    auth_enabled = os.getenv("AUTH_ENABLED", "1") != "0"
+
+    from .teams import InMemoryTeamStore, PostgresTeamStore
+
+    team_store = PostgresTeamStore(pool) if pool is not None else InMemoryTeamStore()
 
     deps = MCPDeps(
         repo_fn=lambda: repo,
@@ -54,6 +65,7 @@ async def _build_deps():
         revocation_cache_fn=lambda: revocation_cache,
         rate_limiter_fn=lambda: rate_limiter,
         auth_enabled_fn=lambda: auth_enabled,
+        team_store_fn=lambda: team_store,
         llm_extractor_kind_fn=lambda: os.getenv("PORTER_LLM_EXTRACTOR", "stub"),
     )
     return deps, pool
