@@ -162,15 +162,15 @@ maintainer BGE review environment use port **18010**; standard Compose uses
 
 The installed Codex CLI 0.160.0 parsed both templates on 2026-10-19;
 `codex mcp get porter --json` checks parsing, not tool execution. Independent
-HTTP/stdio MCP clients passed deployed acceptance; actual tool conversations
-remain a separate check. For the configuration format, see the
+HTTP/stdio MCP clients passed deployed acceptance. For the configuration format, see the
 [official Codex MCP reference](https://developers.openai.com/codex/mcp/).
 
-On 2026-10-22, a separate native Codex CLI 0.160.0 process also completed one
-synthetic `memory_search` call through the live scoped HTTP connection. This
-verifies an actual tool call; the full user-driven save/review/cross-tool
-conversation still needs acceptance. The interactive test requests tool
-approval; the noninteractive probe approved only this specific read tool.
+On **2026-10-22**, native Codex CLI **0.160.0** completed a synthetic
+`memory_add`; a fresh native OpenCode **2.1.2** conversation actually searched
+and retrieved the same active project ID. Review, scoped privacy denials,
+API recreation and revocation of a separate same-scope credential also passed.
+See the [dated native-client report](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md)
+for exact boundaries and the cold-model timeout encountered during acceptance.
 
 ### OpenCode V2 (2.1.2)
 
@@ -205,14 +205,15 @@ login, separate from its Porter MCP token. Do not copy Codex login files.
 Use `/mcps` to check Porter. Provider setup is documented in the
 [official V2 login guide](https://opencode.ai/v2/docs/cli/providers/).
 
-**Verified locally on 2026-10-22:** OpenCode 2.1.2 loaded the private project
-configuration, substituted the bearer-token environment variable and completed
-the native MCP connection to Porter (`status: connected`). During API-only
+**Verified locally on 2026-10-22:** OpenCode 2.1.2 loaded the project configuration,
+substituted the bearer-token environment variable and completed real Porter
+tool calls using `openai/gpt-6.1-sol` and saved ChatGPT OAuth. Each OpenCode test
+child had `OPENAI_API_KEY` removed to verify the saved login. During API-only
 checks, reading `/api/plugin` initialized the built-in plugins before querying
 `/api/mcp`; the earlier empty list was an initialization-order effect, not an
-invalid template. This verifies configuration and transport only. The user's
-OpenCode provider login and a real model conversation invoking Porter remain
-unverified; no subscription model availability is assumed.
+invalid template. These results cover the tested account, version and explicit
+MCP calls; they do not guarantee model availability for every account. Browser
+interaction and user sign-off remain open.
 
 ### Trusted local stdio alternative
 
@@ -246,7 +247,9 @@ credentials with tools trusted as much as the server.
 certifications.** “Importer” means a parser exists for that path/format, tested
 with fixtures. “Template” means a configuration file is included. Native stores,
 configuration paths and transport support can vary by installed version.
-No row claims that a real conversation in that product has passed acceptance.
+The explicit HTTP flow passed with **Codex 0.160.0 and OpenCode 2.1.2** on
+2026-10-22; see the [native-client record](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md).
+Other rows remain implementation/template listings, not native-client acceptance.
 
 | Tool / source | Importer reads | Included MCP template | Import argument |
 |---|---|---|---|
@@ -402,8 +405,9 @@ enabled; use the explicit PostgreSQL backend.
 
 ## Repeatable maintainer acceptance
 
-The [review report](docs/REVIEW.md) records the dated 589-test baseline and all
-14 migrations. To rerun isolated service acceptance after a change:
+The [review report](docs/REVIEW.md) records the historical 650-test full-suite
+baseline and all 14 migrations; the [native-client report](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md)
+records actual selected-tool calls. To rerun isolated service acceptance after a change:
 
 ```bash
 python -m pip install -c requirements-lock.txt -r requirements-test.txt
@@ -425,5 +429,5 @@ python scripts/eval_embeddings.py --embedders hash,http --http-url http://127.0.
 Use a separate database or regenerate **every stored vector** before switching
 embedding models. Equal dimensions do not make different models' vectors
 compatible. Broader model comparisons are not an onboarding or alpha sign-off
-requirement. Installed-tool conversations and browser acceptance remain the
-human checks in [ACCEPTANCE.md](docs/ACCEPTANCE.md).
+requirement. The selected native-client flow passed; browser interaction and
+owner sign-off remain open in [ACCEPTANCE.md](docs/ACCEPTANCE.md).

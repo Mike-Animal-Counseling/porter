@@ -144,12 +144,12 @@ tool_timeout_sec = 60
 
 2026-10-19，已安装的 Codex CLI 0.160.0 成功解析两种模板。
 `codex mcp get porter --json` 只检查配置解析，不调用工具。
-独立 HTTP/stdio MCP 客户端已通过部署验收；工具内的真实对话仍需单独检查。
+独立 HTTP/stdio MCP 客户端已通过部署验收。
 配置格式参考 [Codex 官方 MCP 文档](https://developers.openai.com/codex/mcp/)。
 
-2026-10-22，独立的原生 Codex CLI 0.160.0 进程已使用受限 HTTP 连接完成一次合成
-`memory_search` 调用。这验证了真实工具调用；用户操作的保存、审核与跨工具完整对话仍待验收。
-交互测试会请求工具操作许可；非交互探针只预先批准了这一项读取工具。
+**2026-10-22**，原生 Codex CLI **0.160.0** 完成合成 `memory_add`，原生 OpenCode **2.1.2**
+在全新对话中实际搜索并取得同一个 active 项目 ID。审核、受限隐私拒绝、API 重建和独立同权限凭据撤销也已通过。
+准确范围及验收时遇到的模型冷启动超时，见 [当日原生验收记录](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md)。
 
 ### OpenCode V2（2.1.2）
 
@@ -178,11 +178,12 @@ V2 的服务放在 `mcp.servers` 下，用 `disabled` 替代 V1 的 `enabled`，
 用 `/mcps` 查看 Porter 状态。模型账号步骤见
 [V2 官方登录指南](https://opencode.ai/v2/docs/cli/providers/)。
 
-**2026-10-22 本环境实测：** OpenCode 2.1.2 已读取私有项目配置、替换 bearer token
-环境变量，并完成原生 Porter MCP 连接，状态为 `connected`。仅通过 API 检查时，
+**2026-10-22 本环境实测：** OpenCode 2.1.2 已读取项目配置、替换 bearer token 环境变量，
+使用 `openai/gpt-6.1-sol` 和保存的 ChatGPT OAuth 完成真实 Porter 工具调用。
+每个 OpenCode 测试子进程均移除了 `OPENAI_API_KEY`，以确认使用保存的登录。仅通过 API 检查时，
 先读取 `/api/plugin` 初始化内置插件，再查询 `/api/mcp`；先前的空列表来自初始化顺序，
-不是模板格式错误。这只验证配置和传输。用户的 OpenCode 模型账号登录，以及模型在真实对话中
-调用 Porter，仍未验收；不能据此宣称订阅模型已经可用。
+不是模板格式错误。结果覆盖实测账号、版本和显式 MCP 调用，不保证所有账号都能使用同一模型。
+浏览器交互与用户签收仍待完成。
 
 ### 可信本机 stdio 方案
 
@@ -211,7 +212,10 @@ python -m pip install -c requirements-lock.txt -e .
 
 **此矩阵列出仓库实现，不是实际客户端兼容认证。**「导入器」表示有读取该路径/格式的解析器，
 使用样本目录测试；「模板」表示仓库提供了配置文件。
-原生存储、配置路径和传输支持可能随已安装版本变化。任何一行都不代表已经运行该产品内的真实对话。
+原生存储、配置路径和传输支持可能随已安装版本变化。
+**Codex 0.160.0 与 OpenCode 2.1.2** 的显式 HTTP 流程已于 2026-10-22 通过，
+见 [原生客户端记录](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md)。
+其他行仍只说明已有实现或模板，不代表原生客户端已验收。
 
 | 工具 / 来源 | 导入器读取内容 | 已包含的 MCP 模板 | 导入参数 |
 |---|---|---|---|
@@ -352,7 +356,8 @@ public origin 使用浏览器实际访问的协议/主机/可选端口，不带�
 
 ## 维护者可重复验收
 
-[检查报告](docs/REVIEW.zh-CN.md) 记录了有日期的 589 项测试基线与全部 14 个迁移。
+[检查报告](docs/REVIEW.zh-CN.md) 记录了历史全量 650 项测试基线与全部 14 个迁移；
+[原生客户端记录](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md) 记录了选定工具的实际调用。
 变更后重新运行隔离服务验收：
 
 ```bash
@@ -372,4 +377,5 @@ python scripts/eval_embeddings.py --embedders hash,http --http-url http://127.0.
 
 更换向量模型前，使用独立数据库或重新生成**全部已有向量**。
 维度相同不代表不同模型的向量兼容。更广泛的模型对比不属于入门或本次 alpha 签收门槛。
-工具内真实对话与浏览器操作仍按 [ACCEPTANCE.zh-CN.md](docs/ACCEPTANCE.zh-CN.md) 人工确认。
+选定原生客户端的流程已通过；浏览器操作与用户签收仍按
+[ACCEPTANCE.zh-CN.md](docs/ACCEPTANCE.zh-CN.md) 保留为待完成。

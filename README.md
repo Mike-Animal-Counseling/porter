@@ -132,12 +132,22 @@ All six jobs passed for code baseline
 in [CI run 39552038204](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39552038204).
 Later commits, including documentation changes, need their own CI status.
 
-Remaining release gates include real conversations in your chosen tools and
-browser visual/interaction acceptance. The small BGE-M3 evaluation is not a
-general retrieval-quality benchmark. See the [acceptance criteria](docs/ACCEPTANCE.md)
-for what is complete and the few checks that need a human. If reviewing an open
-PR before merge, use its head branch: the default branch may not include these
-fixes yet.
+On 2026-10-22, installed **Codex 0.160.0** saved a synthetic project memory and
+a fresh **OpenCode 2.1.2** conversation retrieved the same ID through HTTP MCP.
+OpenCode used its saved ChatGPT OAuth login for the model provider, with no
+inherited OpenAI API key; Porter access used separate scoped credentials.
+Read-scope isolation and revocation passed: a revoked reader could no longer
+connect, while the original two clients could still retrieve the same ID.
+See the [native-client acceptance record](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md)
+for the tested flow and limits. These were explicit tool calls, not automatic
+conversation capture or context injection.
+
+Browser visual/interaction acceptance and user sign-off remain open.
+Other tool versions/configurations still need their own checks.
+The small BGE-M3 evaluation is not a general retrieval-quality benchmark. See
+the [acceptance criteria](docs/ACCEPTANCE.md) for completed and remaining gates.
+If reviewing an open PR before merge, use its head branch: the default branch
+may not include these fixes yet.
 
 ## Documentation and contributing
 

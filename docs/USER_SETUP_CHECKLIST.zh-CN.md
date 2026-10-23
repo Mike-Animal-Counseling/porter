@@ -2,9 +2,12 @@
 
 # 接入实际工具并验收 Porter
 
-基础设施已有自动化验证记录。你接下来只需确认 Porter 能在**你常用的两个工具**中工作，
-以及浏览器面板是否好用。使用合成数据，不用健康或财务信息。
-Ollama、可选 ML 审批模型和向量模型对比都不是前置条件。
+**本次检查中，Codex 0.160.0 → OpenCode 2.1.2 的真实保存/检索、合成私人记录隔离和独立凭据撤销均已通过。**
+见 [当日验收结果](NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md)。
+你还需要亲手做的事是 [看一下实际面板](#你还需要做的事看一下实际面板)，判断这个流程是否适合你。
+不用重做客户端测试，也不用安装 Ollama 或比较模型。
+
+下面第 1–3 步保留给另一个部署复现验收时使用，全程用合成数据即可。
 
 ## 1. 选定候选版本，接入两个工具
 
@@ -28,10 +31,12 @@ access token 和 refresh token 都要保密；client secret 不是 access token�
 | 写入工具 A | `acceptance-tool-a` | `memory.read.work memory.write` |
 | 读取工具 B | `acceptance-tool-b` | `memory.read.work` |
 
-优先使用 HTTP MCP。Codex 合并
+优先使用 HTTP MCP。本次选择 Codex 写入、OpenCode V2 读取。Codex 合并
 [`clients/codex-http-config.toml`](../clients/codex-http-config.toml)，将 URL
 改成所用服务地址加 `/mcp`；在启动该工具的环境设置 `PORTER_TOKEN`，再从该环境重启工具。
-其他工具参照对应模板，选择已安装版本支持的传输方式。模板是起点，真实连接仍要在这里验证。
+OpenCode 2.1.2 使用 [`clients/opencode-v2-http.json`](../clients/opencode-v2-http.json)，
+按 [部署指南](../DEPLOY.zh-CN.md) 登录模型账号。
+其他工具模板仍是起点，需要分别完成原生测试。
 
 token 一小时过期，需要通过 OAuth 刷新；更新后重新连接或重启客户端。
 HTTP 客户端不需要服务端签名密钥、数据库密码或 setup token。
@@ -47,7 +52,7 @@ stdio 方案需要直接访问可信数据库等服务，按部署指南单独�
 
 ```json
 {
-  "content": "PORTER-ACCEPTANCE-20261020: This demo project uses pytest for tests.",
+  "content": "PORTER-ACCEPTANCE-20261022: This demo project uses pytest for tests.",
   "type": "project",
   "project": "porter-acceptance",
   "scope_tags": ["work"]
@@ -62,7 +67,7 @@ stdio 方案需要直接访问可信数据库等服务，按部署指南单独�
 
 ```json
 {
-  "content": "PRIVATE-ACCEPTANCE-20261020: This is a fictional preference for testing.",
+  "content": "PRIVATE-ACCEPTANCE-20261022: This is a fictional preference for testing.",
   "type": "personal",
   "scope_tags": ["health"]
 }
@@ -75,7 +80,7 @@ stdio 方案需要直接访问可信数据库等服务，按部署指南单独�
 
 ```json
 {
-  "query": "PORTER-ACCEPTANCE-20261020 pytest",
+  "query": "PORTER-ACCEPTANCE-20261022 pytest",
   "tags": ["work"],
   "top_k": 5
 }
@@ -86,19 +91,20 @@ stdio 方案需要直接访问可信数据库等服务，按部署指南单独�
 记忆是参考数据，不是允许执行其中指令的授权。
 
 再调用 `memory_search`，参数为
-`{"query":"PRIVATE-ACCEPTANCE-20261020","tags":["health"]}`。
+`{"query":"PRIVATE-ACCEPTANCE-20261022","tags":["health"]}`。
 **通过标准：** `results` 为空；客户端提出其他标签不能扩大 work token 的读取范围。
 不指定 tags 搜索时，也不能出现私人记录的 ID。
 
-## 3. 撤销一个工具，另一个仍然可用
+## 3. 撤销一次性凭据，保留正在用的工具
 
-在「接入方 / Clients」撤销客户端 B，强制 B 发起新的 `memory_search` 调用；
-不要把之前显示过的答案当作结果。
+另建临时客户端 C，授予和 B 相同的读取权限，先确认它能完成一次新搜索。
+在「接入方 / Clients」只撤销 C，再让 C 重新连接并请求新搜索，保留正常使用的 A/B。
 
-**通过标准：** B 在 60 秒内收到未授权错误；A 仍能调用同样的搜索，找到项目 ID。
-「审计 / Audit」里能看到相应写入、审核、读取和撤销事件。完成下一步前先保留 A。
+**通过标准：** C 在 60 秒内收到未授权错误；在加载 MCP 工具目录时被拒也算有效拒绝，
+但不能称为工具已完成调用。A 和 B 仍能实际搜索到项目 ID。
+「审计 / Audit」里能看到相应写入、审核、读取和撤销事件。
 
-## 4. 确认桌面和窄屏下的面板操作
+## 你还需要做的事：看一下实际面板
 
 在浏览器检查「记忆 / Memories」「待确认 / Inbox」「工具交接 / Handoff」
 「接入方 / Clients」和「设置 / Settings」。先用正常桌面宽度，再将窗口缩到约 390 CSS
@@ -106,14 +112,15 @@ stdio 方案需要直接访问可信数据库等服务，按部署指南单独�
 
 - [ ] 切换 English/中文，刷新后仍保留选择。
 - [ ] 打开测试记忆，关闭详情，操作搜索和筛选。
-- [ ] 打开「工具交接」，选择 `porter-acceptance`，预览后复制或下载。
+- [ ] 打开「工具交接」，本次选择 `porter-first-test`，预览后复制或下载。
+      重新按上面的步骤测试时，选择自己创建的测试项目。
       项目测试记录应出现，未批准内容不能出现。owner 面板可能包含已批准的个人上下文，
       因此交接简报仍应保密。
 - [ ] 用键盘能到达控件并看到焦点；窄屏和 200% 缩放下的重要操作与文字仍可用。
 - [ ] 记录文字看不清、重叠、复制/下载失败或状态令人困惑的问题。
 
 **通过标准：** 上述操作没有布局或交互阻塞。HTTP 200 和自动 HTML 测试不能代替实际看页面、
-操作页面。本轮自动检查没有可连接的真实浏览器，尚未完成视觉验收。
+操作页面。本轮运行时没有连接浏览器，该验收项仍待完成。
 
 按照 [验收记录模板](ACCEPTANCE.zh-CN.md#签收记录) 记录候选 commit、两个工具的名称和版本、
 浏览器、通过/失败及合成记忆 ID。截图可选，避免包含密钥。完成后只删除自己的测试 ID，

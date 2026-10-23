@@ -15,7 +15,45 @@ from collections.abc import Sequence
 
 import numpy as np
 
+from .errors import PorterError
+
 EMBEDDING_DIM = 1024
+
+
+class EmbeddingUnavailable(PorterError):
+    """The configured embedding dependency could not serve the request."""
+
+    status_code = 503
+    code = "dependency_unavailable"
+
+
+class EmbeddingTimeout(EmbeddingUnavailable):
+    status_code = 504
+    code = "dependency_timeout"
+
+
+def _embedding_request(url: str, **kwargs) -> dict:
+    """Translate upstream HTTP failures without exposing text or credentials."""
+    import httpx
+
+    try:
+        response = httpx.post(url, **kwargs)
+        response.raise_for_status()
+    except httpx.TimeoutException:
+        raise EmbeddingTimeout(
+            "Embedding request timed out. The service may still be warming up; "
+            "check the configured embedding service and retry."
+        ) from None
+    except httpx.HTTPError:
+        raise EmbeddingUnavailable(
+            "Embedding service is unavailable. Check the configured service and retry."
+        ) from None
+    try:
+        return response.json()
+    except ValueError:
+        raise EmbeddingUnavailable(
+            "Embedding service returned an invalid response. Check the configured service and retry."
+        ) from None
 
 
 class Embedder(ABC):
@@ -196,15 +234,11 @@ class HttpEmbedder(Embedder):
         self.timeout = timeout
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
-        import httpx
-
-        resp = httpx.post(
+        data = _embedding_request(
             f"{self.base_url}/embed",
             json={"texts": list(texts)},
             timeout=self.timeout,
         )
-        resp.raise_for_status()
-        data = resp.json()
         self.model_id = data.get("model", "unknown")
         return data["vectors"]
 
@@ -224,16 +258,13 @@ class OpenAIEmbedder(Embedder):
         self.dim = dim
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
-        import httpx
-
-        resp = httpx.post(
+        data = _embedding_request(
             "https://api.openai.com/v1/embeddings",
             headers={"Authorization": f"Bearer {self.api_key}"},
             json={"model": self.model_id, "input": list(texts)},
             timeout=60.0,
         )
-        resp.raise_for_status()
-        items = resp.json()["data"]
+        items = data["data"]
         # API returns 1536-dim for text-embedding-3-small; truncate/pad to our dim
         out = []
         for item in sorted(items, key=lambda d: d["index"]):

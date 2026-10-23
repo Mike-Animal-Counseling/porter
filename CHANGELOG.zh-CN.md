@@ -8,12 +8,16 @@ Porter 的所有重要变更都记录在此。格式遵循
 
 ## [Unreleased]
 
-### OpenCode 接入说明（2026-10-22）
+### 原生客户端验收与向量服务失败处理（2026-10-22）
 
-- 新增 OpenCode V2 HTTP 模板与双语接入步骤，使用 2.1.2 验证配置和原生 MCP 握手。
-  模型账号登录与跨工具对话仍需单独验收。
+- 验证原生 Codex CLI 0.160.0 保存项目上下文，OpenCode 2.1.2 全新对话通过 HTTP 实际检索取得相同 ID。
+  OpenCode 使用保存的 ChatGPT OAuth，测试子进程移除了继承的 API key。
+- 验证合成敏感记录审核、读取/写入权限拒绝、API 重建后的持久化，以及只撤销一次性凭据而不影响原始 Codex/OpenCode。
+  发布 [去敏双语记录](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md)；浏览器交互与用户签收仍待完成。
+- HTTP 向量服务超时转换为安全的 504 错误，连接失败、上游 HTTP 错误和无效 JSON 转换为安全的 503 错误。
+  保留原有超时配置，不增加自动重试；模型冷启动延迟仍需考虑。
+- 新增 OpenCode V2 HTTP 模板与双语接入/登录步骤，使用 2.1.2 实测。
 - 修正旧版 OpenCode V1 stdio 的 `environment` 字段，现有模板检查覆盖 V2 结构和环境变量凭据。
-- 记录原生 Codex CLI 0.160.0 完成的一次真实受限 `memory_search` 调用。
 
 ### 验收与开源规范（2026-10-20）
 

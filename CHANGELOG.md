@@ -8,14 +8,23 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
-### OpenCode connection guidance (2026-10-22)
+### Native-client acceptance and embedding failures (2026-10-22)
 
-- Add an OpenCode V2 HTTP template and bilingual setup instructions; verify
-  configuration and the native MCP handshake with OpenCode 2.1.2. Model sign-in
-  and cross-tool conversation acceptance remain separate.
+- Verify native Codex CLI 0.160.0 saving project context and a fresh OpenCode
+  2.1.2 conversation retrieving the exact same ID over HTTP. OpenCode used
+  saved ChatGPT OAuth with the inherited API key removed from its test children.
+- Verify synthetic sensitive-record review, scoped read/write denials,
+  persistence through API recreation and revocation of a disposable credential
+  while the original Codex/OpenCode clients remain usable. Publish a
+  [sanitized bilingual record](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md);
+  browser interaction and owner sign-off remain open.
+- Map HTTP embedding timeouts to safe 504 errors and connection, upstream HTTP
+  and invalid-JSON failures to safe 503 errors. Keep existing timeout defaults
+  and add no automatic retry; cold-model latency still needs consideration.
+- Add an OpenCode V2 HTTP template and bilingual setup/login instructions,
+  verified with OpenCode 2.1.2.
 - Correct the legacy OpenCode V1 stdio `environment` field and extend existing
   template checks to cover the V2 shape and environment-variable credentials.
-- Record a real scoped `memory_search` call from native Codex CLI 0.160.0.
 
 ### Acceptance and open-source readiness (2026-10-20)
 

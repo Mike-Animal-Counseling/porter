@@ -10,13 +10,16 @@ verified in every tool named by a template.
 
 ## Candidate and existing evidence
 
-Candidate checked on **2026-10-20**: review branch
+Native-client checks completed on **2026-10-22**, starting from source baseline
+`0b9e83d`, with the subsequent embedding error-handling fix tested in the working
+tree. See the [sanitized native-client report](NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md).
+Candidate: review branch
 `fix/porter-review-hardening`; use the final head and CI recorded on the PR.
 [PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1) is a draft and
 has not been merged into `main`. An upload label such as `13/13` describes a
 commit batch, not acceptance or functional completion.
 
-- The final review recorded **650 local tests passing with no skips**, with real
+- The earlier full review recorded **650 local tests passing with no skips**, with real
   PostgreSQL and the isolated Docker stack configured. See the
   [review report](REVIEW.md) and executable
   [Postgres](../tests/test_postgres_integration.py) /
@@ -25,8 +28,12 @@ commit batch, not acceptance or functional completion.
   [`08fb424`](https://github.com/Mike-Animal-Counseling/porter/commit/08fb424dadf7f316b5e539d0487c07691acea776)
   passed all six jobs in [CI run 39552038204](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39552038204):
   quality, packaging, Linux tests, Windows tests, PostgreSQL and deployment.
-  This evidence applies to that commit; later documentation-only commits
-  also need their own CI status.
+  This evidence applies to that commit; the final candidate needs its own CI.
+- Native Codex CLI **0.160.0** saved a synthetic project memory; a fresh native
+  OpenCode **2.1.2** conversation actually searched and retrieved the same ID.
+  Sensitive-record review, scoped denials, API recreation and independent
+  credential revocation also passed. The follow-up embedding fix passed
+  **40 focused tests**; that count is not a new full-suite result.
 - Historical baseline: all six jobs passed at `c3c5fdf` in [CI run 39385023666](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39385023666):
   quality, packaging, Linux tests, Windows tests, PostgreSQL and deployment.
 - Fourteen migrations were exercised on fresh PostgreSQL, with legacy-name
@@ -46,26 +53,25 @@ candidate; this document does not make an untested head pass.
 |---|---|---|---|
 | Reproducible candidate | Commit identified; necessary CI jobs pass on that commit | Final head and six-job CI results are recorded on PR #1; verify the candidate matches | Maintainer |
 | Installation and persistence | Docker boots; migrations preserve existing data; memories, credentials and settings survive API recreation | Automated fresh/legacy/Postgres/Docker cases passed | Maintainer |
-| Review and access boundaries | Pending records are not searchable; approved records obey scopes; revoke blocks the intended client | Automated adversarial and deployed checks passed; confirm client behavior below | Maintainer + user |
+| Review and access boundaries | Pending records are not searchable; approved records obey scopes; revoke blocks the intended client | Automated checks and native Codex/OpenCode synthetic review, private-ID and denied-write checks passed | Maintainer |
 | Safe memory changes and backups | Compound merges roll back on failure; snapshot tampering fails; encrypted restore queues content for review | Automated repository/Postgres/snapshot cases passed | Maintainer |
-| Real cross-tool use | Tool A writes; a fresh conversation in B calls search and receives the same active memory ID; B revocation leaves A usable | **Open: installed-tool conversations not yet verified** | User with their two chosen tools |
+| Real cross-tool use | A writes; a fresh conversation in B searches and receives the same active ID; revoking a separate same-scope credential preserves A/B | **Passed: Codex 0.160.0 + OpenCode 2.1.2, explicit HTTP MCP calls**; see dated report | Maintainer, with the chosen tools |
 | Browser interaction | Key pages usable on desktop and narrow screen; keyboard focus, review, copy and download work | HTTP/HTML behavior tested; **visual and touch acceptance open** | User; maintainer fixes failures |
 | Accurate public handoff | README, deployment, security, repository metadata and release notes match implemented behavior and remaining limits | Bilingual review and repository checks passed; public metadata and security settings verified | Maintainer |
 
-A passing server test cannot close the two human gates. Conversely, the user
-does not need to rerun the automated suite or evaluate optional models to close
-them. Follow the [four-step checklist](USER_SETUP_CHECKLIST.md) with synthetic
-records. Use only the selected tools in any statement of verified compatibility.
+The selected native-client checks are complete; the user does not need to repeat
+them or evaluate optional models. Browser interaction and the owner's decision
+that the workflow is useful remain open. Follow the
+[short remaining checklist](USER_SETUP_CHECKLIST.md). Only the selected versions
+and explicit operations are verified compatibility claims.
 
 ## What the user needs to do
 
-1. Select two installed tools, create separate limited clients and connect both
-   to the same candidate service.
-2. Run the checklist's explicit `memory_add` → owner approval when needed →
-   `memory_search` scenario in fresh conversations, including the synthetic
-   private-record scope check.
-3. Revoke B, confirm a new B call fails and A still works.
-4. Use the panel on desktop and at narrow width, then record the result below.
+1. Use the panel on desktop and at narrow width: check the test memory, language,
+   keyboard navigation and Handoff copy/download.
+2. Record whether it is usable for your own workflow and any concrete blocker.
+   The [checklist](USER_SETUP_CHECKLIST.md) also retains repeatable client steps
+   for a different deployment; they are not extra work for this completed run.
 
 The retained maintainer preview uses `127.0.0.1:18010`; a new standard deployment
 uses `127.0.0.1:8000`. The preview and its private credentials are local review
@@ -113,7 +119,7 @@ Tool B + version / transport:
 Project memory ID / private synthetic memory ID:
 Fresh B search returns project ID: pass / fail
 Private synthetic ID inaccessible: pass / fail
-Revoke B blocks B and preserves A: pass / fail
+Revoke disposable same-scope credential blocks it and preserves A/B: pass / fail
 Browser + desktop/narrow widths:
 Review / language persistence / handoff copy-download / keyboard: pass / fail
 Open issues (redacted steps):

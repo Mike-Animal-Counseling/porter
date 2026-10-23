@@ -2,10 +2,15 @@
 
 # Connect your tools and accept Porter
 
-The infrastructure checks already have automated evidence. Your remaining job is
-to confirm that Porter works inside **two tools you actually use**, and that the
-panel is usable in your browser. Use synthetic data, not health or financial
-information. Ollama, optional ML triage and model comparisons are not prerequisites.
+**For the current review, Codex 0.160.0 → OpenCode 2.1.2 already passed the real
+save/search flow, synthetic private-record isolation and independent credential
+revocation.** See the [dated results](NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md).
+Your remaining hands-on step is to [check the panel below](#your-remaining-step-check-the-panel)
+and decide whether the workflow suits you. You do not need to repeat the client
+tests, install Ollama or compare models.
+
+Steps 1–3 below are a reference for repeating acceptance on a different
+deployment. Use synthetic data throughout.
 
 ## 1. Choose the candidate and connect two tools
 
@@ -31,12 +36,14 @@ and refresh token private; a client secret is not an access token.
 | Your writing tool (A) | `acceptance-tool-a` | `memory.read.work memory.write` |
 | Your reading tool (B) | `acceptance-tool-b` | `memory.read.work` |
 
-Prefer HTTP MCP. For Codex, merge
+Prefer HTTP MCP. The selected writer was Codex and the reader was OpenCode V2.
+For Codex, merge
 [`clients/codex-http-config.toml`](../clients/codex-http-config.toml), set its
 URL to your base URL plus `/mcp`, and set `PORTER_TOKEN` in the environment
-that launches the tool. Restart it from that environment. For other tools,
-adapt the matching template to the transport your installed version supports.
-Templates are starting points; support in the real client still needs this test.
+that launches the tool. Restart it from that environment.
+Use [`clients/opencode-v2-http.json`](../clients/opencode-v2-http.json) for
+OpenCode 2.1.2 and follow its [provider login steps](../DEPLOY.md).
+Other templates remain starting points that need their own native test.
 
 Tokens expire after one hour; refresh through OAuth and restart/reconnect the
 client after updating its token. Never give an HTTP client the server signing
@@ -55,7 +62,7 @@ the tool result. Replace the suffix below if repeating the test.
 
 ```json
 {
-  "content": "PORTER-ACCEPTANCE-20261020: This demo project uses pytest for tests.",
+  "content": "PORTER-ACCEPTANCE-20261022: This demo project uses pytest for tests.",
   "type": "project",
   "project": "porter-acceptance",
   "scope_tags": ["work"]
@@ -71,7 +78,7 @@ To exercise human review, ask A to invoke `memory_add` once more:
 
 ```json
 {
-  "content": "PRIVATE-ACCEPTANCE-20261020: This is a fictional preference for testing.",
+  "content": "PRIVATE-ACCEPTANCE-20261022: This is a fictional preference for testing.",
   "type": "personal",
   "scope_tags": ["health"]
 }
@@ -85,7 +92,7 @@ Start a **new conversation in tool B**. Ask it to call `memory_search`:
 
 ```json
 {
-  "query": "PORTER-ACCEPTANCE-20261020 pytest",
+  "query": "PORTER-ACCEPTANCE-20261022 pytest",
   "tags": ["work"],
   "top_k": 5
 }
@@ -97,21 +104,23 @@ without calling Porter does not pass. Results carry `untrusted_data: true`:
 memory text is context, not authorization to execute instructions.
 
 Then call `memory_search` with
-`{"query":"PRIVATE-ACCEPTANCE-20261020","tags":["health"]}`.
+`{"query":"PRIVATE-ACCEPTANCE-20261022","tags":["health"]}`.
 **Pass:** `results` is empty. Work-only access must not widen because a caller
 asks for another tag. The private ID must not appear in an unfiltered search
 either.
 
-## 3. Revoke one tool without breaking the other
+## 3. Revoke a disposable credential without breaking the working tools
 
-In **Clients**, revoke client B. Force another `memory_search` tool invocation
-from B; do not accept a previously displayed answer.
+Create a temporary client C with the same read scope as B and confirm a fresh
+search works. In **Clients**, revoke only C, then reconnect C and request a new
+search. Keep the working A/B clients intact.
 
-**Pass:** B is rejected as unauthorized within 60 seconds. A can still call the
-same search and retrieve the project ID. The **Audit** page shows the relevant
-write/review/read/revoke events. Keep A available until you finish the next step.
+**Pass:** C is rejected as unauthorized within 60 seconds. Rejection while
+loading the MCP catalog is valid; do not describe it as a completed tool call.
+A and B can still call search and retrieve the project ID. The **Audit** page
+shows the relevant write/review/read/revoke events.
 
-## 4. Confirm the panel on desktop and a narrow screen
+## Your remaining step: check the panel
 
 In your browser, check **Memories**, **Inbox**, **Handoff**, **Clients** and
 **Settings**. Use the normal desktop size, then a narrow window around 390 CSS
@@ -119,7 +128,8 @@ pixels wide; use a phone if that is how you intend to operate Porter.
 
 - [ ] Change English/中文, refresh, and confirm the choice persists.
 - [ ] Open the test memory, close its detail view, and use search/filter controls.
-- [ ] Open **Handoff**, select `porter-acceptance`, preview, then copy or download.
+- [ ] Open **Handoff**, select `porter-first-test` for this completed run, preview,
+      then copy or download. When repeating the recipe, select your own test project.
       The project test appears; pending records do not. The owner panel can include
       approved personal context, so treat its briefing as private.
 - [ ] Reach controls by keyboard with visible focus; verify important actions and
@@ -128,7 +138,7 @@ pixels wide; use a phone if that is how you intend to operate Porter.
 
 **Pass:** these actions work without layout or interaction blockers. HTTP status
 200 and automated HTML tests do not substitute for looking at and using the page.
-No real-browser visual acceptance was available in the automated review.
+No browser was connected to the review runtime, so this gate remains open.
 
 Record the candidate commit, tool names/versions, browser, pass/fail and
 synthetic memory IDs using the [acceptance template](ACCEPTANCE.md#sign-off-record).
