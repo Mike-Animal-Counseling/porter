@@ -156,9 +156,10 @@ tool_timeout_sec = 60
 ```
 
 Start or restart the tool from the environment where `PORTER_TOKEN` is set.
-Choose HTTP or stdio for the same server name, not both. For the retained
-maintainer BGE review environment use port **18010**; standard Compose uses
-**8000**. The review address is local to that machine.
+Choose HTTP or stdio for the same server name, not both. The isolated maintainer
+preview uses port **18010**; standard Compose uses **8000**. The review address
+is local to that machine. The 2026-10-25 preview uses hash embeddings for
+protocol checks, rather than the standard BGE-M3 deployment.
 
 The installed Codex CLI 0.160.0 parsed both templates on 2026-10-19;
 `codex mcp get porter --json` checks parsing, not tool execution. Independent
@@ -171,6 +172,12 @@ and retrieved the same active project ID. Review, scoped privacy denials,
 API recreation and revocation of a separate same-scope credential also passed.
 See the [dated native-client report](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md)
 for exact boundaries and the cold-model timeout encountered during acceptance.
+
+The official DeepSeek Harness Desktop bundled CLI **0.2.1-rc.3** also passed
+Codex-to-DSH retrieval, scope denials, independent revocation and retrieval after
+API restart on 2026-10-25. Its dedicated headless profile used saved DeepSeek
+account login. See the [DSH record and MCP configuration](docs/DSH_ACCEPTANCE.2026-10-25.md);
+GUI MCP configuration and semantic retrieval quality are separate checks.
 
 ### OpenCode V2 (2.1.2)
 
@@ -251,7 +258,7 @@ The explicit HTTP flow passed with **Codex 0.160.0 and OpenCode 2.1.2** on
 2026-10-22; see the [native-client record](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md).
 Other rows remain implementation/template listings, not native-client acceptance.
 
-| Tool / source | Importer reads | Included MCP template | Import argument |
+| Tool / source | Importer reads | Included connection / handoff template | Import argument |
 |---|---|---|---|
 | Codex CLI | `~/.codex/memories/**/*.md` | `codex-http-config.toml` / `codex-config.toml` | `codex` |
 | Claude Code | `~/.claude/projects/*/memory/*.md`, `MEMORY.md`, `CLAUDE.md` seed | `claude-code-mcp.json` | `claude-code` |
@@ -274,12 +281,12 @@ Other rows remain implementation/template listings, not native-client acceptance
 | Kilo Code | No native-store importer | `kilocode-mcp.json` | — |
 | Kimi CLI | No native-store importer | `kimi-mcp.json` | — |
 | Copilot CLI | No native-store importer | `copilot-cli-mcp.json` | — |
-| Aider | No native-store importer | `aider-conf.yml` | — |
-| Continue.dev | No native-store importer | `continue-config.json` | — |
+| Aider | Project `.aider.chat.history.md` | `aider-conf.yml` (static handoff file) | `aider --project-root PATH` |
+| Continue.dev | No native-store importer | `continue-config.yaml` | — |
 | Zencoder | No native-store importer | `zencoder-settings.json` | — |
 | Neovim | No native-store importer | `neovim-mcphub-servers.json` | — |
 | Emacs / gptel | No native-store importer | `emacs-gptel-mcp.el` | — |
-| Google Antigravity | No native-store importer | `antigravity-mcp_config.json`; bearer header unverified | — |
+| Google Antigravity | No native-store importer | `antigravity-mcp_config.json`; bearer header documented, native client unverified | — |
 | Kiro | No native-store importer | `kiro-mcp.json` | — |
 | Augment Code | No native-store importer | `augment-mcp.json` | — |
 
@@ -287,6 +294,11 @@ All template filenames above are under [`clients/`](clients/). Merge only the
 required block into your existing tool configuration, using the target path
 noted in that template; confirm your installed version accepts it. Format tests
 do not fetch and revalidate every vendor's current schema or prove a handshake.
+
+Aider's template loads an owner-exported `porter-handoff.txt` as read-only
+context; refresh that file manually when Porter changes. It does not establish
+a live MCP connection. Continue's YAML template belongs in the project's
+`.continue/mcpServers/porter.yaml` and is intended for Agent mode.
 
 ### Optional import
 

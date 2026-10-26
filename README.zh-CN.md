@@ -99,16 +99,17 @@ Ollama 提取器**可选，默认关闭**：客户端调用 `memory_capture` 时
 
 ## 状态与验收
 
-**v0.1.0 alpha。** 2026-10-20 的检查记录为 **650 项本地测试通过，无跳过**，包括真实
-PostgreSQL 和隔离 Docker 验收环境；OAuth、HTTP/stdio MCP、加密恢复及 API 容器重建后的
-持久化均已验证。六项 CI 检查质量、打包、Linux/Windows 测试、PostgreSQL 和 Docker 部署。
+**v0.1.0 alpha。** 2026-10-25 配置真实 PostgreSQL 与运行中的 HTTP/stdio MCP 后，
+本地全量测试 **672 项通过**，仅跳过一项可选 Ollama 测试。OAuth、加密恢复和受限权限已验证，
+另有 API 重启后的原生客户端检查。本次本地协议测试使用确定性 hash 向量。
+六项 CI 检查质量、打包、Linux/Windows 测试、PostgreSQL 和 Docker 部署。
 最终候选版本的结果见 [PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1)、
 [Actions](https://github.com/Mike-Animal-Counseling/porter/actions) 和
 [检查报告](docs/REVIEW.zh-CN.md)。这些是有日期的验证记录，不代表所有客户端和部署环境都已测试。
 
-代码基线
-[`08fb424`](https://github.com/Mike-Animal-Counseling/porter/commit/08fb424dadf7f316b5e539d0487c07691acea776)
-已在 [CI 运行 39552038204](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39552038204)
+此前代码基线
+[`4e63fe9`](https://github.com/Mike-Animal-Counseling/porter/commit/4e63fe9f5c503ae27e8d48e7068cd30c6001d48b)
+已在 [CI 运行 39897673263](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39897673263)
 通过全部六项任务。后续提交即使只改文档，也需核对各自的 CI 状态。
 
 2026-10-22，已安装的 **Codex 0.160.0** 保存了合成项目记忆，**OpenCode 2.1.2**
@@ -118,7 +119,12 @@ OAuth 登录，没有使用继承的 OpenAI API key；访问 Porter 使用另行
 具体流程和限制见[真实客户端验收记录](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md)。
 这些是显式工具调用，不代表自动抓取聊天或注入上下文。
 
-浏览器视觉、交互验收和用户签收仍待完成；其他工具版本和配置也需要各自验证。
+2026-10-25，官方 **DeepSeek Harness 桌面版内置 CLI 0.2.1-rc.3** 使用保存的 DeepSeek 账号登录，
+也实际检索到了原生 Codex 新写入的记忆；受限权限拒绝、独立凭据撤销与 API 重启后读取均通过。
+本次使用 PostgreSQL 和确定性 hash 向量，实际调用、浏览器检查及限制见
+[DSH 验收记录](docs/DSH_ACCEPTANCE.2026-10-25.zh-CN.md)，不代表语义检索质量或 DSH GUI 的 MCP 配置已验收。
+
+完整浏览器视觉、交互验收和用户签收仍待完成；其他工具版本和配置也需要各自验证。
 BGE-M3 的小样本评估不是通用检索质量保证。[验收标准](docs/ACCEPTANCE.zh-CN.md)
 列出了已完成与剩余门槛。如果正在验收尚未合并的 PR，请使用其来源分支；默认分支可能还没有这些修复。
 

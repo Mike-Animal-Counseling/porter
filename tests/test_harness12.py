@@ -378,7 +378,7 @@ def test_clients_dir_has_all_harnesses():
         "aider-conf.yml",
         # batch 2 (2026-10-12)
         "devin-mcp_config.json",
-        "continue-config.json",
+        "continue-config.yaml",
         "junie-mcp.json",
         "droid-mcp.json",
         "openhands-mcp.json",
@@ -398,7 +398,8 @@ def _load_config(path: Path):
     placeholder = (
         "{env:PORTER_TOKEN}" if path.name == "opencode-v2-http.json" else "{{PORTER_TOKEN}}"
     )
-    assert placeholder in text, f"{path.name}: token placeholder missing"
+    if path.name != "aider-conf.yml":
+        assert placeholder in text, f"{path.name}: token placeholder missing"
     # no real-looking secrets
     assert "sk-" not in text.replace(placeholder, ""), f"{path.name}: suspicious secret-like value"
     if path.suffix == ".json":
@@ -418,8 +419,8 @@ def _find_porter_server(cfg, path: Path):
         return cfg["mcp"]["servers"]["porter"]
     if path.name == "amp-settings.json":
         return cfg["amp.mcpServers"]["porter"]
-    if path.name == "aider-conf.yml":
-        return cfg["mcp-servers"]["porter"]
+    if path.name == "continue-config.yaml":
+        return next(server for server in cfg["mcpServers"] if server["name"] == "Porter")
     if path.name == "zed-settings.json":
         return cfg["context_servers"]["porter"]  # pre-existing zed shape
     if path.name == "zencoder-settings.json":
@@ -432,6 +433,7 @@ def _find_porter_server(cfg, path: Path):
 def _is_http_only(path: Path) -> bool:
     return path.name in {
         "antigravity-mcp_config.json",
+        "continue-config.yaml",
         "codex-http-config.toml",
         "opencode-v2-http.json",
     }
@@ -442,6 +444,11 @@ def test_all_client_configs_parse_and_reference_porter():
         if path.suffix not in (".json", ".toml", ".yml", ".yaml"):
             continue
         cfg = _load_config(path)
+        if path.name == "aider-conf.yml":
+            # Aider's documented integration loads a static read-only file;
+            # treating it as an MCP client would preserve an invented key.
+            assert cfg == {"read": ["porter-handoff.txt"]}
+            continue
         entry = _find_porter_server(cfg, path)
         blob = json.dumps(entry)
         if _is_http_only(path):
@@ -745,10 +752,23 @@ def test_augment_has_transport_stdio():
     assert cfg["mcpServers"]["porter"]["transport"] == "stdio"
 
 
-def test_antigravity_http_serverurl_and_caveat():
+def test_continue_standalone_http_yaml_uses_scoped_bearer_placeholder():
+    cfg = _load_config(CLIENTS_DIR / "continue-config.yaml")
+    assert cfg["name"] and cfg["version"] and cfg["schema"] == "v1"
+    assert isinstance(cfg["mcpServers"], list)
+    entry = _find_porter_server(cfg, CLIENTS_DIR / "continue-config.yaml")
+    assert entry["type"] == "streamable-http"
+    assert entry["url"] == "http://127.0.0.1:8000/mcp"
+    assert entry["requestOptions"]["headers"]["Authorization"] == "Bearer {{PORTER_TOKEN}}"
+    assert not {"command", "args", "env", "environment"}.intersection(entry)
+
+
+def test_antigravity_http_serverurl_and_bearer_header():
     cfg = _load_config(CLIENTS_DIR / "antigravity-mcp_config.json")
     entry = cfg["mcpServers"]["porter"]
     assert entry["serverUrl"] == "http://127.0.0.1:8000/mcp"
+    assert entry["headers"]["Authorization"] == "Bearer {{PORTER_TOKEN}}"
+    assert not {"command", "args", "env"}.intersection(entry)
     assert "UNVERIFIED" in cfg["_comment"]
 
 

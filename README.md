@@ -117,19 +117,20 @@ searching or handing off memories. See [extraction](docs/EXTRACTION.md).
 
 ## Status and acceptance
 
-**v0.1.0 alpha.** The 2026-10-20 review recorded **650 local tests passing, with no skips**,
-including real PostgreSQL and the isolated Docker acceptance stack. OAuth,
-HTTP/stdio MCP, encrypted restore and persistence across API recreation were
-verified. The six-job CI checks quality, packaging, Linux/Windows tests,
+**v0.1.0 alpha.** The 2026-10-25 local suite recorded **672 passing tests** with
+real PostgreSQL and the running HTTP/stdio MCP services configured; one optional
+Ollama test was skipped. OAuth, encrypted restore and scoped permissions were
+verified, with a separate native-client check after API restart. This local
+protocol run used deterministic hash embeddings. The six-job CI checks quality, packaging, Linux/Windows tests,
 PostgreSQL and Docker deployment. Check the final candidate's results on
 [PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1) and
 [Actions](https://github.com/Mike-Animal-Counseling/porter/actions)
 and the [review report](docs/REVIEW.md); these are dated evidence, not a claim
 that every client and deployment has been tested.
 
-All six jobs passed for code baseline
-[`08fb424`](https://github.com/Mike-Animal-Counseling/porter/commit/08fb424dadf7f316b5e539d0487c07691acea776)
-in [CI run 39552038204](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39552038204).
+All six jobs passed for the preceding code baseline
+[`4e63fe9`](https://github.com/Mike-Animal-Counseling/porter/commit/4e63fe9f5c503ae27e8d48e7068cd30c6001d48b)
+in [CI run 39897673263](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39897673263).
 Later commits, including documentation changes, need their own CI status.
 
 On 2026-10-22, installed **Codex 0.160.0** saved a synthetic project memory and
@@ -142,7 +143,15 @@ See the [native-client acceptance record](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-
 for the tested flow and limits. These were explicit tool calls, not automatic
 conversation capture or context injection.
 
-Browser visual/interaction acceptance and user sign-off remain open.
+On 2026-10-25, the official **DeepSeek Harness Desktop bundled CLI 0.2.1-rc.3**
+also retrieved a new native Codex memory using saved DeepSeek account login.
+Scoped denials, independent revocation and retrieval after API restart passed
+against PostgreSQL with deterministic hash embeddings. See the
+[DSH acceptance record](docs/DSH_ACCEPTANCE.2026-10-25.md) for the actual calls,
+browser checks and limits; this does not certify semantic retrieval quality or
+the DSH GUI's MCP configuration.
+
+Full browser visual/interaction acceptance and user sign-off remain open.
 Other tool versions/configurations still need their own checks.
 The small BGE-M3 evaluation is not a general retrieval-quality benchmark. See
 the [acceptance criteria](docs/ACCEPTANCE.md) for completed and remaining gates.

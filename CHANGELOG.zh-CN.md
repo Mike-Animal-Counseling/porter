@@ -8,6 +8,24 @@ Porter 的所有重要变更都记录在此。格式遵循
 
 ## [Unreleased]
 
+### DSH 原生验收（2026-10-25）
+
+- 验证官方 DeepSeek Harness 桌面版内置 CLI 0.2.1-rc.3 使用保存的 DeepSeek 账号登录，
+  实际取得原生 Codex 写入的记忆；确认敏感数据隔离、拒绝写入、token 到期前的独立撤销，
+  以及 API 重启后原读取凭据仍可使用。
+- 发布 [双语证据](docs/DSH_ACCEPTANCE.2026-10-25.zh-CN.md) 和去敏实际 MCP 调用，
+  明确 PostgreSQL/hash 协议检查与语义质量、桌面 GUI 配置的区别。
+- 实测本机窄窗口下的搜索、详情、复制、键盘焦点、语言与交接简报预览/下载。
+  交接输入框补齐文本类型，使已有全宽表单样式正确生效。
+
+### 客户端模板更正（2026-10-25）
+
+- 将 Aider 不受支持的 MCP 配置改为通过官方 `read` 设置加载 owner 导出的静态交接文件；
+  单独说明已经实现的 `.aider.chat.history.md` 导入器。
+- Continue MCP 模板改用 YAML，放入项目 `.continue/mcpServers/porter.yaml`，在 Agent 模式使用；
+  源码分发包同时包含 YAML 模板。
+- 补充 Antigravity 文档支持的 HTTP Authorization 头。这些更正后的模板仍未在对应原生客户端实测。
+
 ### 原生客户端验收与向量服务失败处理（2026-10-22）
 
 - 验证原生 Codex CLI 0.160.0 保存项目上下文，OpenCode 2.1.2 全新对话通过 HTTP 实际检索取得相同 ID。
@@ -233,15 +251,15 @@ QWEN.md 种子，成为 `project` 域的 inbox 种子并带 `project:<目录>`
 
 **第二批 harness：再增 12 个（共 27 个）**
 - `clients/` 新增 12 个 MCP 客户端配置：`devin-mcp_config.json`
-  （`~/.config/devin/mcp_config.json`）、`continue-config.json`
-  （`~/.continue/config.json`，仅 Agent 模式）、`junie-mcp.json`
+  （`~/.config/devin/mcp_config.json`）、`continue-config.yaml`
+  （`.continue/mcpServers/porter.yaml`，仅 Agent 模式；2026-10-25 更正）、`junie-mcp.json`
   （`~/.junie/mcp/mcp.json`）、`droid-mcp.json`（`~/.factory/mcp.json`，
   `type: stdio`）、`openhands-mcp.json`（`~/.openhands/mcp.json`）、
   `tabnine-settings.json`（需要重启）、`zencoder-settings.json`
   （VS Code `zencoder.mcpServers` 键）、`neovim-mcphub-servers.json`
   （经 mcphub.nvim，覆盖 avante.nvim + codecompanion.nvim）、
   `emacs-gptel-mcp.el`（经 mcp.el）、`antigravity-mcp_config.json`
-  （HTTP `serverUrl`；Authorization 头支持未验证——已标注）、
+  （HTTP `serverUrl`；文档支持 Authorization 头，原生客户端未实测）、
   `kiro-mcp.json`、`augment-mcp.json`（`transport: stdio`）。
 - 5 个新增 seed 导入器（只读、进待确认队列、打 `seed` 标签）：
   `junie`（`~/.junie/guidelines.md` + `<project>/.junie/guidelines.md`）、
@@ -386,9 +404,9 @@ harness 扩展是加法（新增导入器 + 配置模板，无破坏性变更）
 - Qwen Code：`~/.qwen/QWEN.md`（+ 项目级）——同样处理。
 - 所有扫描器跳过符号链接（harness 目录内的符号链接不能再把
   外部文件拉入导入）。
-- 诚实注册表 `NO_NATIVE_STORE`：OpenCode / Amp / Kilo Code /
-  Kimi CLI / Copilot CLI / Aider 没有可移植的记忆存储——
-  仅 MCP 植入，不编造解析器。
+- 初始注册表 `NO_NATIVE_STORE` 中的 OpenCode / Amp / Kilo Code /
+  Kimi CLI / Copilot CLI 没有原生存储导入器。Aider 后续已新增
+  `.aider.chat.history.md` 导入器；其交接模板使用静态文件，不建立实时 MCP 连接。
 
 **MCP 客户端配置（`clients/`，共 15 个）**
 - 新增：`claude-code-mcp.json`、`opencode.json`（顶层 `mcp` 键）、
@@ -397,7 +415,8 @@ harness 扩展是加法（新增导入器 + 配置模板，无破坏性变更）
   `windsurf-mcp_config.json`、`roo-mcp.json`、`cline-mcp.json`、
   `kilocode-mcp.json`、`kimi-mcp.json`、
   `copilot-cli-mcp.json`（`type: stdio`；配置路径未验证——
-  请在真实安装上确认）、`aider-conf.yml`（`mcp-servers:` 键）。
+  请在真实安装上确认）、`aider-conf.yml`（2026-10-25 更正为静态 `read`
+  交接；最初的 `mcp-servers:` 字段不受支持）。
 - 每个文件都带头注释：目标路径、如何应用、以及未验证
   （UNVERIFIED）之处的说明。
 

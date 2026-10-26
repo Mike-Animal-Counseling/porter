@@ -8,6 +8,29 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### DSH native acceptance (2026-10-25)
+
+- Verify the official DeepSeek Harness Desktop bundled CLI 0.2.1-rc.3, using
+  saved DeepSeek account login, retrieves the memory written by native Codex.
+  Confirm sensitive-record isolation, denied writes, independent revocation
+  before token expiry and retrieval with the original reader after API restart.
+- Publish [bilingual evidence](docs/DSH_ACCEPTANCE.2026-10-25.md) and sanitized
+  actual MCP calls, distinguishing PostgreSQL/hash protocol checks from semantic
+  quality and Desktop GUI configuration.
+- Exercise the local narrow-window browser flow for search, detail, copy,
+  keyboard focus, language and Handoff preview/download. Give Handoff inputs
+  explicit text types so they receive the existing full-width form styles.
+
+### Client template corrections (2026-10-25)
+
+- Replace Aider's unsupported MCP configuration with a static, owner-exported
+  handoff file loaded through its documented `read` setting. Document the
+  existing `.aider.chat.history.md` importer separately.
+- Move Continue's MCP template to YAML for `.continue/mcpServers/porter.yaml`
+  in Agent mode, and include YAML templates in source distributions.
+- Add Antigravity's documented HTTP Authorization header. These corrected
+  templates remain unverified in their respective native clients.
+
 ### Native-client acceptance and embedding failures (2026-10-22)
 
 - Verify native Codex CLI 0.160.0 saving project context and a fresh OpenCode
@@ -275,15 +298,15 @@ QWEN.md seeds as `project`-domain inbox seeds with `project:<dir>` tags
 
 **Second harness batch: 12 more harnesses (27 total)**
 - 12 new MCP client configs in `clients/`: `devin-mcp_config.json`
-  (`~/.config/devin/mcp_config.json`), `continue-config.json`
-  (`~/.continue/config.json`, Agent mode only), `junie-mcp.json`
+  (`~/.config/devin/mcp_config.json`), `continue-config.yaml`
+  (`.continue/mcpServers/porter.yaml`, Agent mode only; corrected 2026-10-25), `junie-mcp.json`
   (`~/.junie/mcp/mcp.json`), `droid-mcp.json` (`~/.factory/mcp.json`,
   `type: stdio`), `openhands-mcp.json` (`~/.openhands/mcp.json`),
   `tabnine-settings.json` (restart required), `zencoder-settings.json`
   (VS Code `zencoder.mcpServers` key), `neovim-mcphub-servers.json`
   (via mcphub.nvim, covers avante.nvim + codecompanion.nvim),
   `emacs-gptel-mcp.el` (via mcp.el), `antigravity-mcp_config.json`
-  (HTTP `serverUrl`; Authorization-header support UNVERIFIED — flagged),
+  (HTTP `serverUrl`; Authorization header documented, native client unverified),
   `kiro-mcp.json`, `augment-mcp.json` (`transport: stdio`).
 - 5 new seed importers (read-only, pending inbox, `seed`-tagged):
   `junie` (`~/.junie/guidelines.md` + `<project>/.junie/guidelines.md`),
@@ -435,9 +458,10 @@ the next version cut.
 - Qwen Code: `~/.qwen/QWEN.md` (+ project) — same treatment.
 - All scanners skip symlinks (a symlink inside a harness dir can no
   longer pull outside files into the import).
-- Honest registry `NO_NATIVE_STORE`: OpenCode / Amp / Kilo Code /
-  Kimi CLI / Copilot CLI / Aider have no portable memory store —
-  MCP implant only, no parsers invented.
+- Initial registry `NO_NATIVE_STORE`: OpenCode / Amp / Kilo Code /
+  Kimi CLI / Copilot CLI had no native-store importer. Aider later gained a
+  `.aider.chat.history.md` importer; its handoff template is a static file,
+  rather than a live MCP connection.
 
 **MCP client configs (`clients/`, 15 total)**
 - New: `claude-code-mcp.json`, `opencode.json` (top-level `mcp` key),
@@ -446,7 +470,8 @@ the next version cut.
   `windsurf-mcp_config.json`, `roo-mcp.json`, `cline-mcp.json`,
   `kilocode-mcp.json`, `kimi-mcp.json`,
   `copilot-cli-mcp.json` (`type: stdio`; config path UNVERIFIED —
-  confirm on a real install), `aider-conf.yml` (`mcp-servers:` key).
+  confirm on a real install), `aider-conf.yml` (corrected to a static `read`
+  handoff on 2026-10-25; the original `mcp-servers:` field was unsupported).
 - Every file carries a header comment: target path(s), how to apply,
   and UNVERIFIED caveats where they exist.
 

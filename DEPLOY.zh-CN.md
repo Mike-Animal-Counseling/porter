@@ -139,7 +139,7 @@ tool_timeout_sec = 60
 ```
 
 从设置了 `PORTER_TOKEN` 的环境启动或重启工具。同一服务名只选择 HTTP 或 stdio 之一。
-维护者保留的 BGE 验收环境使用 **18010** 端口；标准 Compose 为 **8000**。
+隔离维护者预览使用 **18010** 端口；标准 Compose 为 **8000**。
 验收地址仅在该机器上可用。
 
 2026-10-19，已安装的 Codex CLI 0.160.0 成功解析两种模板。
@@ -150,6 +150,11 @@ tool_timeout_sec = 60
 **2026-10-22**，原生 Codex CLI **0.160.0** 完成合成 `memory_add`，原生 OpenCode **2.1.2**
 在全新对话中实际搜索并取得同一个 active 项目 ID。审核、受限隐私拒绝、API 重建和独立同权限凭据撤销也已通过。
 准确范围及验收时遇到的模型冷启动超时，见 [当日原生验收记录](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md)。
+
+2026-10-25，官方 DeepSeek Harness 桌面版内置 CLI **0.2.1-rc.3** 也通过 Codex 到 DSH 的检索、
+受限权限拒绝、独立凭据撤销，以及 API 重启后的继续读取。独立 headless profile 使用保存的 DeepSeek 账号登录。
+本次 18010 端口的预览使用 hash 向量检查协议，不是标准 BGE-M3 部署。
+详情与 MCP 配置见 [DSH 验收记录](docs/DSH_ACCEPTANCE.2026-10-25.zh-CN.md)；GUI MCP 配置与语义检索质量需分别验证。
 
 ### OpenCode V2（2.1.2）
 
@@ -217,7 +222,7 @@ python -m pip install -c requirements-lock.txt -e .
 见 [原生客户端记录](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md)。
 其他行仍只说明已有实现或模板，不代表原生客户端已验收。
 
-| 工具 / 来源 | 导入器读取内容 | 已包含的 MCP 模板 | 导入参数 |
+| 工具 / 来源 | 导入器读取内容 | 已包含的连接 / 交接模板 | 导入参数 |
 |---|---|---|---|
 | Codex CLI | `~/.codex/memories/**/*.md` | `codex-http-config.toml` / `codex-config.toml` | `codex` |
 | Claude Code | `~/.claude/projects/*/memory/*.md`、`MEMORY.md`、`CLAUDE.md` 初始指示 | `claude-code-mcp.json` | `claude-code` |
@@ -240,18 +245,22 @@ python -m pip install -c requirements-lock.txt -e .
 | Kilo Code | 无原生存储导入器 | `kilocode-mcp.json` | — |
 | Kimi CLI | 无原生存储导入器 | `kimi-mcp.json` | — |
 | Copilot CLI | 无原生存储导入器 | `copilot-cli-mcp.json` | — |
-| Aider | 无原生存储导入器 | `aider-conf.yml` | — |
-| Continue.dev | 无原生存储导入器 | `continue-config.json` | — |
+| Aider | 项目 `.aider.chat.history.md` | `aider-conf.yml`（静态交接文件） | `aider --project-root PATH` |
+| Continue.dev | 无原生存储导入器 | `continue-config.yaml` | — |
 | Zencoder | 无原生存储导入器 | `zencoder-settings.json` | — |
 | Neovim | 无原生存储导入器 | `neovim-mcphub-servers.json` | — |
 | Emacs / gptel | 无原生存储导入器 | `emacs-gptel-mcp.el` | — |
-| Google Antigravity | 无原生存储导入器 | `antigravity-mcp_config.json`；bearer 头未实测 | — |
+| Google Antigravity | 无原生存储导入器 | `antigravity-mcp_config.json`；文档支持 bearer 头，原生客户端未实测 | — |
 | Kiro | 无原生存储导入器 | `kiro-mcp.json` | — |
 | Augment Code | 无原生存储导入器 | `augment-mcp.json` | — |
 
 以上模板文件均位于 [`clients/`](clients/)。只将所需配置块合并到现有配置，
 目标路径参考模板注释，并确认安装版本能接受。
 格式测试不会联网复核所有厂商的最新 schema，也不能证明握手成功。
+
+Aider 模板将 owner 导出的 `porter-handoff.txt` 作为只读上下文加载；Porter 内容变化后需要手动更新文件，
+不会建立实时 MCP 连接。Continue 的 YAML 模板应放在项目的 `.continue/mcpServers/porter.yaml`，
+并在 Agent 模式中使用。
 
 ### 可选导入
 

@@ -5,8 +5,8 @@
 ;; `mcp-hub-servers').  Replace {{PORTER_TOKEN}} with a real Porter
 ;; access token, then restart Emacs or re-evaluate the form.
 ;;
-;; aidermacs users: Aider is already covered by aider-conf.yml; this file
-;; is for gptel users.
+;; aidermacs users: aider-conf.yml loads a manually exported handoff file;
+;; it does not configure Aider MCP. The MCP setup below is for gptel users.
 ;;
 ;; UNVERIFIED: not tested against a live Emacs install here.
 

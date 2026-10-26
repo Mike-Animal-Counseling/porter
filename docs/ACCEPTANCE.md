@@ -34,6 +34,11 @@ commit batch, not acceptance or functional completion.
   Sensitive-record review, scoped denials, API recreation and independent
   credential revocation also passed. The follow-up embedding fix passed
   **40 focused tests**; that count is not a new full-suite result.
+- On 2026-10-25, the official DSH Desktop bundled CLI **0.2.1-rc.3**, using saved
+  DeepSeek account login, retrieved a new Codex memory and passed scoped denials,
+  independent revocation and retrieval after API restart. See the
+  [DSH report](DSH_ACCEPTANCE.2026-10-25.md). This PostgreSQL/hash run also records
+  bounded browser checks; it does not replace semantic or full browser acceptance.
 - Historical baseline: all six jobs passed at `c3c5fdf` in [CI run 39385023666](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39385023666):
   quality, packaging, Linux tests, Windows tests, PostgreSQL and deployment.
 - Fourteen migrations were exercised on fresh PostgreSQL, with legacy-name
@@ -56,7 +61,7 @@ candidate; this document does not make an untested head pass.
 | Review and access boundaries | Pending records are not searchable; approved records obey scopes; revoke blocks the intended client | Automated checks and native Codex/OpenCode synthetic review, private-ID and denied-write checks passed | Maintainer |
 | Safe memory changes and backups | Compound merges roll back on failure; snapshot tampering fails; encrypted restore queues content for review | Automated repository/Postgres/snapshot cases passed | Maintainer |
 | Real cross-tool use | A writes; a fresh conversation in B searches and receives the same active ID; revoking a separate same-scope credential preserves A/B | **Passed: Codex 0.160.0 + OpenCode 2.1.2, explicit HTTP MCP calls**; see dated report | Maintainer, with the chosen tools |
-| Browser interaction | Key pages usable on desktop and narrow screen; keyboard focus, review, copy and download work | HTTP/HTML behavior tested; **visual and touch acceptance open** | User; maintainer fixes failures |
+| Browser interaction | Key pages usable on desktop and narrow screen; keyboard focus, review, copy and download work | HTTP/HTML and the dated 600px browser flow passed; **full desktop/mobile, touch and visual acceptance open** | User; maintainer fixes failures |
 | Accurate public handoff | README, deployment, security, repository metadata and release notes match implemented behavior and remaining limits | Bilingual review and repository checks passed; public metadata and security settings verified | Maintainer |
 
 The selected native-client checks are complete; the user does not need to repeat
@@ -99,7 +104,7 @@ artifacts, not a publicly hosted demo.
 | Area | Current boundary | Required before alpha? |
 |---|---|---|
 | Client automation | Tools and sync feed exist; templates do not schedule capture or inject context | Document clearly; a full adapter is separate work |
-| Other clients | Configuration templates exist; per-client conversations are unverified | Only claim the two clients actually accepted |
+| Other clients | Templates do not prove per-client conversations; dated Codex/OpenCode and Codex/DSH flows are verified | Only claim the versions and operations actually accepted |
 | Workspaces and device keys | Role/store foundations exist; complete membership onboarding and delegated key UX remain unfinished | No, if alpha stays single-owner and is described that way |
 | Extraction | Default regex extractor; optional Ollama proposes reviewable facts; OpenAI extraction unimplemented | No; manual `memory_add` works without it |
 | Retrieval quality | Small BGE-M3 fixtures tested; no guarantee on arbitrary private corpora or all languages | User judges the synthetic flow; broader evaluation follows |

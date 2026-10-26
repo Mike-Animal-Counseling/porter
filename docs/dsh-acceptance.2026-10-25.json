@@ -1,0 +1,232 @@
+{
+  "date": "2026-10-25",
+  "project": "porter-dsh-acceptance",
+  "embedder": "hash",
+  "repository": "postgres",
+  "memory_id": "5ca86983-0035-4c22-be5f-81001fb329f8",
+  "memory_status": "active",
+  "codex_save": {
+    "exit_code": 0,
+    "tool_calls": [
+      {
+        "tool": "memory_add",
+        "status": "completed"
+      }
+    ],
+    "saved": true
+  },
+  "private_initial_status": "pending_review",
+  "revocation": {
+    "disposable_only": true,
+    "http_status": 401,
+    "code": "token_revoked"
+  },
+  "dsh-scopes": {
+    "phase": "scopes",
+    "runtime": "official Desktop bundled CLI",
+    "version": "0.2.1-rc.3",
+    "provider": "deepseek-account",
+    "model": "deepseek-flash",
+    "inherited_model_keys_removed": true,
+    "exit_code": 0,
+    "elapsed_seconds": 13.35,
+    "actual_mcp_calls": [
+      {
+        "tool": "memory_search",
+        "arguments": {
+          "query": "PORTER-DSH-20261025-1bf2dc5c1fc1",
+          "tags": [
+            "work",
+            "project:porter-dsh-acceptance"
+          ],
+          "top_k": 5
+        },
+        "http_status": 200,
+        "expected_id_found": true,
+        "private_id_found": false,
+        "insufficient_scope": false,
+        "not_found": false
+      },
+      {
+        "tool": "memory_search",
+        "arguments": {
+          "query": "PORTER-DSH-PRIVATE-34fae27e9f27",
+          "tags": [
+            "health"
+          ],
+          "top_k": 5
+        },
+        "http_status": 200,
+        "expected_id_found": false,
+        "private_id_found": false,
+        "insufficient_scope": false,
+        "not_found": false
+      },
+      {
+        "tool": "memory_contradictions",
+        "arguments": {
+          "memory_id": "f1657813-f9bd-463b-a215-4632a9ae4d00"
+        },
+        "http_status": 200,
+        "expected_id_found": false,
+        "private_id_found": false,
+        "insufficient_scope": false,
+        "not_found": true
+      },
+      {
+        "tool": "memory_add",
+        "arguments": {
+          "content": "PORTER-DSH-DENIED-737dc926259d: fictional denied write fixture.",
+          "type": "project",
+          "project": "porter-dsh-acceptance",
+          "scope_tags": [
+            "work"
+          ],
+          "confidence": 1
+        },
+        "http_status": 200,
+        "expected_id_found": false,
+        "private_id_found": false,
+        "insufficient_scope": true,
+        "not_found": false
+      }
+    ],
+    "expected_id_found": true,
+    "unauthorized_http_statuses": []
+  },
+  "dsh-disposable-before": {
+    "phase": "disposable-before",
+    "runtime": "official Desktop bundled CLI",
+    "version": "0.2.1-rc.3",
+    "provider": "deepseek-account",
+    "model": "deepseek-flash",
+    "inherited_model_keys_removed": true,
+    "exit_code": 0,
+    "elapsed_seconds": 10.86,
+    "actual_mcp_calls": [
+      {
+        "tool": "memory_search",
+        "arguments": {
+          "query": "PORTER-DSH-20261025-1bf2dc5c1fc1",
+          "tags": [
+            "work",
+            "project:porter-dsh-acceptance"
+          ],
+          "top_k": 5
+        },
+        "http_status": 200,
+        "expected_id_found": true,
+        "private_id_found": false,
+        "insufficient_scope": false,
+        "not_found": false
+      }
+    ],
+    "expected_id_found": true,
+    "unauthorized_http_statuses": []
+  },
+  "dsh-disposable-after": {
+    "phase": "disposable-after",
+    "runtime": "official Desktop bundled CLI",
+    "version": "0.2.1-rc.3",
+    "provider": "deepseek-account",
+    "model": "deepseek-flash",
+    "inherited_model_keys_removed": true,
+    "exit_code": 0,
+    "elapsed_seconds": 9.22,
+    "actual_mcp_calls": [],
+    "expected_id_found": false,
+    "unauthorized_http_statuses": [
+      401
+    ]
+  },
+  "dsh-after-restart": {
+    "phase": "after-restart",
+    "runtime": "official Desktop bundled CLI",
+    "version": "0.2.1-rc.3",
+    "provider": "deepseek-account",
+    "model": "deepseek-flash",
+    "inherited_model_keys_removed": true,
+    "exit_code": 0,
+    "elapsed_seconds": 7.56,
+    "actual_mcp_calls": [
+      {
+        "tool": "memory_search",
+        "arguments": {
+          "query": "PORTER-DSH-20261025-1bf2dc5c1fc1",
+          "tags": [
+            "work",
+            "project:porter-dsh-acceptance"
+          ],
+          "top_k": 5
+        },
+        "http_status": 200,
+        "expected_id_found": true,
+        "private_id_found": false,
+        "insufficient_scope": false,
+        "not_found": false
+      }
+    ],
+    "expected_id_found": true,
+    "unauthorized_http_statuses": []
+  },
+  "server_verification": {
+    "denied_write_rows": 0,
+    "persisted_expected_id": "5ca86983-0035-4c22-be5f-81001fb329f8",
+    "persisted_status": "active",
+    "persisted_marker_matches": true,
+    "private_query_result_counts": [
+      0
+    ],
+    "revoked_credential_native_http_status": 401,
+    "revoked_before_expiry": true
+  },
+  "api_start_process_ids": [
+    "33488",
+    "14872"
+  ],
+  "browser_checks": {
+    "search": true,
+    "detail": true,
+    "copy_id_feedback": true,
+    "escape_closes_and_restores_trigger_focus": true,
+    "chinese_switch": true,
+    "collapsed_navigation": true,
+    "handoff_preview": true,
+    "handoff_copy_feedback": true,
+    "handoff_download": true,
+    "browser_width_evidence": "600px screenshot; full desktop, touch and complete accessibility review remain open",
+    "handoff_text_input_style_corrected": true
+  },
+  "local_checks": {
+    "full_pytest": {
+      "passed": 672,
+      "skipped": 1,
+      "warnings": 1,
+      "elapsed_seconds": 124.985
+    },
+    "supplemental_postgres": 1,
+    "supplemental_postgres_security": 1,
+    "supplemental_deployed_http_stdio": 1,
+    "remaining_optional_check": "Ollama model not configured",
+    "ruff_check": true,
+    "ruff_format": true,
+    "pip_check": true,
+    "precommit_config": true,
+    "panel_regression_passed": 73,
+    "ui_detector_findings": 0
+  },
+  "model_session_auth": "DeepSeek account login; inherited provider API keys removed from child environment",
+  "limitations": [
+    "Hash embeddings validate transport and access control, not semantic retrieval quality.",
+    "Uses the official Desktop bundled CLI with a dedicated profile; does not certify GUI MCP configuration or every DSH feature.",
+    "Final candidate CI, full desktop/mobile browser review and owner sign-off remain separate gates."
+  ],
+  "browser_download_verification": {
+    "browser_download_exists": true,
+    "download_bytes": 660,
+    "download_contains_project": true,
+    "download_contains_actual_marker": true,
+    "download_contains_handoff_direction": true
+  },
+  "mcp_runtime_source_baseline": "4e63fe9"
+}

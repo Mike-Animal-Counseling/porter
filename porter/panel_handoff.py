@@ -30,12 +30,12 @@ async def _page(request, *, project="", from_harness="codex", to_harness="cursor
 <p class="card__sub">{esc(t("handoff_intro", lang))}</p>
 <form method="post" action="/panel/handoff">
 <label class="f" for="handoff-project">{esc(t("handoff_project", lang))}</label>
-<input id="handoff-project" name="project" value="{esc(project)}" list="handoff-projects" maxlength="128" required>
+<input id="handoff-project" type="text" name="project" value="{esc(project)}" list="handoff-projects" maxlength="128" required>
 <datalist id="handoff-projects">{suggestions}</datalist>
 <label class="f" for="handoff-from">{esc(t("handoff_from", lang))}</label>
-<input id="handoff-from" name="from_harness" value="{esc(from_harness)}" maxlength="64" list="handoff-tools" required>
+<input id="handoff-from" type="text" name="from_harness" value="{esc(from_harness)}" maxlength="64" list="handoff-tools" required>
 <label class="f" for="handoff-to">{esc(t("handoff_to", lang))}</label>
-<input id="handoff-to" name="to_harness" value="{esc(to_harness)}" maxlength="64" list="handoff-tools" required>
+<input id="handoff-to" type="text" name="to_harness" value="{esc(to_harness)}" maxlength="64" list="handoff-tools" required>
 <datalist id="handoff-tools"><option value="codex"></option><option value="claude-code"></option><option value="cursor"></option></datalist>
 <p class="small muted">{esc(t("handoff_privacy", lang))}</p>
 <div class="row mt"><button class="btn btn--primary" type="submit">{esc(t("handoff_preview", lang))}</button>
