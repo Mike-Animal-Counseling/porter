@@ -107,9 +107,9 @@ Ollama 提取器**可选，默认关闭**：客户端调用 `memory_capture` 时
 [Actions](https://github.com/Mike-Animal-Counseling/porter/actions) 和
 [检查报告](docs/REVIEW.zh-CN.md)。这些是有日期的验证记录，不代表所有客户端和部署环境都已测试。
 
-此前代码基线
-[`4e63fe9`](https://github.com/Mike-Animal-Counseling/porter/commit/4e63fe9f5c503ae27e8d48e7068cd30c6001d48b)
-已在 [CI 运行 39897673263](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39897673263)
+本次实测的应用代码基线
+[`fd5f2ff`](https://github.com/Mike-Animal-Counseling/porter/commit/fd5f2ff0d139ce54f467990907ed1ee012078bd4)
+已在 [CI 运行 40275772180](https://github.com/Mike-Animal-Counseling/porter/actions/runs/40275772180)
 通过全部六项任务。后续提交即使只改文档，也需核对各自的 CI 状态。
 
 2026-10-22，已安装的 **Codex 0.160.0** 保存了合成项目记忆，**OpenCode 2.1.2**
@@ -123,6 +123,11 @@ OAuth 登录，没有使用继承的 OpenAI API key；访问 Porter 使用另行
 也实际检索到了原生 Codex 新写入的记忆；受限权限拒绝、独立凭据撤销与 API 重启后读取均通过。
 本次使用 PostgreSQL 和确定性 hash 向量，实际调用、浏览器检查及限制见
 [DSH 验收记录](docs/DSH_ACCEPTANCE.2026-10-25.zh-CN.md)，不代表语义检索质量或 DSH GUI 的 MCP 配置已验收。
+
+2026-10-27，保留的 PostgreSQL/BGE-M3 部署已恢复，原生 Codex 新写入的记录被全新
+**DSH 桌面客户端会话**实际检索到，服务端独立审计确认该 GUI 读取客户端确实调用了 MCP。
+受限权限、加密快照导入，以及 API、数据库和向量服务重启均通过。
+实测范围、小型检索评估和剩余限制见[正式部署恢复记录](docs/FORMAL_RESTORE.2026-10-27.zh-CN.md)。
 
 完整浏览器视觉、交互验收和用户签收仍待完成；其他工具版本和配置也需要各自验证。
 BGE-M3 的小样本评估不是通用检索质量保证。[验收标准](docs/ACCEPTANCE.zh-CN.md)

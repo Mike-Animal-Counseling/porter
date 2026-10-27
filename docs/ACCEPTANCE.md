@@ -39,6 +39,15 @@ commit batch, not acceptance or functional completion.
   independent revocation and retrieval after API restart. See the
   [DSH report](DSH_ACCEPTANCE.2026-10-25.md). This PostgreSQL/hash run also records
   bounded browser checks; it does not replace semantic or full browser acceptance.
+- On 2026-10-27, the retained PostgreSQL/BGE-M3 deployment was restored into
+  separate Porter volumes. A fresh DSH Desktop GUI conversation retrieved the
+  new native Codex memory; the dedicated reader's server audit independently
+  confirmed the actual MCP read. Scoped denials, signed encrypted snapshot
+  recovery, API recreation and database/embedder restarts passed. See the
+  [formal recovery report](FORMAL_RESTORE.2026-10-27.md).
+- The application source tested in that recovery, `fd5f2ff`, passed all six jobs
+  in [CI run 40275772180](https://github.com/Mike-Animal-Counseling/porter/actions/runs/40275772180).
+  Later documentation commits still need their own CI status.
 - Historical baseline: all six jobs passed at `c3c5fdf` in [CI run 39385023666](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39385023666):
   quality, packaging, Linux tests, Windows tests, PostgreSQL and deployment.
 - Fourteen migrations were exercised on fresh PostgreSQL, with legacy-name
@@ -57,10 +66,10 @@ candidate; this document does not make an untested head pass.
 | Gate | Required result | Evidence / current state | Responsible |
 |---|---|---|---|
 | Reproducible candidate | Commit identified; necessary CI jobs pass on that commit | Final head and six-job CI results are recorded on PR #1; verify the candidate matches | Maintainer |
-| Installation and persistence | Docker boots; migrations preserve existing data; memories, credentials and settings survive API recreation | Automated fresh/legacy/Postgres/Docker cases passed | Maintainer |
+| Installation and persistence | Docker boots; migrations preserve existing data; memories, credentials and settings survive API recreation | Automated cases passed; formal BGE-M3 recovery verified an old record remained, then synthetic records and unchanged test credentials survived API/database/embedder restarts | Maintainer |
 | Review and access boundaries | Pending records are not searchable; approved records obey scopes; revoke blocks the intended client | Automated checks and native Codex/OpenCode synthetic review, private-ID and denied-write checks passed | Maintainer |
 | Safe memory changes and backups | Compound merges roll back on failure; snapshot tampering fails; encrypted restore queues content for review | Automated repository/Postgres/snapshot cases passed | Maintainer |
-| Real cross-tool use | A writes; a fresh conversation in B searches and receives the same active ID; revoking a separate same-scope credential preserves A/B | **Passed: Codex 0.160.0 + OpenCode 2.1.2, explicit HTTP MCP calls**; see dated report | Maintainer, with the chosen tools |
+| Real cross-tool use | A writes; a fresh conversation in B searches and receives the same active ID; revoking a separate same-scope credential preserves A/B | **Passed: Codex + OpenCode; Codex + DSH bundled CLI; formal BGE-M3 Codex + DSH GUI search**. Independent revocation was covered by the dated native CLI runs, not repeated in this GUI check | Maintainer, with the chosen tools |
 | Browser interaction | Key pages usable on desktop and narrow screen; keyboard focus, review, copy and download work | HTTP/HTML and the dated 600px browser flow passed; **full desktop/mobile, touch and visual acceptance open** | User; maintainer fixes failures |
 | Accurate public handoff | README, deployment, security, repository metadata and release notes match implemented behavior and remaining limits | Bilingual review and repository checks passed; public metadata and security settings verified | Maintainer |
 

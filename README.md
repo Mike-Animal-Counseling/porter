@@ -128,9 +128,9 @@ PostgreSQL and Docker deployment. Check the final candidate's results on
 and the [review report](docs/REVIEW.md); these are dated evidence, not a claim
 that every client and deployment has been tested.
 
-All six jobs passed for the preceding code baseline
-[`4e63fe9`](https://github.com/Mike-Animal-Counseling/porter/commit/4e63fe9f5c503ae27e8d48e7068cd30c6001d48b)
-in [CI run 39897673263](https://github.com/Mike-Animal-Counseling/porter/actions/runs/39897673263).
+All six jobs passed for the tested application baseline
+[`fd5f2ff`](https://github.com/Mike-Animal-Counseling/porter/commit/fd5f2ff0d139ce54f467990907ed1ee012078bd4)
+in [CI run 40275772180](https://github.com/Mike-Animal-Counseling/porter/actions/runs/40275772180).
 Later commits, including documentation changes, need their own CI status.
 
 On 2026-10-22, installed **Codex 0.160.0** saved a synthetic project memory and
@@ -150,6 +150,13 @@ against PostgreSQL with deterministic hash embeddings. See the
 [DSH acceptance record](docs/DSH_ACCEPTANCE.2026-10-25.md) for the actual calls,
 browser checks and limits; this does not certify semantic retrieval quality or
 the DSH GUI's MCP configuration.
+
+On 2026-10-27, the retained PostgreSQL/BGE-M3 deployment was restored and
+verified with a new native Codex write and a fresh **DSH Desktop GUI** search
+returning the same ID. Independent server audit confirmed the GUI reader's
+actual MCP call. Scoped access, encrypted snapshot import and API/database/model
+service restarts passed. See the [deployment recovery report](docs/FORMAL_RESTORE.2026-10-27.md)
+for the tested scope, small retrieval evaluation and remaining limits.
 
 Full browser visual/interaction acceptance and user sign-off remain open.
 Other tool versions/configurations still need their own checks.

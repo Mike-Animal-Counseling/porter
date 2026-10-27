@@ -8,6 +8,18 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Formal deployment recovery (2026-10-27)
+
+- Verify retained PostgreSQL/BGE-M3 data in separate restored Porter volumes,
+  preserving the original backup. Native Codex writes a new synthetic record;
+  the official DSH Desktop GUI retrieves the same ID, independently confirmed
+  by the dedicated reader's server audit.
+- Verify scoped denials, signed encrypted snapshot import into review, API
+  recreation and database/embedder restart with unchanged credentials and
+  snapshot bytes. Publish [bilingual evidence](docs/FORMAL_RESTORE.2026-10-27.md)
+  and the unchanged small bilingual retrieval metrics; retain broader UI and
+  owner sign-off as open gates.
+
 ### DSH native acceptance (2026-10-25)
 
 - Verify the official DeepSeek Harness Desktop bundled CLI 0.2.1-rc.3, using

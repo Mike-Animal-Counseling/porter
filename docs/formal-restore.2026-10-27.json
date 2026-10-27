@@ -1,0 +1,160 @@
+{
+  "date": "2026-10-27",
+  "source_commit": "fd5f2ff0d139ce54f467990907ed1ee012078bd4",
+  "scope": "Local single-owner deployment recovery using synthetic acceptance fixtures",
+  "compose_project": "porter-daily",
+  "loopback_ports": {
+    "api": 8000,
+    "embedder": 8001,
+    "postgresql": 5432
+  },
+  "recovery": {
+    "original_archive_checksum_verified": true,
+    "original_archive_retained": true,
+    "porter_volumes_restored_into_new_volumes": 4,
+    "database": "porter_bge",
+    "initial_existing_memory_records": 27,
+    "prior_public_synthetic_memory_present": "c22da059-240e-4bbf-b59b-30e6001f7b1e",
+    "current_migration_files_recorded": 14,
+    "historical_migration_alias": "008_memory_domains.sql",
+    "migration_table_rows": 15
+  },
+  "fixture": {
+    "project": "porter-gui-c1e5fc45dc31",
+    "marker": "PORTER-GUI-20261027-c1e5fc45dc31",
+    "tag": "gui_c1e5fc45dc31",
+    "writer": "Native Codex CLI 0.160.0 over HTTP MCP",
+    "memory_id": "ce54bd24-9c47-49fd-a1a6-ba4ac2409226",
+    "initial_status": "active",
+    "writer_http_mcp_read_same_id": true,
+    "mcp_read_marked_untrusted_data": true
+  },
+  "reader_http_checks": {
+    "scope": "memory.read.gui_c1e5fc45dc31",
+    "synthetic_record_read": "passed",
+    "write_denial": {
+      "http_status": 403,
+      "error": "insufficient_scope"
+    },
+    "work_tag_search_results": 0
+  },
+  "embedding": {
+    "model": "BAAI/bge-m3",
+    "device": "cpu",
+    "dimension": 1024,
+    "vector_norm_approximately": 1,
+    "first_measured_short_request_seconds": 5.38,
+    "fixture_memories": 14,
+    "fixture_queries": 12,
+    "duplicate_pairs": 15,
+    "distinct_pairs": 10,
+    "duplicate_threshold": 0.92,
+    "recall_at_1_hits": 7,
+    "recall_at_3_hits": 11,
+    "recall_at_5_hits": 12,
+    "duplicate_true_positives": 5,
+    "duplicate_false_positives": 1,
+    "duplicate_precision": 0.8333333333333334,
+    "duplicate_recall": 0.3333333333333333,
+    "matches_2026_10_18_fixture_baseline": true,
+    "scope": "Small unchanged bilingual fixture; not a general retrieval-quality guarantee"
+  },
+  "snapshot": {
+    "synthetic_tag_only": true,
+    "record_count": 1,
+    "encrypted": true,
+    "wrong_password_http_status": 422,
+    "wrong_password_error": "invalid_input",
+    "dry_run_signature_ok": true,
+    "imported_copy_id": "e200570a-e73e-4a07-956f-60c442af5e6f",
+    "imported_sql_status": "pending"
+  },
+  "api_recreation": {
+    "result": "passed",
+    "recovery_seconds": 10.63,
+    "original_credential_and_retrieval_preserved": true,
+    "snapshot_download_bytes_unchanged": true
+  },
+  "database_and_embedder_restart": {
+    "result": "passed",
+    "recovery_seconds": 27.71,
+    "unchanged_credentials": true,
+    "http_mcp_expected_synthetic_id_returned": true,
+    "reader_write_http_status": 403,
+    "reader_work_tag_search_results": 0,
+    "snapshot_download_sha256_unchanged": true,
+    "computer_reboot_tested": false
+  },
+  "idle_observation": {
+    "container_memory_mib": {
+      "api": 73.45,
+      "embedder": 734.2,
+      "database": 30.89
+    },
+    "all_three_containers_oom_killed": false,
+    "all_three_container_restart_counts": 0,
+    "restart_policy": "unless-stopped",
+    "scope": "Point-in-time observation, not peak or whole-machine requirements"
+  },
+  "dsh_desktop_gui": {
+    "status": "passed",
+    "version": "0.2.1-rc.3",
+    "model_observed_in_controls": "DeepSeek-V4.1-Flash",
+    "reasoning_setting": "High",
+    "private_scoped_mcp_entry_configured": true,
+    "existing_plugins_preserved": true,
+    "private_manual_token_refresh_helper": true,
+    "manual_refresh_exercised": true,
+    "manual_refresh_result": {
+      "oauth_token_refresh_and_rotation": "passed",
+      "own_marker_delimited_desktop_mcp_block_updated": true,
+      "other_plugins_preserved": true,
+      "refreshed_token_http_read": "passed",
+      "refreshed_reader_write_http_status": 403,
+      "refreshed_reader_work_tag_search_results": 0,
+      "snapshot_sha256_unchanged": true,
+      "writer_http_mcp_probe": "passed",
+      "second_gui_conversation_after_refresh": false
+    },
+    "actual_gui_mcp_retrieval_established": true,
+    "prompt_entry": "User entered the synthetic query manually because GUI automation could not type it",
+    "expected_memory_id_supplied_in_prompt": false,
+    "matching_id_and_fictional_content_observed_in_control_tree": true,
+    "user_pasted_matching_result": true,
+    "reader_prior_mcp_calls": 0,
+    "reader_matching_mcp_audit_rows": 1,
+    "server_audit": {
+      "created_at": "2026-10-27T08:19:55.402947+00:00",
+      "action": "read",
+      "memory_ids": ["ce54bd24-9c47-49fd-a1a6-ba4ac2409226"],
+      "meta": {
+        "via": "mcp",
+        "hits": 1,
+        "tool": "memory_search",
+        "top_k": 5,
+        "wiki_boost": false
+      }
+    },
+    "client_observed_response_fields": {
+      "score": 0.4492,
+      "untrusted_data": true,
+      "scope": "Client-observed fields; score and untrusted_data are not recorded in the SQL audit"
+    },
+    "requested_tags_observed_in_prompt": ["gui_c1e5fc45dc31", "project"],
+    "effective_scoped_tag": "gui_c1e5fc45dc31",
+    "full_project_tag_filter_verified": false,
+    "tag_filter_behavior": "Intersection with the credential allowlist; no project query rewriting",
+    "automatic_capture_verified": false,
+    "automatic_token_refresh_verified": false,
+    "gui_revocation_retested": false,
+    "screenshot_retained": false,
+    "screenshot_not_taken_reason": "Automatic approval review rejected full-window capture because it might include unrelated private chats"
+  },
+  "remaining_gates": [
+    "Uncovered browser, physical mobile and accessibility checks",
+    "Owner usability sign-off"
+  ],
+  "chrome_checks": "cancelled_by_user",
+  "application_source_modified_by_this_run": false,
+  "contains_credentials_or_existing_memory_text": false
+}
