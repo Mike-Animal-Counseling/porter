@@ -18,3 +18,4 @@ snapshots
 **/.keys
 *.porter
 *.porter.json
+.porter-panel.local.json

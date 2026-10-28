@@ -1,6 +1,7 @@
 include *.md *.txt VERSION
 include .env.example .dockerignore .python-version .editorconfig .gitattributes .pre-commit-config.yaml
 include docker-compose*.yml
+include Open-Porter.cmd
 recursive-include api Dockerfile *.txt
 recursive-include clients *.py *.ts *.json *.toml *.yml *.yaml *.el
 recursive-include scripts *.py

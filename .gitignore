@@ -42,3 +42,6 @@ porter.db
 
 # Node (if any tooling added later)
 node_modules/
+
+# Local panel shortcut target; contains machine-specific configuration paths.
+.porter-panel.local.json

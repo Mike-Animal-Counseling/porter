@@ -8,6 +8,16 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Easier owner unlock
+
+- Explain local owner unlock in plain English/Chinese, with a Windows shortcut
+  and a standard-library Python helper. Keep manual administrator-key entry as
+  a fallback and show recoverable sign-in errors on the page.
+- Exchange the private setup key for bounded, two-minute, single-use browser
+  codes; preserve origin checks and the existing signed 12-hour session policy.
+  The helper refuses remote destinations, proxies and redirects and does not
+  launch a browser or print the setup key.
+
 ### Formal deployment recovery (2026-10-27)
 
 - Verify retained PostgreSQL/BGE-M3 data in separate restored Porter volumes,

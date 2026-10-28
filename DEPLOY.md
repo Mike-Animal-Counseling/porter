@@ -39,12 +39,25 @@ API waits for the embedder healthcheck. Once ready, opening
 **http://127.0.0.1:8000/healthz** must return 200. Do not remove data volumes to
 repair a startup error.
 
-Open **http://127.0.0.1:8000/panel**. Docker-forwarded browsers unlock at
-`/owner/login` with `PORTER_SETUP_TOKEN` from `.env`. The signed owner session
+Open **http://127.0.0.1:8000/panel**. To unlock a Docker-forwarded browser,
+double-click `Open-Porter.cmd` on Windows or run `python scripts/open_panel.py --lang en`.
+Paste the generated one-time link into your browser. It expires in two minutes
+and can be used once. For a custom configuration or local port, pass
+`--env-file PATH --url http://127.0.0.1:PORT`. The helper uses only Python's
+standard library, never opens a browser, refuses remote destinations and
+redirects, and keeps the long-lived key out of links and terminal output.
+The manual `/owner/login` form still accepts `PORTER_SETUP_TOKEN`. Browser-link
+codes are process-local: a restart invalidates them; use the default single
+API worker, or use manual login for a multi-worker deployment. The signed owner session
 lasts 12 hours and also gates OAuth consent. Native loopback URLs retain local
 owner access; custom domains require owner login. The default panel language is
 English; switch between English and Chinese in Settings. Docker stores that
 preference in the `porter-data` volume.
+
+For a retained custom local deployment, an ignored `.porter-panel.local.json`
+beside the launcher can store `{"env_file": "path/to/compose.env", "url": "http://127.0.0.1:8000"}`.
+This stores a configuration path, not the key. Explicit command options take
+precedence, and destinations remain restricted to loopback.
 
 ## 2. Create a limited client and obtain a token
 

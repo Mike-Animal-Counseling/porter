@@ -276,6 +276,14 @@ async def auth_middleware(request: Request, call_next):
             raise Unauthorized("missing or invalid bearer token")
         request.state.auth = resolved
     except PorterError as exc:
+        if (
+            request.url.path == "/owner/login"
+            and "text/html" in request.headers.get("accept", "")
+            and isinstance(exc, RateLimited)
+        ):
+            from .owner_login import login_language, render_login
+
+            return render_login(login_language(request), error="rate", status_code=429)
         return JSONResponse(
             status_code=exc.status_code,
             content=ErrorOut(error={"code": exc.code, "message": exc.message}).model_dump(),
