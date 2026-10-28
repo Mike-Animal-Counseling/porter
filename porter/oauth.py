@@ -11,6 +11,7 @@ Design decisions (documented, production-grade):
 - Signing key: PORTER_JWT_SECRET if set, else a per-process random key with a
   loud warning (tokens do not survive restarts). Never hardcoded.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -19,7 +20,7 @@ import logging
 import secrets
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import jwt
@@ -55,7 +56,7 @@ BASE_SCOPES: dict[str, tuple[str, str]] = {
     ),
     "memory.write": (
         "写入记忆",
-        "允许提交新记忆。写入先进入「待确认队列」，经你批准后才会生效。",
+        "允许提交新记忆。低风险内容可自动生效；敏感、冲突或低置信度内容须经你确认。严格模式下所有写入均须确认。",
     ),
     "memory.admin": (
         "管理记忆",
@@ -74,9 +75,7 @@ BASE_SCOPES: dict[str, tuple[str, str]] = {
 ALL_KNOWN_SCOPES = list(BASE_SCOPES)  # + memory.read.<tag> (dynamic)
 
 
-def describe_scope(
-    scope: str, custom_tags: dict[str, str] | None = None
-) -> tuple[str, str] | None:
+def describe_scope(scope: str, custom_tags: dict[str, str] | None = None) -> tuple[str, str] | None:
     """(label, explanation) in Chinese, or None if unknown.
 
     custom_tags: {tag: label} from the store — makes memory.read.<custom>
@@ -85,7 +84,7 @@ def describe_scope(
     if scope in BASE_SCOPES:
         return BASE_SCOPES[scope]
     if scope.startswith("memory.read."):
-        tag = scope[len("memory.read."):]
+        tag = scope[len("memory.read.") :]
         cn = PRESET_SCOPE_TAGS.get(tag) or (custom_tags or {}).get(tag)
         if cn:
             return (
@@ -95,9 +94,7 @@ def describe_scope(
     return None
 
 
-def validate_scopes(
-    scopes: list[str], custom_tags: dict[str, str] | None = None
-) -> None:
+def validate_scopes(scopes: list[str], custom_tags: dict[str, str] | None = None) -> None:
     """Raise InvalidScope (400, PRD §11) on any unknown scope."""
     for s in scopes:
         if describe_scope(s, custom_tags) is None:
@@ -214,14 +211,12 @@ def jwt_signing_key() -> bytes:
     return _jwt_key
 
 
-def issue_access_token(
-    *, jti: UUID, client_pk: UUID, client_id: str, scopes: list[str]
-) -> str:
+def issue_access_token(*, jti: UUID, client_pk: UUID, client_id: str, scopes: list[str]) -> str:
     now = int(time.time())
     payload = {
         "jti": str(jti),
-        "sub": str(client_pk),       # clients.id
-        "cid": client_id,           # public client_id string
+        "sub": str(client_pk),  # clients.id
+        "cid": client_id,  # public client_id string
         "scopes": sorted(scopes),
         "iat": now,
         "exp": now + settings.access_token_ttl_seconds,
@@ -263,15 +258,13 @@ async def mint_share_token(
             raise InvalidScope(f"invalid share tag: {tag!r}")
         seen.add(tag)
     scopes = [f"memory.read.{t}" for t in tags]  # the ONLY scopes a share ever gets
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=expires_in_hours)
-    share = await store.create_share(
-        name=name, scopes=scopes, expires_at=expires_at
-    )
+    expires_at = datetime.now(UTC) + timedelta(hours=expires_in_hours)
+    share = await store.create_share(name=name, scopes=scopes, expires_at=expires_at)
     now = int(time.time())
     payload = {
         "jti": str(share.id),
-        "sub": "share",                    # marks share tokens (not a clients.id UUID)
-        "cid": f"share:{share.id}",        # public identity, used for rate-limit buckets
+        "sub": "share",  # marks share tokens (not a clients.id UUID)
+        "cid": f"share:{share.id}",  # public identity, used for rate-limit buckets
         "scopes": sorted(scopes),
         "iat": now,
         "exp": int(expires_at.timestamp()),
@@ -289,9 +282,7 @@ class TokenPair:
     scope: str  # space-separated
 
 
-async def _authenticate_client(
-    store: OAuthStore, client_id: str, client_secret: str
-):
+async def _authenticate_client(store: OAuthStore, client_id: str, client_secret: str):
     """Return the ClientRecord or raise InvalidGrant (uniform, no enumeration)."""
     client = await store.get_client_by_client_id(client_id)
     # Always run one argon2 verify so response timing does not reveal whether
@@ -306,7 +297,7 @@ async def _authenticate_client(
 async def _mint_pair(
     store: OAuthStore, client, scopes: list[str], refresh_of: UUID | None = None
 ) -> TokenPair:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     access_jti = uuid4()
     refresh_jti = uuid4()
     refresh_value = new_refresh_token()
@@ -317,22 +308,32 @@ async def _mint_pair(
         jti=access_jti, client_id=client.id, scopes=scopes, expires_at=access_exp
     )
     await store.create_token(
-        jti=refresh_jti, client_id=client.id, scopes=scopes,
-        expires_at=refresh_exp, token_hash=sha256_hex(refresh_value),
+        jti=refresh_jti,
+        client_id=client.id,
+        scopes=scopes,
+        expires_at=refresh_exp,
+        token_hash=sha256_hex(refresh_value),
         refresh_of=refresh_of,
     )
     access = issue_access_token(
         jti=access_jti, client_pk=client.id, client_id=client.client_id, scopes=scopes
     )
     return TokenPair(
-        access_token=access, refresh_token=refresh_value,
-        expires_in=settings.access_token_ttl_seconds, scope=" ".join(sorted(scopes)),
+        access_token=access,
+        refresh_token=refresh_value,
+        expires_in=settings.access_token_ttl_seconds,
+        scope=" ".join(sorted(scopes)),
     )
 
 
 async def exchange_code(
-    store: OAuthStore, audit, *, code: str, redirect_uri: str,
-    client_id: str, client_secret: str,
+    store: OAuthStore,
+    audit,
+    *,
+    code: str,
+    redirect_uri: str,
+    client_id: str,
+    client_secret: str,
 ) -> TokenPair:
     """authorization_code grant: one-time code -> token pair."""
     client = await _authenticate_client(store, client_id, client_secret)
@@ -345,22 +346,28 @@ async def exchange_code(
         raise InvalidGrant("redirect_uri mismatch")
     await store.create_grant(client_id=client.id, scopes=rec.scopes)
     await audit(
-        action="grant", client_id=client.id, scopes_used=rec.scopes,
+        action="grant",
+        client_id=client.id,
+        scopes_used=rec.scopes,
         meta={"via": "authorization_code"},
     )
     return await _mint_pair(store, client, rec.scopes)
 
 
 async def refresh_token_grant(
-    store: OAuthStore, audit, *, refresh_token: str,
-    client_id: str, client_secret: str,
+    store: OAuthStore,
+    audit,
+    *,
+    refresh_token: str,
+    client_id: str,
+    client_secret: str,
 ) -> TokenPair:
     """refresh_token grant with rotation + reuse detection (T2, PRD §10.4)."""
     client = await _authenticate_client(store, client_id, client_secret)
     row = await store.get_token_by_refresh_hash(sha256_hex(refresh_token))
     if row is None or row.client_id != client.id:
         raise InvalidGrant("invalid refresh token")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if row.revoked:
         successor = await store.get_refresh_successor(row.jti)
@@ -372,21 +379,21 @@ async def refresh_token_grant(
                 # holds the fresh pair from its successful rotation.
                 # Audited anyway: a burst of these is a theft signal (T2).
                 await audit(
-                    action="security", client_id=client.id, scopes_used=row.scopes,
-                    meta={"reason": "refresh_token_reuse_within_grace",
-                          "jti": str(row.jti)},
+                    action="security",
+                    client_id=client.id,
+                    scopes_used=row.scopes,
+                    meta={"reason": "refresh_token_reuse_within_grace", "jti": str(row.jti)},
                 )
                 raise InvalidGrant("refresh token already rotated")
         # Real reuse: treat as theft -> revoke EVERYTHING for this client (T2).
         n = await store.revoke_all_for_client(client.id)
         await audit(
-            action="security", client_id=client.id, scopes_used=row.scopes,
-            meta={"reason": "refresh_token_reuse", "jti": str(row.jti),
-                  "tokens_revoked": n},
+            action="security",
+            client_id=client.id,
+            scopes_used=row.scopes,
+            meta={"reason": "refresh_token_reuse", "jti": str(row.jti), "tokens_revoked": n},
         )
-        raise TokenRevoked(
-            "refresh token reuse detected: all tokens for this client revoked"
-        )
+        raise TokenRevoked("refresh token reuse detected: all tokens for this client revoked")
 
     if row.expires_at <= now:
         raise InvalidGrant("refresh token expired")
@@ -394,15 +401,23 @@ async def refresh_token_grant(
     # Rotation: kill the old refresh token, mint a fresh pair chained to it.
     await store.revoke_token(row.jti)
     await audit(
-        action="refresh", client_id=client.id, scopes_used=row.scopes,
+        action="refresh",
+        client_id=client.id,
+        scopes_used=row.scopes,
         meta={"rotated_jti": str(row.jti)},
     )
     return await _mint_pair(store, client, row.scopes, refresh_of=row.jti)
 
 
 async def revoke_token_value(
-    store: OAuthStore, audit, invalidate_cache, *, token: str,
-    client_id: str, client_secret: str, revoke_all: bool = False,
+    store: OAuthStore,
+    audit,
+    invalidate_cache,
+    *,
+    token: str,
+    client_id: str,
+    client_secret: str,
+    revoke_all: bool = False,
 ) -> bool:
     """Revoke one token (access JWT or refresh opaque) or all for the client.
 
@@ -413,7 +428,9 @@ async def revoke_token_value(
         n = await store.revoke_all_for_client(client.id)
         invalidate_cache()
         await audit(
-            action="revoke", client_id=client.id, scopes_used=[],
+            action="revoke",
+            client_id=client.id,
+            scopes_used=[],
             meta={"all": True, "tokens_revoked": n},
         )
         return True
@@ -423,7 +440,9 @@ async def revoke_token_value(
     # propagate, not silently fall through to the refresh-token attempt.
     try:
         claims = jwt.decode(
-            token, jwt_signing_key(), algorithms=["HS256"],
+            token,
+            jwt_signing_key(),
+            algorithms=["HS256"],
             options={"verify_exp": False},
         )
         jti = UUID(claims["jti"])
@@ -435,8 +454,12 @@ async def revoke_token_value(
         if row is not None and row.client_id == client.id and not row.revoked:
             await store.revoke_token(jti)
             invalidate_cache(str(jti))  # cache is keyed by str(jti)
-            await audit(action="revoke", client_id=client.id,
-                        scopes_used=row.scopes, meta={"jti": str(jti), "kind": "access"})
+            await audit(
+                action="revoke",
+                client_id=client.id,
+                scopes_used=row.scopes,
+                meta={"jti": str(jti), "kind": "access"},
+            )
             return True
         return False
 
@@ -444,8 +467,12 @@ async def revoke_token_value(
     row = await store.get_token_by_refresh_hash(sha256_hex(token))
     if row is not None and row.client_id == client.id and not row.revoked:
         await store.revoke_token(row.jti)
-        await audit(action="revoke", client_id=client.id,
-                    scopes_used=row.scopes, meta={"jti": str(row.jti), "kind": "refresh"})
+        await audit(
+            action="revoke",
+            client_id=client.id,
+            scopes_used=row.scopes,
+            meta={"jti": str(row.jti), "kind": "refresh"},
+        )
         return True
     return False
 
@@ -470,8 +497,13 @@ button{flex:1;padding:12px;border-radius:8px;font-size:16px;cursor:pointer;borde
 
 
 def render_consent_screen(
-    *, client_name: str, scopes: list[str], client_id: str,
-    redirect_uri: str, state: str, requested: list[str],
+    *,
+    client_name: str,
+    scopes: list[str],
+    client_id: str,
+    redirect_uri: str,
+    state: str,
+    requested: list[str],
     custom_tags: dict[str, str] | None = None,
 ) -> str:
     """Consent screen (PRD §10.2): per-scope Chinese explanation + checkboxes."""

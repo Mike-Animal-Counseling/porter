@@ -3,24 +3,24 @@
 Security model (read before touching):
 - Mounted at /panel. The auth middleware treats /panel as a public-path
   prefix (no bearer token required) — see auth.PUBLIC_PATH_PREFIXES.
-- Every route carries the _panel_owner dependency: the direct client IP must
-  be localhost (127.0.0.1 / ::1). main.py binds 127.0.0.1 by default, so this
-  is defense-in-depth for the case the port is ever exposed. Proxy headers
-  (X-Forwarded-For etc.) are NEVER trusted — only the TCP peer counts.
-- CSRF: _panel_owner also rejects requests whose Origin/Referer is not
-  localhost (a malicious site could otherwise forge POSTs through the
-  victim's browser, which satisfies the IP gate automatically).
+- Every route carries the panel_owner dependency. Native loopback IPs on
+  a loopback hostname are trusted; container peers and custom domains need
+  a signed owner session. An outer host allowlist rejects unknown domains.
+  The bundled server disables proxy headers; they cannot grant ownership.
+- CSRF: panel_owner also requires Origin/Referer to match the request's
+  origin (or the explicitly configured public origin for TLS termination).
 - The panel IS the owner interface: it implicitly holds memory.admin and
   mirrors the same repository/store calls + audit writes as the REST
   endpoints (each mutating handler notes which endpoint it mirrors). There is
   no separate unauthenticated data path — no backdoors.
 - i18n: all user-facing panel strings go through porter.i18n.t(key, lang).
-  The language preference is persisted via i18n.get_lang/set_lang (Chinese
+  The language preference is persisted via i18n.get_lang/set_lang (English
   default). API error strings are intentionally NOT translated.
 - XSS: every interpolated value goes through esc(). No inline event
   handlers with interpolated data — destructive confirms use hx-confirm,
   dynamic behavior lives in /panel/static/js/panel.js.
 """
+
 from __future__ import annotations
 
 import csv
@@ -30,7 +30,7 @@ import json
 import logging
 import os
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from urllib.parse import quote
 from uuid import UUID
 
@@ -46,7 +46,7 @@ from fastapi.responses import (
 from . import oauth as oauth_logic
 from . import snapshots as snapshots_logic
 from .config import settings
-from .errors import InvalidInput, NotFound, Unauthorized
+from .errors import InvalidInput, NotFound
 from .exporter import build_export_payload
 from .i18n import (
     ACTION_LABEL,
@@ -56,7 +56,7 @@ from .i18n import (
     set_lang,
     t,
 )
-from .origin import LOCAL_HOSTS, check_same_origin
+from .origin import OWNER_COOKIE, owner_only
 from .repositories import DUPLICATE_THRESHOLD
 from .schemas import MAX_CIPHERTEXT_LEN, MAX_CONTENT_LEN, _validate_tags
 
@@ -85,11 +85,8 @@ def _hx_toast(msg: str, type_: str = "success") -> Response:
 
 
 async def panel_owner(request: Request) -> None:
-    """Localhost-only gate + CSRF guard (see porter/origin.py)."""
-    host = request.client.host if request.client else ""
-    if host not in LOCAL_HOSTS:
-        raise Unauthorized("Porter 面板仅限本机访问 (localhost only)")
-    check_same_origin(request)
+    """Owner access + CSRF guard (see porter/origin.py)."""
+    await owner_only(request)
 
 
 def _deps(request: Request):
@@ -133,8 +130,8 @@ def _rel(ts, lang: str) -> str:
     if ts is None:
         return t("sync_never", lang)
     if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=timezone.utc)
-    s = (datetime.now(timezone.utc) - ts).total_seconds()
+        ts = ts.replace(tzinfo=UTC)
+    s = (datetime.now(UTC) - ts).total_seconds()
     if s < 60:
         return t("sync_last_seen_now", lang)
     if s < 3600:
@@ -195,6 +192,7 @@ _NAV = [
     ("memories", "nav_memories", "database", "/panel/memories"),
     ("inbox", "nav_inbox", "inbox", "/panel/inbox"),
     ("sync", "nav_sync", "refresh", "/panel/sync"),
+    ("handoff", "nav_handoff", "share", "/panel/handoff"),
     ("clients", "nav_clients", "key", "/panel/clients"),
     ("shares", "nav_shares", "share", "/panel/shares"),
     ("audit", "nav_audit", "file", "/panel/audit"),
@@ -203,8 +201,9 @@ _NAV = [
 ]
 
 
-async def _layout(request: Request, active: str, title: str, body: str,
-                  lang: str, *, sub: str = "") -> str:
+async def _layout(
+    request: Request, active: str, title: str, body: str, lang: str, *, sub: str = ""
+) -> str:
     from . import __version__
 
     repo, _store, _snap = _deps(request)
@@ -216,13 +215,13 @@ async def _layout(request: Request, active: str, title: str, body: str,
     try:
         cursors = await repo.list_cursors()
         _changes, head = await repo.get_changes(0, 1)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         lagging = False
         fresh = False
         for c in cursors:
             ls = c.get("last_seen")
             if ls is not None and ls.tzinfo is None:
-                ls = ls.replace(tzinfo=timezone.utc)
+                ls = ls.replace(tzinfo=UTC)
             if ls is not None and (now - ls).total_seconds() < 300:
                 fresh = True
             if head - c.get("cursor", 0) > 0:
@@ -243,16 +242,23 @@ async def _layout(request: Request, active: str, title: str, body: str,
             extra = sync_dot
         cls = "nav__item nav__item--active" if key == active else "nav__item"
         items.append(
-            f'<a href="{url}" class="{cls}">{icon(ic)}<span>{esc(t(label_key, lang))}</span>{extra}</a>'
+            f'<a href="{url}" class="{cls}" aria-label="{esc(t(label_key, lang))}" '
+            f"{'aria-current=page' if key == active else ''}>"
+            f"{icon(ic)}<span>{esc(t(label_key, lang))}</span>{extra}</a>"
         )
     # Settings gets a separated group label.
     nav_html = "".join(items[:-1])
     nav_html += (
-        f'<div class="nav__group-label">{esc(t("nav_group_system", lang))}</div>'
-        + items[-1]
+        f'<div class="nav__group-label">{esc(t("nav_group_system", lang))}</div>' + items[-1]
     )
     html_lang = "zh-CN" if lang == "zh" else "en"
     sub_html = f'<div class="page-head__meta">{sub}</div>' if sub else ""
+    sign_out = (
+        f'<form method="post" action="/owner/logout"><button class="btn btn--secondary" '
+        f'type="submit">{esc(t("btn_sign_out", lang))}</button></form>'
+        if request.cookies.get(OWNER_COOKIE)
+        else ""
+    )
     return f"""<!DOCTYPE html>
 <html lang="{html_lang}">
 <head>
@@ -265,16 +271,17 @@ async def _layout(request: Request, active: str, title: str, body: str,
 <script src="/panel/static/htmx.min.js" defer></script>
 <script src="/panel/static/js/panel.js" defer></script>
 </head>
-<body>
+<body data-request-failed-msg="{esc(t("request_failed", lang))}" data-copy-failed-msg="{esc(t("copy_failed", lang))}">
+<a class="skip-link" href="#main-content">{esc(t("skip_to_content", lang))}</a>
 <div class="shell">
 <aside class="sidebar" id="sidebar">
   <div class="brand"><div class="brand__name">Porter</div><div class="brand__sub">memory layer</div></div>
-  <nav class="nav">{nav_html}</nav>
-  <div class="sidebar__foot"><span class="version-pill">v{esc(__version__)}</span></div>
+  <nav class="nav" aria-label="{esc(t("main_navigation", lang))}">{nav_html}</nav>
+  <div class="sidebar__foot"><span class="version-pill">v{esc(__version__)}</span>{sign_out}</div>
 </aside>
 <div class="main">
   <header class="topbar">
-    <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="menu">{icon("menu")}</button>
+    <button class="icon-btn sidebar-toggle" id="sidebar-toggle" aria-label="{esc(t("main_navigation", lang))}" aria-controls="sidebar" aria-expanded="false">{icon("menu")}</button>
     <div class="topbar__crumb">Porter <span class="muted">/</span> <strong>{esc(title)}</strong></div>
     <div class="topbar__spacer"></div>
     <form class="topbar__search" method="get" action="/panel/memories" role="search">
@@ -287,7 +294,7 @@ async def _layout(request: Request, active: str, title: str, body: str,
     </div>
     <button class="icon-btn" id="theme-toggle" aria-label="{esc(t("header_theme", lang))}" aria-pressed="false">{icon("moon")}</button>
   </header>
-  <main class="page">
+  <main class="page" id="main-content" tabindex="-1">
     <div class="page-head"><h1>{esc(title)}</h1>{sub_html}</div>
     {body}
   </main>
@@ -295,13 +302,13 @@ async def _layout(request: Request, active: str, title: str, body: str,
 </div>
 </div>
 <div class="drawer-overlay" id="drawer-overlay"></div>
-<aside class="drawer" id="drawer" aria-label="{esc(t("drawer_close", lang))}">
-  <div class="drawer__head"><strong>{esc(title)}</strong>
+<aside class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" aria-hidden="true" tabindex="-1" inert>
+  <div class="drawer__head"><strong id="drawer-title">{esc(t("title_memory_detail", lang))}</strong>
     <button class="icon-btn" data-close-drawer aria-label="{esc(t("drawer_close", lang))}">{icon("x")}</button>
   </div>
   <div class="drawer__body" id="drawer-body"></div>
 </aside>
-<div id="toasts" aria-live="polite"></div>
+<div id="toasts" aria-live="polite" aria-atomic="true"></div>
 </body>
 </html>"""
 
@@ -331,9 +338,7 @@ def _action_label(a: str, lang: str) -> str:
 
 
 def _status_badge(status: str, lang: str) -> str:
-    kind = {"active": "success", "pending": "warning", "archived": "neutral"}.get(
-        status, "neutral"
-    )
+    kind = {"active": "success", "pending": "warning", "archived": "neutral"}.get(status, "neutral")
     return (
         f'<span class="badge badge--{kind}"><span class="badge__dot"></span>'
         f"{esc(_status_label(status, lang))}</span>"
@@ -344,7 +349,8 @@ def _copy_btn(value: str, lang: str) -> str:
     return (
         f'<button class="copy-btn" data-copy="{esc(value)}" '
         f'data-copied-msg="{esc(t("toast_copied", lang))}" '
-        f'title="{esc(t("toast_copied", lang))}">{icon("copy", 13)}</button>'
+        f'type="button" title="{esc(t("copy_text", lang))}" '
+        f'aria-label="{esc(t("copy_text", lang))}">{icon("copy", 13)}</button>'
     )
 
 
@@ -410,8 +416,15 @@ async def memories_page(
         for tp in TYPE_LABEL[lang]
     )
     rows_html = await _mem_rows_html(
-        repo, lang, q=q, mode=mode, tag=tag, type=type, client=client,
-        status=status, domain=domain,
+        repo,
+        lang,
+        q=q,
+        mode=mode,
+        tag=tag,
+        type=type,
+        client=client,
+        status=status,
+        domain=domain,
     )
     status_opts = "".join(
         f"<option value='{s}' {'selected' if s == status else ''}>{esc(_status_label(s, lang))}</option>"
@@ -421,25 +434,36 @@ async def memories_page(
     # Only id + short label + tags are embedded; labels are drawn with
     # canvas fillText (never innerHTML). Clicks reuse the HTMX drawer.
     graph_mems = await repo.list(
-        status=status or None, tags=(tag,) if tag else (),
-        type=(domain or type) or None, limit=60, query=q or None,
+        status=status or None,
+        tags=(tag,) if tag else (),
+        type=(domain or type) or None,
+        limit=60,
+        query=q or None,
     )
     nodes = [
-        {"id": str(m.id), "label": m.content[:24], "tags": list(m.scope_tags or []),
-         "confidence": m.confidence}
+        {
+            "id": str(m.id),
+            "label": m.content[:24],
+            "tags": list(m.scope_tags or []),
+            "confidence": m.confidence,
+        }
         for m in graph_mems
     ]
     nodes_json = esc(json.dumps(nodes, ensure_ascii=False))
-    graph_empty = "" if nodes else (
-        f"<div class='empty'><div class='empty__desc'>"
-        f"{esc(t('constel_empty', lang))}</div></div>"
+    graph_empty = (
+        ""
+        if nodes
+        else (
+            f"<div class='empty'><div class='empty__desc'>"
+            f"{esc(t('constel_empty', lang))}</div></div>"
+        )
     )
     body = f"""
 <div class="row" style="margin-bottom:16px;justify-content:space-between">
 <div class="seg" role="group" aria-label="{esc(t("domain_toggle_label", lang))}">
-<button type="button" data-domain-filter="" aria-pressed="{str(domain == '').lower()}">{esc(t("domain_all", lang))}</button>
-<button type="button" data-domain-filter="personal" aria-pressed="{str(domain == 'personal').lower()}">{esc(t("domain_personal", lang))}</button>
-<button type="button" data-domain-filter="project" aria-pressed="{str(domain == 'project').lower()}">{esc(t("domain_project", lang))}</button>
+<button type="button" data-domain-filter="" aria-pressed="{str(domain == "").lower()}">{esc(t("domain_all", lang))}</button>
+<button type="button" data-domain-filter="personal" aria-pressed="{str(domain == "personal").lower()}">{esc(t("domain_personal", lang))}</button>
+<button type="button" data-domain-filter="project" aria-pressed="{str(domain == "project").lower()}">{esc(t("domain_project", lang))}</button>
 </div>
 <div class="seg view-toggle" role="group" aria-label="{esc(t("view_toggle_label", lang))}">
 <button type="button" data-mem-view="table" aria-pressed="true">{esc(t("view_table", lang))}</button>
@@ -449,14 +473,14 @@ async def memories_page(
 <div class="card">
 <form method="get" action="/panel/memories" id="mem-filter-form">
 <div class="toolbar" id="mem-filters">
-<input type="search" name="q" value="{esc(q)}" placeholder="{esc(t("search_placeholder", lang))}"
+<input type="search" name="q" value="{esc(q)}" aria-label="{esc(t("search_placeholder", lang))}" placeholder="{esc(t("search_placeholder", lang))}"
   hx-get="/panel/memories/rows" hx-trigger="input changed delay:300ms"
   hx-target="#mem-rows" hx-swap="innerHTML" hx-include="#mem-filter-form"
   hx-indicator="#mem-skel">
 <select name="mode" hx-get="/panel/memories/rows" hx-trigger="change"
   hx-target="#mem-rows" hx-swap="innerHTML" hx-include="#mem-filter-form" aria-label="{esc(t("search_text", lang))}">
-<option value="text" {'selected' if mode != 'semantic' else ''}>{esc(t("search_text", lang))}</option>
-<option value="semantic" {'selected' if mode == 'semantic' else ''}>{esc(t("search_semantic", lang))}</option>
+<option value="text" {"selected" if mode != "semantic" else ""}>{esc(t("search_text", lang))}</option>
+<option value="semantic" {"selected" if mode == "semantic" else ""}>{esc(t("search_semantic", lang))}</option>
 </select>
 <select name="tag" hx-get="/panel/memories/rows" hx-trigger="change"
   hx-target="#mem-rows" hx-swap="innerHTML" hx-include="#mem-filter-form" aria-label="{esc(t("opt_all_tags", lang))}">
@@ -485,13 +509,12 @@ async def memories_page(
 {graph_empty}
 <div class="constel-hint">{esc(t("constel_hint", lang))}</div>
 </div></div>"""
-    return HTMLResponse(
-        await _layout(request, "memories", t("title_memories", lang), body, lang)
-    )
+    return HTMLResponse(await _layout(request, "memories", t("title_memories", lang), body, lang))
 
 
-async def _mem_rows_html(repo, lang: str, *, q, mode, tag, type, client, status,
-                      domain: str = "") -> str:
+async def _mem_rows_html(
+    repo, lang: str, *, q, mode, tag, type, client, status, domain: str = ""
+) -> str:
     # Domain toggle (SPECS §7.1.1): filter by DECLARED domain. The ML-resolved
     # domain is a triage-time signal, not a stored field — the toggle filters
     # on the stored type, which harnesses set explicitly for personal/project.
@@ -500,8 +523,11 @@ async def _mem_rows_html(repo, lang: str, *, q, mode, tag, type, client, status,
     if mode == "semantic" and q.strip():
         tags = [tag] if tag else []
         scored = await repo.search(
-            query=q.strip(), top_k=50, tags=tags,
-            types=[type] if type else (), active_only=True,
+            query=q.strip(),
+            top_k=50,
+            tags=tags,
+            types=[type] if type else (),
+            active_only=True,
         )
         recs = [s.record for s in scored]
         if client:
@@ -538,8 +564,15 @@ async def memories_rows(
     repo, _store, _snap = _deps(request)
     return HTMLResponse(
         await _mem_rows_html(
-            repo, lang, q=q, mode=mode, tag=tag, type=type, client=client,
-            status=status, domain=domain,
+            repo,
+            lang,
+            q=q,
+            mode=mode,
+            tag=tag,
+            type=type,
+            client=client,
+            status=status,
+            domain=domain,
         )
     )
 
@@ -553,7 +586,8 @@ def _memory_detail_body(m, lang: str) -> str:
     )
     sup = (
         f"<a href='/panel/memories/{m.superseded_by}'>{esc(t('link_new_version', lang))}</a>"
-        if m.superseded_by else "—"
+        if m.superseded_by
+        else "—"
     )
     approve_btn = ""
     if m.status == "pending":
@@ -566,7 +600,8 @@ def _memory_detail_body(m, lang: str) -> str:
     and_approve_box = (
         f"<label class='f'><input type='checkbox' name='and_approve' value='1' checked> "
         f"{esc(t('f_and_approve', lang))}</label>"
-        if m.status == "pending" else ""
+        if m.status == "pending"
+        else ""
     )
     type_opts = "".join(
         f"<option value='{tp}' {'selected' if tp == m.type else ''}>{esc(_type_label(tp, lang))}</option>"
@@ -602,16 +637,16 @@ def _memory_detail_body(m, lang: str) -> str:
 <h2 style="font-size:16px;margin:0 0 6px">{esc(t("h_edit", lang))}</h2>
 <div class="small muted" style="margin-bottom:8px">{esc(t("edit_sub", lang))}</div>
 <form method="post" action="/panel/memories/{m.id}/edit">
-<label class="f">{esc(t("f_content", lang))}</label>
-<textarea name="content">{esc(m.content)}</textarea>
+<label class="f" for="memory-{m.id}-content">{esc(t("f_content", lang))}</label>
+<textarea name="content" id="memory-{m.id}-content">{esc(m.content)}</textarea>
 <div class="row">
-<div style="flex:1;min-width:160px"><label class="f">{esc(t("f_type", lang))}</label>
-<select name="type">{type_opts}</select></div>
-<div style="flex:1;min-width:160px"><label class="f">{esc(t("f_confidence", lang))}</label>
-<input type="number" name="confidence" min="0" max="1" step="0.05" value="{m.confidence}"></div>
+<div style="flex:1;min-width:160px"><label class="f" for="memory-{m.id}-type">{esc(t("f_type", lang))}</label>
+<select name="type" id="memory-{m.id}-type">{type_opts}</select></div>
+<div style="flex:1;min-width:160px"><label class="f" for="memory-{m.id}-confidence">{esc(t("f_confidence", lang))}</label>
+<input type="number" name="confidence" id="memory-{m.id}-confidence" min="0" max="1" step="0.05" value="{m.confidence}"></div>
 </div>
-<label class="f">{esc(t("f_tags", lang))}</label>
-<input type="text" name="scope_tags" value="{esc(",".join(m.scope_tags))}">
+<label class="f" for="memory-{m.id}-tags">{esc(t("f_tags", lang))}</label>
+<input type="text" name="scope_tags" id="memory-{m.id}-tags" value="{esc(",".join(m.scope_tags))}">
 {and_approve_box}
 <div class="row mt"><button class="btn btn--primary" type="submit">{esc(t("btn_save", lang))}</button>
 <a class="btn btn--secondary" href="/panel/memories">{esc(t("btn_back", lang))}</a></div>
@@ -620,7 +655,9 @@ def _memory_detail_body(m, lang: str) -> str:
 
 @router.get("/memories/{memory_id}", response_class=HTMLResponse)
 async def memory_detail(
-    request: Request, memory_id: UUID, _=Depends(panel_owner),
+    request: Request,
+    memory_id: UUID,
+    _=Depends(panel_owner),
 ):
     lang = get_lang()
     repo, _store, _snap = _deps(request)
@@ -632,8 +669,13 @@ async def memory_detail(
         # HTMX drawer fragment — no layout shell.
         return HTMLResponse(body)
     return HTMLResponse(
-        await _layout(request, "memories", t("title_memory_detail", lang),
-                      f'<div class="card">{body}</div>', lang)
+        await _layout(
+            request,
+            "memories",
+            t("title_memory_detail", lang),
+            f'<div class="card">{body}</div>',
+            lang,
+        )
     )
 
 
@@ -654,22 +696,24 @@ async def memory_new(
     if not content or len(content) > MAX_CONTENT_LEN:
         raise InvalidInput(f"content must be 1..{MAX_CONTENT_LEN} chars")
     try:
-        tags = _validate_tags(
-            [tg.strip() for tg in scope_tags.split(",") if tg.strip()]
-        )
+        tags = _validate_tags([tg.strip() for tg in scope_tags.split(",") if tg.strip()])
     except ValueError as exc:
         raise InvalidInput(str(exc))
     from .triage import create_with_triage
 
     rec, decision = await create_with_triage(
-        repo, content=content, type=type, scope_tags=tags, confidence=1.0,
+        repo,
+        content=content,
+        type=type,
+        scope_tags=tags,
+        confidence=1.0,
         source={"client_id": "owner-panel"},
-        via="panel", scopes_used=["memory.admin"],
+        via="panel",
+        scopes_used=["memory.admin"],
     )
     if decision.action == "auto_merge" and decision.merge_target_id is not None:
         return RedirectResponse(
-            f"/panel/memories/{decision.merge_target_id}"
-            f"?msg={quote(t('msg_saved', lang))}",
+            f"/panel/memories/{decision.merge_target_id}?msg={quote(t('msg_saved', lang))}",
             status_code=302,
         )
     if rec is None:  # defensive: auto_merge without a target id
@@ -686,7 +730,8 @@ async def memory_new(
 
 @router.post("/memories/{memory_id}/edit")
 async def memory_edit(
-    request: Request, memory_id: UUID,
+    request: Request,
+    memory_id: UUID,
     content: str = Form(...),
     type: str = Form(...),
     scope_tags: str = Form(default=""),
@@ -707,27 +752,32 @@ async def memory_edit(
     if not content or len(content) > cap:
         raise InvalidInput(f"content must be 1..{cap} chars")
     try:
-        tags = _validate_tags(
-            [tg.strip() for tg in scope_tags.split(",") if tg.strip()]
-        )
+        tags = _validate_tags([tg.strip() for tg in scope_tags.split(",") if tg.strip()])
     except ValueError as exc:
         raise InvalidInput(str(exc))
     if not (0.0 <= confidence <= 1.0):
         raise InvalidInput("confidence must be 0..1")
     rec = await repo.revise(
-        memory_id, content=content, type=type, scope_tags=tags,
+        memory_id,
+        content=content,
+        type=type,
+        scope_tags=tags,
         confidence=confidence,
     )
     if rec is None:
         raise NotFound(f"memory {memory_id} not found")
     await repo.audit(
-        action="write", memory_ids=[rec.id], scopes_used=["memory.admin"],
+        action="write",
+        memory_ids=[rec.id],
+        scopes_used=["memory.admin"],
         meta={"via": "panel", "revised_from": str(memory_id)},
     )
     if and_approve and rec.status == "pending":
         await repo.approve(rec.id)
         await repo.audit(
-            action="write", memory_ids=[rec.id], scopes_used=["memory.admin"],
+            action="write",
+            memory_ids=[rec.id],
+            scopes_used=["memory.admin"],
             meta={"via": "panel", "transition": "pending->active"},
         )
     return RedirectResponse(
@@ -736,9 +786,7 @@ async def memory_edit(
 
 
 @router.post("/memories/{memory_id}/delete")
-async def memory_delete(
-    request: Request, memory_id: UUID, _=Depends(panel_owner)
-):
+async def memory_delete(request: Request, memory_id: UUID, _=Depends(panel_owner)):
     # Mirrors DELETE /api/v1/memories/{id} (memory.admin) + audit.
     lang = get_lang()
     repo, _store, _snap = _deps(request)
@@ -746,15 +794,15 @@ async def memory_delete(
     if not ok:
         raise NotFound(f"memory {memory_id} not found")
     await repo.audit(
-        action="delete", memory_ids=[memory_id], scopes_used=["memory.admin"],
+        action="delete",
+        memory_ids=[memory_id],
+        scopes_used=["memory.admin"],
         meta={"via": "panel"},
     )
     if _is_hx(request):
         # Drawer context: close the drawer by navigating to the list.
         return Response("", headers={"HX-Redirect": "/panel/memories"})
-    return RedirectResponse(
-        f"/panel/memories?msg={quote(t('msg_deleted', lang))}", status_code=302
-    )
+    return RedirectResponse(f"/panel/memories?msg={quote(t('msg_deleted', lang))}", status_code=302)
 
 
 # ------------------------------------------------------------------ inbox
@@ -768,9 +816,7 @@ def _triage_chips(m, lang: str) -> str:
             label = t(f"triage_{r}", lang)
         except KeyError:
             label = t("triage_unknown", lang)
-        chips.append(
-            f"<span class='chip chip--warn'>{esc(label)}</span>"
-        )
+        chips.append(f"<span class='chip chip--warn'>{esc(label)}</span>")
     return "".join(chips)
 
 
@@ -801,10 +847,11 @@ async def _inbox_list_html(repo, lang: str) -> str:
     cards = []
     for m in pendings:
         dups = []
-        if not getattr(m, "encrypted", False):
+        if not m.encrypted and m.embedding is not None:
             dups = [
-                s for s in await repo.search(
-                    query=m.content[:2000], top_k=5, active_only=True
+                s
+                for s in await repo.find_similar_active(
+                    m.embedding, threshold=DUPLICATE_THRESHOLD, limit=5
                 )
                 if s.score > DUPLICATE_THRESHOLD and s.record.id != m.id
             ][:3]
@@ -860,17 +907,19 @@ async def inbox_approve_all(request: Request, _=Depends(panel_owner)):
             n += 1
             await _wiki_index(request, rec)
     await repo.audit(
-        action="write", memory_ids=[m.id for m in pendings],
+        action="write",
+        memory_ids=[m.id for m in pendings],
         scopes_used=["memory.admin"],
         meta={"via": "panel", "transition": "pending->active", "bulk": True},
     )
     if _is_hx(request):
-        trig = json.dumps({
-            "toast": {"type": "success", "msg": t("msg_approved_all", lang).format(n=n)},
-            "inboxCount": {"n": 0},
-        })
-        return HTMLResponse(await _inbox_list_html(repo, lang),
-                            headers={"HX-Trigger": trig})
+        trig = json.dumps(
+            {
+                "toast": {"type": "success", "msg": t("msg_approved_all", lang).format(n=n)},
+                "inboxCount": {"n": 0},
+            }
+        )
+        return HTMLResponse(await _inbox_list_html(repo, lang), headers={"HX-Trigger": trig})
     return RedirectResponse(
         f"/panel/inbox?msg={quote(t('msg_approved_all', lang).format(n=n))}",
         status_code=302,
@@ -878,9 +927,7 @@ async def inbox_approve_all(request: Request, _=Depends(panel_owner)):
 
 
 @router.post("/inbox/{memory_id}/approve")
-async def inbox_approve(
-    request: Request, memory_id: UUID, _=Depends(panel_owner)
-):
+async def inbox_approve(request: Request, memory_id: UUID, _=Depends(panel_owner)):
     # Mirrors POST /api/v1/memories/{id}/approve (memory.admin) + audit.
     lang = get_lang()
     repo, _store, _snap = _deps(request)
@@ -889,25 +936,25 @@ async def inbox_approve(
         raise NotFound(f"memory {memory_id} not found")
     await _wiki_index(request, rec)
     await repo.audit(
-        action="write", memory_ids=[rec.id], scopes_used=["memory.admin"],
+        action="write",
+        memory_ids=[rec.id],
+        scopes_used=["memory.admin"],
         meta={"via": "panel", "transition": "pending->active"},
     )
     if _is_hx(request):
         remaining = len(await repo.list(status="pending", limit=1000))
-        trig = json.dumps({
-            "toast": {"type": "success", "msg": t("msg_approved", lang)},
-            "inboxCount": {"n": remaining},
-        })
+        trig = json.dumps(
+            {
+                "toast": {"type": "success", "msg": t("msg_approved", lang)},
+                "inboxCount": {"n": remaining},
+            }
+        )
         return Response("", headers={"HX-Trigger": trig})
-    return RedirectResponse(
-        f"/panel/inbox?msg={quote(t('msg_approved', lang))}", status_code=302
-    )
+    return RedirectResponse(f"/panel/inbox?msg={quote(t('msg_approved', lang))}", status_code=302)
 
 
 @router.post("/inbox/{memory_id}/reject")
-async def inbox_reject(
-    request: Request, memory_id: UUID, _=Depends(panel_owner)
-):
+async def inbox_reject(request: Request, memory_id: UUID, _=Depends(panel_owner)):
     lang = get_lang()
     repo, _store, _snap = _deps(request)
     m = await repo.get(memory_id)
@@ -915,19 +962,21 @@ async def inbox_reject(
         raise NotFound(f"pending memory {memory_id} not found")
     await repo.delete(memory_id)
     await repo.audit(
-        action="delete", memory_ids=[memory_id], scopes_used=["memory.admin"],
+        action="delete",
+        memory_ids=[memory_id],
+        scopes_used=["memory.admin"],
         meta={"via": "panel", "reason": "rejected_from_inbox"},
     )
     if _is_hx(request):
         remaining = len(await repo.list(status="pending", limit=1000))
-        trig = json.dumps({
-            "toast": {"type": "info", "msg": t("msg_rejected", lang)},
-            "inboxCount": {"n": remaining},
-        })
+        trig = json.dumps(
+            {
+                "toast": {"type": "info", "msg": t("msg_rejected", lang)},
+                "inboxCount": {"n": remaining},
+            }
+        )
         return Response("", headers={"HX-Trigger": trig})
-    return RedirectResponse(
-        f"/panel/inbox?msg={quote(t('msg_rejected', lang))}", status_code=302
-    )
+    return RedirectResponse(f"/panel/inbox?msg={quote(t('msg_rejected', lang))}", status_code=302)
 
 
 # ------------------------------------------------------------------ clients
@@ -936,7 +985,11 @@ def _scope_list_html(scopes, custom: dict[str, str], lang: str) -> str:
     for s in sorted(scopes):
         desc = oauth_logic.describe_scope(s, custom)
         label = desc[0] if desc else s
-        warn = f' <span class="badge badge--danger">{esc(t("scope_admin_warn", lang))}</span>' if s == "memory.admin" else ""
+        warn = (
+            f' <span class="badge badge--danger">{esc(t("scope_admin_warn", lang))}</span>'
+            if s == "memory.admin"
+            else ""
+        )
         items.append(
             f"<div class='small' style='margin-bottom:4px'><code>{esc(s)}</code> <span class='muted'>— {esc(label)}</span>{warn}</div>"
         )
@@ -976,9 +1029,19 @@ async def clients_page(request: Request, _=Depends(panel_owner)):
     body = f"""
 <div class="row row--between" style="margin-bottom:16px">
 <div class="muted small">{esc(t("clients_summary", lang).format(n=len(clients)))}</div>
-<a class="btn btn--primary btn--sm" href="/panel/clients/new">{icon("plus", 14)} {esc(t("btn_new_client", lang))}</a></div>
-{"".join(cards) if cards else _empty("key", t("clients_empty_title", lang), t("clients_empty", lang),
-  f'<a class="btn btn--primary" href="/panel/clients/new">{esc(t("btn_new_client", lang))}</a>')}"""
+<a class="btn btn--primary btn--sm" href="/panel/clients/new">{icon("plus", 14)} {
+        esc(t("btn_new_client", lang))
+    }</a></div>
+{
+        "".join(cards)
+        if cards
+        else _empty(
+            "key",
+            t("clients_empty_title", lang),
+            t("clients_empty", lang),
+            f'<a class="btn btn--primary" href="/panel/clients/new">{esc(t("btn_new_client", lang))}</a>',
+        )
+    }"""
     return HTMLResponse(await _layout(request, "clients", t("title_clients", lang), body, lang))
 
 
@@ -989,10 +1052,10 @@ async def client_new_form(request: Request, _=Depends(panel_owner)):
 <div class="card page--narrow"><h2>{esc(t("title_client_new", lang))}</h2>
 <div class="card__sub">{esc(t("client_new_sub", lang))}</div>
 <form method="post" action="/panel/clients/new">
-<label class="f">{esc(t("f_name", lang))}</label>
-<input type="text" name="name" maxlength="100" required>
-<label class="f">{esc(t("f_redirect_uris", lang))}</label>
-<textarea name="redirect_uris" style="min-height:70px" placeholder="http://localhost:9999/callback"></textarea>
+<label class="f" for="client-name">{esc(t("f_name", lang))}</label>
+<input type="text" name="name" id="client-name" maxlength="100" required>
+<label class="f" for="client-redirect-uris">{esc(t("f_redirect_uris", lang))}</label>
+<textarea name="redirect_uris" id="client-redirect-uris" style="min-height:70px" placeholder="http://localhost:9999/callback"></textarea>
 <div class="row mt"><button class="btn btn--primary" type="submit">{esc(t("btn_register", lang))}</button>
 <a class="btn btn--secondary" href="/panel/clients">{esc(t("btn_cancel", lang))}</a></div>
 </form></div>"""
@@ -1029,17 +1092,17 @@ async def client_new(
 <div class="meta-grid" style="margin-bottom:4px"><dt>{esc(t("row_name", lang))}</dt><dd>{esc(rec.name)}</dd></div>
 <div class="meta-grid"><dt>client_id</dt><dd><code class="small">{esc(rec.client_id)}</code> {_copy_btn(rec.client_id, lang)}</dd></div>
 </dl>
-<label class="f">client_secret</label>
+<div class="field-label">client_secret</div>
 <pre class="secret"><span>{esc(secret)}</span>{_copy_btn(secret, lang)}</pre>
 <div class="row mt"><a class="btn btn--primary" href="/panel/clients">{esc(t("btn_done", lang))}</a></div>
 </div>"""
-    return HTMLResponse(await _layout(request, "clients", t("title_client_new_done", lang), body, lang))
+    return HTMLResponse(
+        await _layout(request, "clients", t("title_client_new_done", lang), body, lang)
+    )
 
 
 @router.post("/clients/{client_pk}/revoke")
-async def client_revoke(
-    request: Request, client_pk: UUID, _=Depends(panel_owner)
-):
+async def client_revoke(request: Request, client_pk: UUID, _=Depends(panel_owner)):
     # Mirrors POST /oauth/revoke with revoke_all=true (T2): same store call,
     # same revocation-cache invalidation, same audit write.
     lang = get_lang()
@@ -1050,7 +1113,9 @@ async def client_revoke(
     n = await store.revoke_all_for_client(client_pk)
     request.app.state.revocation_cache.invalidate()
     await repo.audit(
-        action="revoke", client_id=client_pk, scopes_used=[],
+        action="revoke",
+        client_id=client_pk,
+        scopes_used=[],
         meta={"via": "panel", "all": True, "tokens_revoked": n},
     )
     msg = t("msg_revoked", lang).format(name=c.name, n=n)
@@ -1062,9 +1127,7 @@ async def client_revoke(
 # ------------------------------------------------------------------ shares (P2, memory.share)
 def _share_tags(scopes) -> list[str]:
     """Tags behind a share's scopes (always memory.read.<tag>, nothing else)."""
-    return sorted(
-        s.split(".", 2)[2] for s in (scopes or []) if s.startswith("memory.read.")
-    )
+    return sorted(s.split(".", 2)[2] for s in (scopes or []) if s.startswith("memory.read."))
 
 
 def _share_status_badge(s, now, lang: str) -> str:
@@ -1080,7 +1143,7 @@ async def shares_page(request: Request, _=Depends(panel_owner)):
     lang = get_lang()
     _repo, store, _snap = _deps(request)
     shares = await store.list_shares()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     cards = []
     for s in shares:
         active = not s.revoked and s.expires_at > now
@@ -1089,7 +1152,7 @@ async def shares_page(request: Request, _=Depends(panel_owner)):
             revoke_btn = (
                 f"<button class='btn btn--danger btn--sm' hx-post='/panel/shares/{s.id}/revoke' "
                 f"hx-target='#share-card-{s.id}' hx-swap='outerHTML' "
-                f"hx-confirm=\"{esc(t('confirm_revoke_share', lang))}\">"
+                f'hx-confirm="{esc(t("confirm_revoke_share", lang))}">'
                 f"{esc(t('btn_revoke', lang))}</button>"
             )
         cards.append(f"""
@@ -1104,9 +1167,19 @@ async def shares_page(request: Request, _=Depends(panel_owner)):
     body = f"""
 <div class="row row--between" style="margin-bottom:16px">
 <div class="muted small">{esc(t("shares_sub", lang))}</div>
-<a class="btn btn--primary btn--sm" href="/panel/shares/new">{icon("plus", 14)} {esc(t("btn_new_share", lang))}</a></div>
-{"".join(cards) if cards else _empty("share", t("shares_empty_title", lang), t("shares_empty", lang),
-  f'<a class="btn btn--primary" href="/panel/shares/new">{esc(t("btn_new_share", lang))}</a>')}"""
+<a class="btn btn--primary btn--sm" href="/panel/shares/new">{icon("plus", 14)} {
+        esc(t("btn_new_share", lang))
+    }</a></div>
+{
+        "".join(cards)
+        if cards
+        else _empty(
+            "share",
+            t("shares_empty_title", lang),
+            t("shares_empty", lang),
+            f'<a class="btn btn--primary" href="/panel/shares/new">{esc(t("btn_new_share", lang))}</a>',
+        )
+    }"""
     return HTMLResponse(await _layout(request, "shares", t("title_shares", lang), body, lang))
 
 
@@ -1126,12 +1199,12 @@ async def share_new_form(request: Request, _=Depends(panel_owner)):
 <div class="card page--narrow"><h2>{esc(t("title_share_new", lang))}</h2>
 <div class="card__sub">{esc(t("share_new_sub", lang))}</div>
 <form method="post" action="/panel/shares/new">
-<label class="f">{esc(t("f_share_name", lang))}</label>
-<input type="text" name="name" maxlength="64" required>
-<label class="f">{esc(t("f_share_tags", lang))}</label>
-<div class="checks">{checks}</div>
-<label class="f">{esc(t("f_share_expires", lang))}</label>
-<input type="number" name="expires_in_hours" min="1" max="2160" value="168" style="max-width:200px">
+<label class="f" for="share-name">{esc(t("f_share_name", lang))}</label>
+<input type="text" name="name" id="share-name" maxlength="64" required>
+<fieldset class="field-set"><legend class="f">{esc(t("f_share_tags", lang))}</legend>
+<div class="checks">{checks}</div></fieldset>
+<label class="f" for="share-expires">{esc(t("f_share_expires", lang))}</label>
+<input type="number" name="expires_in_hours" id="share-expires" min="1" max="2160" value="168" style="max-width:200px">
 <div class="row mt"><button class="btn btn--primary" type="submit">{esc(t("btn_mint_share", lang))}</button>
 <a class="btn btn--secondary" href="/panel/shares">{esc(t("btn_cancel", lang))}</a></div>
 </form></div>"""
@@ -1163,7 +1236,8 @@ async def share_new(
         expires_in_hours=expires_in_hours,
     )
     await repo.audit(
-        action="grant", scopes_used=["memory.admin"],
+        action="grant",
+        scopes_used=["memory.admin"],
         meta={
             "via": "panel",
             "share_id": str(share.id),
@@ -1180,7 +1254,7 @@ async def share_new(
 <div class="meta-grid" style="margin-bottom:4px"><dt>{esc(t("th_share_tags", lang))}</dt><dd>{_tag_chips(_share_tags(share.scopes))}</dd></div>
 <div class="meta-grid"><dt>{esc(t("th_share_expires", lang))}</dt><dd class="small muted">{_dt(share.expires_at)}</dd></div>
 </dl>
-<label class="f">token</label>
+<div class="field-label">token</div>
 <pre class="secret"><span>{esc(token)}</span>{_copy_btn(token, lang)}</pre>
 <div class="row mt"><a class="btn btn--primary" href="/panel/shares">{esc(t("btn_done", lang))}</a></div>
 </div>"""
@@ -1190,9 +1264,7 @@ async def share_new(
 
 
 @router.post("/shares/{share_id}/revoke")
-async def share_revoke(
-    request: Request, share_id: UUID, _=Depends(panel_owner)
-):
+async def share_revoke(request: Request, share_id: UUID, _=Depends(panel_owner)):
     # Mirrors DELETE /api/v1/shares/{id} (owner context): same store call,
     # same revocation-cache invalidation, same audit write.
     lang = get_lang()
@@ -1203,7 +1275,8 @@ async def share_revoke(
     await store.revoke_share(share_id)
     request.app.state.revocation_cache.invalidate(str(share_id))
     await repo.audit(
-        action="revoke", scopes_used=["memory.admin"],
+        action="revoke",
+        scopes_used=["memory.admin"],
         meta={
             "via": "panel",
             "share_id": str(share_id),
@@ -1224,9 +1297,15 @@ _AUDIT_RANGES = {
     "30d": timedelta(days=30),
 }
 _ACTION_BADGE = {
-    "write": "info", "read": "neutral", "delete": "danger", "export": "info",
-    "snapshot_apply": "warning", "revoke": "danger", "grant": "success",
-    "refresh": "neutral", "security": "danger",
+    "write": "info",
+    "read": "neutral",
+    "delete": "danger",
+    "export": "info",
+    "snapshot_apply": "warning",
+    "revoke": "danger",
+    "grant": "success",
+    "refresh": "neutral",
+    "security": "danger",
 }
 
 
@@ -1240,8 +1319,7 @@ def _audit_filters(repo, lang, *, client_id, action, rng, clients, name_of):
         for a in [""] + sorted(ACTION_LABEL[lang])
     )
     ropts = "".join(
-        f"<option value='{r}' {'selected' if r == rng else ''}>{r}</option>"
-        for r in _AUDIT_RANGES
+        f"<option value='{r}' {'selected' if r == rng else ''}>{r}</option>" for r in _AUDIT_RANGES
     )
     return (copts, aopts, ropts)
 
@@ -1259,18 +1337,27 @@ async def audit_page(
     clients = await store.list_clients()
     name_of = {str(c.id): c.name for c in clients}
     rng = range if range in _AUDIT_RANGES else "7d"
-    since = datetime.now(timezone.utc) - _AUDIT_RANGES[rng]
+    since = datetime.now(UTC) - _AUDIT_RANGES[rng]
     cid = UUID(client_id) if client_id else None
     rows = await repo.audit_list(limit=500, client_id=cid, since=since)
     if action:
         rows = [r for r in rows if r.action == action]
     copts, aopts, ropts = _audit_filters(
-        repo, lang, client_id=client_id, action=action, rng=rng,
-        clients=clients, name_of=name_of,
+        repo,
+        lang,
+        client_id=client_id,
+        action=action,
+        rng=rng,
+        clients=clients,
+        name_of=name_of,
     )
     trs = []
     for r in rows:
-        who = name_of.get(str(r.client_id), t("audit_owner", lang)) if r.client_id else t("audit_owner", lang)
+        who = (
+            name_of.get(str(r.client_id), t("audit_owner", lang))
+            if r.client_id
+            else t("audit_owner", lang)
+        )
         badge = _ACTION_BADGE.get(r.action, "neutral")
         trs.append(f"""
 <tr><td class="mono small muted">{_dt(r.created_at)}</td>
@@ -1284,8 +1371,8 @@ async def audit_page(
 <div class="card">
 <form method="get" action="/panel/audit"><div class="toolbar" style="position:static;padding:0 0 12px">
 <select name="range" aria-label="{esc(t("audit_range_label", lang))}">{ropts}</select>
-<select name="client_id"><option value="">{esc(t("opt_all_sources", lang))}</option>{copts}</select>
-<select name="action"><option value="">{esc(t("opt_all_actions", lang))}</option>{aopts}</select>
+<select name="client_id" aria-label="{esc(t("opt_all_sources", lang))}"><option value="">{esc(t("opt_all_sources", lang))}</option>{copts}</select>
+<select name="action" aria-label="{esc(t("opt_all_actions", lang))}"><option value="">{esc(t("opt_all_actions", lang))}</option>{aopts}</select>
 <button class="btn btn--secondary btn--sm" type="submit">{esc(t("btn_filter", lang))}</button>
 <a class="btn btn--ghost btn--sm" href="/panel/audit.csv?{qs}">{icon("download", 14)} {esc(t("btn_export_csv", lang))}</a>
 </div></form>
@@ -1308,7 +1395,7 @@ async def audit_csv(
 ):
     repo, _store, _snap = _deps(request)
     rng = range if range in _AUDIT_RANGES else "7d"
-    since = datetime.now(timezone.utc) - _AUDIT_RANGES[rng]
+    since = datetime.now(UTC) - _AUDIT_RANGES[rng]
     cid = UUID(client_id) if client_id else None
     rows = await repo.audit_list(limit=5000, client_id=cid, since=since)
     if action:
@@ -1317,13 +1404,15 @@ async def audit_csv(
     w = csv.writer(buf)
     w.writerow(["time", "actor_client_id", "action", "memory_ids", "scopes"])
     for r in rows:
-        w.writerow([
-            r.created_at.isoformat() if r.created_at else "",
-            str(r.client_id) if r.client_id else "owner",
-            r.action,
-            ";".join(str(m) for m in r.memory_ids),
-            ";".join(r.scopes_used),
-        ])
+        w.writerow(
+            [
+                r.created_at.isoformat() if r.created_at else "",
+                str(r.client_id) if r.client_id else "owner",
+                r.action,
+                ";".join(str(m) for m in r.memory_ids),
+                ";".join(r.scopes_used),
+            ]
+        )
     return Response(
         buf.getvalue(),
         media_type="text/csv",
@@ -1345,16 +1434,16 @@ async def snapshots_page(request: Request, _=Depends(panel_owner)):
     cards = []
     for r in recs:
         m = r.manifest or {}
-        counts = (m.get("counts") or {})
+        counts = m.get("counts") or {}
         enc = (
             f'<span class="badge badge--neutral">{icon("lock", 12)} {esc(t("snap_encrypted", lang))}</span>'
-            if m.get("encrypted") else
-            f'<span class="badge badge--warning"><span class="badge__dot"></span>{esc(t("snap_plain", lang))}</span>'
+            if m.get("encrypted")
+            else f'<span class="badge badge--warning"><span class="badge__dot"></span>{esc(t("snap_plain", lang))}</span>'
         )
         sig = (
             f'<span class="badge badge--success">{icon("check", 12)} {esc(t("snap_sig_ok", lang))}</span>'
-            if m.get("signature_ok") else
-            f'<span class="badge badge--warning"><span class="badge__dot"></span>{esc(t("snap_sig_missing", lang))}</span>'
+            if m.get("signature_ok")
+            else f'<span class="badge badge--warning"><span class="badge__dot"></span>{esc(t("snap_sig_missing", lang))}</span>'
         )
         cards.append(f"""
 <div class="card">
@@ -1370,10 +1459,10 @@ async def snapshots_page(request: Request, _=Depends(panel_owner)):
 <div class="card"><h2>{esc(t("h_create_snapshot", lang))}</h2>
 <div class="card__sub">{esc(t("snap_create_sub", lang))}</div>
 <form method="post" action="/panel/snapshots/create">
-<label class="f">{esc(t("f_snap_tags", lang))}</label>
-<div class="checks">{checks}</div>
-<label class="f">{esc(t("f_snap_password", lang))}</label>
-<input type="password" name="password" maxlength="128" autocomplete="new-password" style="max-width:320px">
+<fieldset class="field-set"><legend class="f">{esc(t("f_snap_tags", lang))}</legend>
+<div class="checks">{checks}</div></fieldset>
+<label class="f" for="snapshot-password">{esc(t("f_snap_password", lang))}</label>
+<input type="password" name="password" id="snapshot-password" maxlength="128" autocomplete="new-password" style="max-width:320px">
 <div class="row mt"><button class="btn btn--primary" type="submit">{esc(t("btn_create_snapshot", lang))}</button></div>
 </form></div>
 <div class="row row--between" style="margin:20px 0 12px">
@@ -1395,7 +1484,10 @@ async def snapshots_create(
     lang = get_lang()
     repo, _store, snap_store = _deps(request)
     rec, path = await snapshots_logic.create_snapshot(
-        repo, snap_store, tags=tags, password=password or None,
+        repo,
+        snap_store,
+        tags=tags,
+        password=password or None,
         storage_dir=settings.snapshot_dir,
     )
     fname = os.path.basename(path)
@@ -1406,9 +1498,7 @@ async def snapshots_create(
 
 
 @router.get("/snapshots/{snapshot_id}/download")
-async def snapshots_download(
-    request: Request, snapshot_id: UUID, _=Depends(panel_owner)
-):
+async def snapshots_download(request: Request, snapshot_id: UUID, _=Depends(panel_owner)):
     _repo, _store, snap_store = _deps(request)
     rec = await snap_store.get(snapshot_id)
     if rec is None or not os.path.isfile(rec.storage_path):
@@ -1427,13 +1517,15 @@ async def snapshots_apply_form(request: Request, _=Depends(panel_owner)):
 <div class="card page--narrow"><h2>{esc(t("h_apply_snapshot", lang))}</h2>
 <div class="card__sub">{esc(t("apply_sub", lang))}</div>
 <form method="post" action="/panel/snapshots/apply" enctype="multipart/form-data">
-<label class="f">{esc(t("f_snap_file", lang))}</label>
-<input type="file" name="file" required accept=".porter,.json">
-<label class="f">{esc(t("f_snap_file_password", lang))}</label>
-<input type="password" name="password" maxlength="128" style="max-width:320px">
+<label class="f" for="snapshot-file">{esc(t("f_snap_file", lang))}</label>
+<input type="file" name="file" id="snapshot-file" required accept=".porter,.json">
+<label class="f" for="snapshot-file-password">{esc(t("f_snap_file_password", lang))}</label>
+<input type="password" name="password" id="snapshot-file-password" maxlength="128" style="max-width:320px">
 <div class="row mt"><button class="btn btn--primary" type="submit">{esc(t("btn_preview", lang))}</button></div>
 </form></div>"""
-    return HTMLResponse(await _layout(request, "snapshots", t("title_snapshot_apply", lang), body, lang))
+    return HTMLResponse(
+        await _layout(request, "snapshots", t("title_snapshot_apply", lang), body, lang)
+    )
 
 
 def _upload_path(filename: str) -> str:
@@ -1496,13 +1588,15 @@ async def snapshots_apply_dryrun(
 <h3 style="font-size:14px;margin:16px 0 8px">{esc(t("dryrun_samples", lang))}</h3><ul style="padding-left:18px">{samples}</ul>
 <form method="post" action="/panel/snapshots/apply/confirm">
 <input type="hidden" name="upload" value="{esc(rel)}">
-<label class="f">{esc(t("f_snap_file_password", lang))}</label>
-<input type="password" name="password" maxlength="128" style="max-width:320px">
+<label class="f" for="snapshot-confirm-password">{esc(t("f_snap_file_password", lang))}</label>
+<input type="password" name="password" id="snapshot-confirm-password" maxlength="128" style="max-width:320px">
 <div class="row mt">
 <button class="btn btn--primary" hx-post="/panel/snapshots/apply/confirm" hx-confirm="{esc(t("confirm_import", lang))}">{esc(t("btn_confirm_import", lang))}</button>
 <a class="btn btn--secondary" href="/panel/snapshots">{esc(t("btn_cancel", lang))}</a></div>
 </form></div>"""
-    return HTMLResponse(await _layout(request, "snapshots", t("title_snapshot_preview", lang), body, lang))
+    return HTMLResponse(
+        await _layout(request, "snapshots", t("title_snapshot_preview", lang), body, lang)
+    )
 
 
 @router.post("/snapshots/apply/confirm")
@@ -1519,7 +1613,10 @@ async def snapshots_apply_confirm(
         raise NotFound("uploaded snapshot expired; please upload again")
     try:
         report = await snapshots_logic.apply_snapshot_file(
-            repo, repo.audit, path=path, password=password or None,
+            repo,
+            repo.audit,
+            path=path,
+            password=password or None,
             source_label="panel-upload",
         )
     except ValueError as exc:
@@ -1533,9 +1630,12 @@ async def snapshots_apply_confirm(
     if report.get("warning"):
         msg += t("msg_imported_warn", lang).format(w=report["warning"])
     if _is_hx(request):
-        return Response("", headers={
-            "HX-Redirect": f"/panel/inbox?msg={quote(msg)}",
-        })
+        return Response(
+            "",
+            headers={
+                "HX-Redirect": f"/panel/inbox?msg={quote(msg)}",
+            },
+        )
     return RedirectResponse(f"/panel/inbox?msg={quote(msg)}", status_code=302)
 
 
@@ -1584,15 +1684,19 @@ def _sync_adapter_cards(adapter_ids, cursors, name_of, head, now, lang: str) -> 
             continue
         last_seen = cur["last_seen"]
         if last_seen is not None and last_seen.tzinfo is None:
-            last_seen = last_seen.replace(tzinfo=timezone.utc)
+            last_seen = last_seen.replace(tzinfo=UTC)
         online = last_seen is not None and (now - last_seen).total_seconds() < 300
         lag = head - cur["cursor"]
         status = (
             f'<span class="badge badge--success"><span class="badge__dot"></span>{esc(t("sync_online", lang))}</span>'
-            if online else
-            f'<span class="badge badge--neutral"><span class="badge__dot"></span>{esc(t("sync_offline", lang))}</span>'
+            if online
+            else f'<span class="badge badge--neutral"><span class="badge__dot"></span>{esc(t("sync_offline", lang))}</span>'
         )
-        lag_txt = esc(t("sync_up_to_date", lang)) if lag <= 0 else esc(t("sync_lag_n", lang).format(n=lag))
+        lag_txt = (
+            esc(t("sync_up_to_date", lang))
+            if lag <= 0
+            else esc(t("sync_lag_n", lang).format(n=lag))
+        )
         meter_cls = "" if lag <= 0 else ("lag-meter--warn" if lag < 20 else "lag-meter--bad")
         meter_w = 4 if lag <= 0 else min(100, 8 + lag * 4)
         cards.append(f"""
@@ -1617,7 +1721,7 @@ async def sync_page(request: Request, _=Depends(panel_owner)):
     _changes, head = await repo.get_changes(0, 1)  # head seq only
     name_of = {c.client_id: c.name for c in clients}
     adapter_ids = sorted(set(name_of) | set(cursors))
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     online_n = 0
     lagging_n = 0
     lags = []
@@ -1627,7 +1731,7 @@ async def sync_page(request: Request, _=Depends(panel_owner)):
             continue
         ls = cur["last_seen"]
         if ls is not None and ls.tzinfo is None:
-            ls = ls.replace(tzinfo=timezone.utc)
+            ls = ls.replace(tzinfo=UTC)
         if ls is not None and (now - ls).total_seconds() < 300:
             online_n += 1
         lag = head - cur["cursor"]
@@ -1673,7 +1777,7 @@ async def settings_page(request: Request, _=Depends(panel_owner)):
         f"<tr><td><code class='small'>{esc(c['tag'])}</code></td><td>{esc(c['label'])}</td>"
         f"<td><span class='badge badge--accent'>{esc(t('tag_custom', lang))}</span></td>"
         f"<td><button class='btn btn--ghost btn--sm' hx-post='/panel/settings/tags/{esc(c['tag'])}/delete' "
-        f"hx-confirm=\"{esc(t('confirm_del_tag', lang).format(tag=c['tag']))}\">"
+        f'hx-confirm="{esc(t("confirm_del_tag", lang).format(tag=c["tag"]))}">'
         f"{esc(t('btn_del_tag', lang))}</button></td></tr>"
         for c in customs
     )
@@ -1681,7 +1785,7 @@ async def settings_page(request: Request, _=Depends(panel_owner)):
     body = f"""
 <div class="card page--narrow"><h2>{esc(t("h_language", lang))}</h2>
 <div class="card__sub">{esc(t("lang_sub", lang))}</div>
-<div class="seg" role="group">
+<div class="seg" role="group" aria-label="{esc(t("header_lang", lang))}">
 <button type="button" data-set-lang="zh" aria-pressed="{str(lang == "zh").lower()}">中文</button>
 <button type="button" data-set-lang="en" aria-pressed="{str(lang == "en").lower()}">EN</button>
 </div></div>
@@ -1693,9 +1797,9 @@ async def settings_page(request: Request, _=Depends(panel_owner)):
 <tbody>{preset_rows}{custom_rows}</tbody></table></div>
 <form method="post" action="/panel/settings/tags/add" class="mt">
 <div class="row">
-<input type="text" name="tag" placeholder="{esc(t("ph_new_tag", lang))}" pattern="[a-z0-9_]{{1,32}}"
+<input type="text" name="tag" aria-label="{esc(t("ph_new_tag", lang))}" placeholder="{esc(t("ph_new_tag", lang))}" pattern="[a-z0-9_]{{1,32}}"
   required style="max-width:260px">
-<input type="text" name="label" placeholder="{esc(t("ph_new_label", lang))}" maxlength="64" required style="max-width:200px">
+<input type="text" name="label" aria-label="{esc(t("ph_new_label", lang))}" placeholder="{esc(t("ph_new_label", lang))}" maxlength="64" required style="max-width:200px">
 <button class="btn btn--secondary btn--sm" type="submit">{esc(t("btn_add", lang))}</button></div></form></div>
 <div class="card"><h2>{esc(t("h_data", lang))}</h2>
 <div class="row">
@@ -1708,14 +1812,14 @@ async def settings_page(request: Request, _=Depends(panel_owner)):
 <p class="small muted" style="margin:0 0 10px">{esc(t("danger_delete_all_d", lang))}</p>
 <form method="post" action="/panel/settings/danger/delete-all-memories">
 <div class="row">
-<input type="text" name="confirm" required autocomplete="off"
+<input type="text" name="confirm" required autocomplete="off" aria-label="{esc(t("danger_delete_all_t", lang))}"
   placeholder="{esc(t("danger_confirm_ph", lang).format(phrase=phrase))}" style="max-width:260px">
 <button class="btn btn--danger-solid btn--sm" type="submit">{esc(t("danger_delete_all_t", lang))}</button></div></form>
 <h3 style="font-size:14px;margin:18px 0 4px">{esc(t("danger_reset_t", lang))}</h3>
 <p class="small muted" style="margin:0 0 10px">{esc(t("danger_reset_d", lang))}</p>
 <form method="post" action="/panel/settings/danger/reset-instance">
 <div class="row">
-<input type="text" name="confirm" required autocomplete="off"
+<input type="text" name="confirm" required autocomplete="off" aria-label="{esc(t("danger_reset_t", lang))}"
   placeholder="{esc(t("danger_confirm_ph", lang).format(phrase=phrase))}" style="max-width:260px">
 <button class="btn btn--danger-solid btn--sm" type="submit">{esc(t("danger_reset_t", lang))}</button></div></form>
 </div>"""
@@ -1723,9 +1827,7 @@ async def settings_page(request: Request, _=Depends(panel_owner)):
 
 
 @router.post("/settings/language")
-async def settings_language(
-    request: Request, lang: str = Form(...), _=Depends(panel_owner)
-):
+async def settings_language(request: Request, lang: str = Form(...), _=Depends(panel_owner)):
     try:
         new_lang = set_lang(lang.strip())
     except ValueError:
@@ -1764,9 +1866,7 @@ async def settings_tag_add(
 
 
 @router.post("/settings/tags/{tag}/delete")
-async def settings_tag_delete(
-    request: Request, tag: str, _=Depends(panel_owner)
-):
+async def settings_tag_delete(request: Request, tag: str, _=Depends(panel_owner)):
     # Mirrors DELETE /api/v1/scope-tags/{tag} (memory.admin).
     lang = get_lang()
     _repo, store, _snap = _deps(request)
@@ -1778,9 +1878,7 @@ async def settings_tag_delete(
     msg = t("msg_tag_deleted", lang)
     if _is_hx(request):
         return _hx_toast(msg)
-    return RedirectResponse(
-        f"/panel/settings?msg={quote(msg)}", status_code=302
-    )
+    return RedirectResponse(f"/panel/settings?msg={quote(msg)}", status_code=302)
 
 
 @router.post("/settings/danger/delete-all-memories")
@@ -1802,14 +1900,13 @@ async def danger_delete_all_memories(
             if await repo.delete(m.id):
                 n += 1
                 await repo.audit(
-                    action="delete", memory_ids=[m.id],
+                    action="delete",
+                    memory_ids=[m.id],
                     scopes_used=["memory.admin"],
                     meta={"via": "panel", "bulk": "delete-all"},
                 )
     msg = t("msg_deleted_all", lang).format(n=n)
-    return RedirectResponse(
-        f"/panel/settings?msg={quote(msg)}", status_code=302
-    )
+    return RedirectResponse(f"/panel/settings?msg={quote(msg)}", status_code=302)
 
 
 @router.post("/settings/danger/reset-instance")
@@ -1842,14 +1939,19 @@ async def danger_reset_instance(
         await store.revoke_share(sh.id)
         s += 1
     await repo.audit(
-        action="delete", memory_ids=[], scopes_used=["memory.admin"],
-        meta={"via": "panel", "bulk": "reset-instance",
-              "memories": n, "clients_revoked": c, "shares_revoked": s},
+        action="delete",
+        memory_ids=[],
+        scopes_used=["memory.admin"],
+        meta={
+            "via": "panel",
+            "bulk": "reset-instance",
+            "memories": n,
+            "clients_revoked": c,
+            "shares_revoked": s,
+        },
     )
     msg = t("msg_reset_done", lang).format(n=n, c=c, s=s)
-    return RedirectResponse(
-        f"/panel/settings?msg={quote(msg)}", status_code=302
-    )
+    return RedirectResponse(f"/panel/settings?msg={quote(msg)}", status_code=302)
 
 
 @router.get("/export")
@@ -1859,9 +1961,14 @@ async def panel_export(request: Request, _=Depends(panel_owner)):
     repo, _store, _snap = _deps(request)
     payload = await build_export_payload(repo)
     await repo.audit(
-        action="export", memory_ids=[], scopes_used=["memory.admin"],
-        meta={"via": "panel", "format": "porter-export/v1",
-              "memory_count": payload["memory_count"]},
+        action="export",
+        memory_ids=[],
+        scopes_used=["memory.admin"],
+        meta={
+            "via": "panel",
+            "format": "porter-export/v1",
+            "memory_count": payload["memory_count"],
+        },
     )
     return JSONResponse(
         content=payload,

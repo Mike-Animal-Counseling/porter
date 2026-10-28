@@ -9,6 +9,8 @@
     else root.removeAttribute("data-theme");
     var btn = document.getElementById("theme-toggle");
     if (btn) btn.setAttribute("aria-pressed", name === "light" ? "true" : "false");
+    var cv = document.getElementById("constel");
+    if (cv && cv._nodes && cv.getClientRects().length) drawConstellation(cv);
   }
   var stored = null;
   try { stored = localStorage.getItem("porter-theme"); } catch (e) {}
@@ -37,6 +39,12 @@
   document.body.addEventListener("toast", function (ev) {
     var d = ev.detail || {};
     toast(d.type, d.msg || "");
+  });
+  function requestFailed() {
+    toast("error", document.body.getAttribute("data-request-failed-msg"));
+  }
+  ["htmx:responseError", "htmx:sendError", "htmx:timeout"].forEach(function (name) {
+    document.body.addEventListener(name, requestFailed);
   });
   // inbox triage: keep the sidebar badge + page title in sync after HTMX actions
   document.body.addEventListener("inboxCount", function (ev) {
@@ -71,25 +79,55 @@
       navigator.clipboard.writeText(text).then(done, function () { fallback(); });
     } else { fallback(); }
     function fallback() {
+      var previous = document.activeElement;
       var ta = document.createElement("textarea");
       ta.value = text;
+      ta.setAttribute("aria-hidden", "true");
+      ta.style.position = "fixed";
+      ta.style.top = "-9999px";
       document.body.appendChild(ta);
       ta.select();
-      try { document.execCommand("copy"); done(); } catch (e) {}
+      try {
+        if (!document.execCommand("copy")) throw new Error("copy failed");
+        done();
+      } catch (e) { toast("error", document.body.getAttribute("data-copy-failed-msg")); }
       ta.remove();
+      if (previous && previous.isConnected) previous.focus();
     }
   });
 
   /* ---- drawer ---- */
   var overlay = document.getElementById("drawer-overlay");
   var drawer = document.getElementById("drawer");
-  function closeDrawer() {
-    if (overlay) overlay.classList.remove("drawer-overlay--open");
-    if (drawer) {
-      drawer.classList.remove("drawer--open");
-      var body = document.getElementById("drawer-body");
-      if (body) body.innerHTML = "";
+  var shell = document.querySelector(".shell");
+  var returnFocus = null;
+  var previousOverflow = "";
+  function openDrawer() {
+    if (!drawer) return;
+    if (!drawer.classList.contains("drawer--open")) {
+      returnFocus = document.activeElement;
+      previousOverflow = document.body.style.overflow;
     }
+    drawer.inert = false;
+    drawer.setAttribute("aria-hidden", "false");
+    drawer.classList.add("drawer--open");
+    if (overlay) overlay.classList.add("drawer-overlay--open");
+    if (shell) shell.inert = true;
+    document.body.style.overflow = "hidden";
+    drawer.focus();
+  }
+  function closeDrawer() {
+    if (!drawer || !drawer.classList.contains("drawer--open")) return;
+    if (overlay) overlay.classList.remove("drawer-overlay--open");
+    drawer.classList.remove("drawer--open");
+    drawer.inert = true;
+    drawer.setAttribute("aria-hidden", "true");
+    if (shell) shell.inert = false;
+    document.body.style.overflow = previousOverflow;
+    var body = document.getElementById("drawer-body");
+    if (body) body.innerHTML = "";
+    if (returnFocus && returnFocus.isConnected) returnFocus.focus();
+    returnFocus = null;
   }
   window.porterCloseDrawer = closeDrawer;
   if (overlay) overlay.addEventListener("click", closeDrawer);
@@ -99,24 +137,48 @@
   document.addEventListener("keydown", function (ev) {
     if (ev.key === "Escape") {
       closeDrawer();
-      var sb = document.getElementById("sidebar");
-      if (sb) sb.classList.remove("sidebar--open");
+      if (sidebar && sidebar.classList.contains("sidebar--open")) {
+        setSidebar(false);
+        if (menuToggle) menuToggle.focus();
+      }
+    } else if (ev.key === "Tab" && drawer && drawer.classList.contains("drawer--open")) {
+      var controls = Array.prototype.filter.call(drawer.querySelectorAll(
+        'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]'
+      ), function (element) { return element.getClientRects().length > 0; });
+      var first = controls[0], last = controls[controls.length - 1];
+      if (!first) { ev.preventDefault(); drawer.focus(); }
+      else if (ev.shiftKey && (document.activeElement === first || document.activeElement === drawer)) {
+        ev.preventDefault(); last.focus();
+      } else if (!ev.shiftKey && document.activeElement === last) {
+        ev.preventDefault(); first.focus();
+      }
     }
   });
   // after HTMX swaps content into the drawer, open it
   document.body.addEventListener("htmx:afterSwap", function (ev) {
     if (ev.target && ev.target.id === "drawer-body") {
-      if (overlay) overlay.classList.add("drawer-overlay--open");
-      if (drawer) drawer.classList.add("drawer--open");
+      openDrawer();
     }
   });
 
   /* ---- sidebar (mobile drawer + collapse) ---- */
+  var sidebar = document.getElementById("sidebar");
+  var menuToggle = document.getElementById("sidebar-toggle");
+  var narrow = window.matchMedia("(max-width: 720px)");
+  function setSidebar(open) {
+    if (!sidebar) return;
+    sidebar.classList.toggle("sidebar--open", open);
+    sidebar.inert = narrow.matches && !open;
+    if (sidebar.inert) sidebar.setAttribute("aria-hidden", "true");
+    else sidebar.removeAttribute("aria-hidden");
+    if (menuToggle) menuToggle.setAttribute("aria-expanded", String(open));
+  }
+  setSidebar(false);
+  narrow.addEventListener("change", function () { setSidebar(false); });
   document.addEventListener("click", function (ev) {
-    var t = ev.target.closest("#sidebar-toggle");
-    if (!t) return;
-    var sb = document.getElementById("sidebar");
-    if (sb) sb.classList.toggle("sidebar--open");
+    if (ev.target.closest("#sidebar-toggle")) {
+      setSidebar(sidebar && !sidebar.classList.contains("sidebar--open"));
+    } else if (narrow.matches && !ev.target.closest("#sidebar")) { setSidebar(false); }
   });
 
   /* ---- language segmented control: POST then reload ---- */
@@ -129,7 +191,10 @@
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: "lang=" + encodeURIComponent(lang),
       credentials: "same-origin"
-    }).then(function () { window.location.reload(); });
+    }).then(function (response) {
+      if (!response.ok) throw new Error("language update failed");
+      window.location.reload();
+    }).catch(requestFailed);
   });
 
   /* ---- confirm dialogs via hx-confirm are native; nothing needed ---- */
@@ -251,7 +316,10 @@
     cv._nodes = nodes;
     constelDone = true;
     drawConstellation(cv);
+    if (cv._porterEventsBound) return;
+    cv._porterEventsBound = true;
     cv.addEventListener("click", function (e) {
+      var nodes = cv._nodes || [];
       var r = cv.getBoundingClientRect();
       var mx = e.clientX - r.left, my = e.clientY - r.top; // CSS px
       var best = null, bestD = 1e9;
@@ -265,7 +333,11 @@
       }
     });
     window.addEventListener("resize", function () {
-      constelDone = false; initConstellation();
+      clearTimeout(cv._resizeTimer);
+      cv._resizeTimer = setTimeout(function () {
+        constelDone = false;
+        if (cv.isConnected && cv.getClientRects().length) initConstellation();
+      }, 150);
     });
   }
   function drawConstellation(cv) {

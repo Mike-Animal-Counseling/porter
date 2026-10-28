@@ -4,6 +4,7 @@ Covers: sign/verify round-trip, tamper detection (fail-closed),
 legacy unsigned files (accepted with explicit warning), key hygiene.
 Repo convention: asyncio.run() inside sync tests (no pytest-asyncio).
 """
+
 import asyncio
 import json
 import os
@@ -25,8 +26,10 @@ from porter.snapshots import (
 
 def _mem(content="prefers tea over coffee", tags=("dietary",)):
     return {
-        "content": content, "type": "preference",
-        "scope_tags": list(tags), "confidence": 0.9,
+        "content": content,
+        "type": "preference",
+        "scope_tags": list(tags),
+        "confidence": 0.9,
     }
 
 
@@ -34,8 +37,11 @@ async def _make_active_repo(*contents):
     repo = InMemoryMemoryRepository(HashEmbedder())
     for c in contents:
         rec, _ = await repo.create_pending(
-            content=c, type="preference", scope_tags=["dietary"],
-            confidence=0.9, source={},
+            content=c,
+            type="preference",
+            scope_tags=["dietary"],
+            confidence=0.9,
+            source={},
         )
         await repo.approve(rec.id)
     return repo
@@ -86,16 +92,15 @@ def test_key_persisted_and_0600(tmp_path):
     k2 = _instance_private_key(keys)
     assert k1.private_bytes_raw() == k2.private_bytes_raw()
     mode = oct(os.stat(os.path.join(keys, "ed25519.key")).st_mode & 0o777)
-    assert mode == "0o600"
+    if os.name != "nt":
+        assert mode == "0o600"
 
 
 def test_create_inspect_apply_signed_flow(tmp_path):
     repo = asyncio.run(_make_active_repo("likes oat milk"))
     store = InMemorySnapshotStore()
     sdir = str(tmp_path / "snaps")
-    rec_snap, path = asyncio.run(
-        create_snapshot(repo, store, tags=["dietary"], storage_dir=sdir)
-    )
+    rec_snap, path = asyncio.run(create_snapshot(repo, store, tags=["dietary"], storage_dir=sdir))
     assert rec_snap.signature_ok is True
     assert rec_snap.manifest["signature"] is not None
 
@@ -121,9 +126,7 @@ def test_apply_legacy_unsigned_warns(tmp_path):
     path = str(tmp_path / "legacy.porter.json")
     open(path, "w").write(json.dumps(body))
 
-    report = asyncio.run(
-        apply_snapshot_file(repo, _null_audit, path=path, password=None)
-    )
+    report = asyncio.run(apply_snapshot_file(repo, _null_audit, path=path, password=None))
     assert report["imported"] == 1
     assert "warning" in report and "not signed" in report["warning"]
 
@@ -132,9 +135,7 @@ def test_encrypted_snapshot_still_verifies(tmp_path):
     repo = asyncio.run(_make_active_repo("secret pref"))
     store = InMemorySnapshotStore()
     sdir = str(tmp_path / "snaps")
-    asyncio.run(
-        create_snapshot(repo, store, password="correct-horse", storage_dir=sdir)
-    )
+    asyncio.run(create_snapshot(repo, store, password="correct-horse", storage_dir=sdir))
     # find the .porter file
     path = [f for f in os.listdir(sdir) if f.endswith(".porter")][0]
     summary = inspect_snapshot_file(os.path.join(sdir, path), "correct-horse")

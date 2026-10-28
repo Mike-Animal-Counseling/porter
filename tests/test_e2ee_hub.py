@@ -8,6 +8,7 @@ Covers, with no network and no Postgres (InMemoryEnvelopeStore):
   claim idempotency (second claim returns [] — no double delivery)
 - rotate_plan structure and the client/server boundary
 """
+
 from __future__ import annotations
 
 import asyncio

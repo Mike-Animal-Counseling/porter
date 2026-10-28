@@ -3,6 +3,6 @@
 # (the test suite stubs those out).
 -r api/requirements.txt
 pytest>=8.0
-pyflakes
 requests
 pynacl
+PyYAML>=6

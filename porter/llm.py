@@ -4,13 +4,13 @@ The wiki layer organizes approved memories into a lightweight entity graph
 ("LLM Wiki"): entities/topics extracted from memory text, linked to the
 memories that mention them, with co-occurrence edges between entities.
 
-This module defines the extraction protocol. Production wiring (OpenAI,
-Ollama, etc.) is documented in the class docstrings; the reference
-implementation ships only a deterministic stub so the wiki layer is testable
-without a model on the box.
+This module defines the extraction protocol and deterministic default stub.
+An opt-in Ollama backend lives in llm_ollama.py; see docs/EXTRACTION.md.
 """
+
 from __future__ import annotations
 
+import asyncio
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -20,8 +20,8 @@ from dataclasses import dataclass, field
 class EntityMention:
     """One entity extracted from a memory's text."""
 
-    name: str                      # normalized entity name, e.g. "tailwind"
-    kind: str = "topic"            # topic | person | project | tool | place
+    name: str  # normalized entity name, e.g. "tailwind"
+    kind: str = "topic"  # topic | person | project | tool | place
     # (relation, target_name) pairs found in the same text, e.g.
     # ("uses", "tailwind"), ("prefers", "dark mode").
     relations: list[tuple[str, str]] = field(default_factory=list)
@@ -31,10 +31,10 @@ class EntityMention:
 class ExtractedFact:
     """One durable fact pulled from a conversation (auto-capture)."""
 
-    content: str                   # self-contained statement
-    type: str = "fact"             # preference | fact | episode | skill_ref
+    content: str  # self-contained statement
+    type: str = "fact"  # preference | fact | episode | skill_ref
     scope_tags: list[str] = field(default_factory=list)
-    confidence: float = 0.7        # extracted, not asserted — below 1.0
+    confidence: float = 0.7  # extracted, not asserted — below 1.0
 
 
 class BaseLLMExtractor(ABC):
@@ -49,6 +49,12 @@ class BaseLLMExtractor(ABC):
         """Pull durable facts (preferences, decisions, project context)
         from a conversation. Default: not implemented — extractors opt in."""
         raise NotImplementedError
+
+    async def aextract_entities(self, text: str) -> list[EntityMention]:
+        return await asyncio.to_thread(self.extract_entities, text)
+
+    async def aextract_facts(self, text: str) -> list[ExtractedFact]:
+        return await asyncio.to_thread(self.extract_facts, text)
 
 
 # ---------------------------------------------------------------------------
@@ -87,8 +93,7 @@ class StubLLMExtractor(BaseLLMExtractor):
     every pair of entities found in the same memory (bounded).
 
     Good enough to exercise the graph plumbing in tests and demos. It is
-    intentionally NOT a substitute for a real LLM in production — see
-    OllamaLLMExtractor notes below.
+    intentionally NOT a substitute for a real LLM in production — see docs/EXTRACTION.md.
     """
 
     MAX_ENTITIES = 12
@@ -110,9 +115,9 @@ class StubLLMExtractor(BaseLLMExtractor):
         # Co-occurrence relations: every pair in the same memory is linked.
         names = [e.name for e in mentions]
         for e in mentions:
-            e.relations = [
-                ("co_occurs", other) for other in names if other != e.name
-            ][: self.MAX_ENTITIES]
+            e.relations = [("co_occurs", other) for other in names if other != e.name][
+                : self.MAX_ENTITIES
+            ]
         return mentions
 
     @staticmethod
@@ -127,7 +132,14 @@ class StubLLMExtractor(BaseLLMExtractor):
     # (sensitivity / conflict / confidence gates) before it can go active,
     # and extracted content is always marked untrusted downstream.
     _FACT_PATTERNS = [
-        (re.compile(r"\b(prefer|prefers|preferred|like|likes|love|loves|hate|hates|dislike|dislikes)\b", re.I), "preference", []),
+        (
+            re.compile(
+                r"\b(prefer|prefers|preferred|like|likes|love|loves|hate|hates|dislike|dislikes)\b",
+                re.I,
+            ),
+            "preference",
+            [],
+        ),
         (re.compile(r"喜欢|偏好|最爱|讨厌|习惯"), "preference", []),
         (re.compile(r"\b(decided|decision|chose|chosen|will use|migrated to)\b", re.I), "fact", []),
         (re.compile(r"决定|选择|采用"), "fact", []),
@@ -156,45 +168,27 @@ class StubLLMExtractor(BaseLLMExtractor):
                 continue
             for rx, ftype, tags in self._FACT_PATTERNS:
                 if rx.search(sent):
-                    facts.append(ExtractedFact(
-                        content=sent, type=ftype,
-                        scope_tags=list(tags), confidence=0.7,
-                    ))
+                    facts.append(
+                        ExtractedFact(
+                            content=sent,
+                            type=ftype,
+                            scope_tags=list(tags),
+                            confidence=0.7,
+                        )
+                    )
                     break
             if len(facts) >= 10:
                 break
         return facts
 
 
-# ---------------------------------------------------------------------------
-# Production wiring (documented, not implemented here).
-# ---------------------------------------------------------------------------
-#
-# To use a real LLM, subclass BaseLLMExtractor and prompt the model, e.g.:
-#
-#   class OllamaLLMExtractor(BaseLLMExtractor):
-#       """Local LLM via Ollama (e.g. qwen3:8b). Zero external calls."""
-#       def __init__(self, model="qwen3:8b",
-#                    base_url="http://localhost:11434"):
-#           ...
-#       def extract_entities(self, text):
-#           # POST {base_url}/api/chat with a JSON-mode prompt:
-#           #   "Extract entities... return JSON list of
-#           #    {name, kind, relations:[{relation, target}]}"
-#           # Parse, normalize names (lowercase/strip), return mentions.
-#
-#   class OpenAIExtractor(BaseLLMExtractor):
-#       """NOTE: sends memory text to a third party (cf. OpenAIEmbedder)."""
-#
-# Then set PORTER_LLM_EXTRACTOR=openai|ollama and extend build_extractor()
-# below. The wiki layer only depends on the BaseLLMExtractor interface.
-
-
 def build_extractor(kind: str, **kwargs) -> BaseLLMExtractor:
-    kinds = {"stub": StubLLMExtractor}
+    from .llm_ollama import OllamaLLMExtractor
+
+    kinds = {"stub": StubLLMExtractor, "ollama": OllamaLLMExtractor}
     if kind not in kinds:
         raise ValueError(
             f"unknown LLM extractor kind: {kind} (choose from {sorted(kinds)}; "
-            "see porter/llm.py for how to wire ollama/openai)"
+            "OpenAI extraction is not implemented)"
         )
     return kinds[kind](**kwargs)

@@ -44,16 +44,18 @@ Official data-export importers (best-effort, read-only on the export file):
 - Claude: same ``conversations.json`` shape from Claude's export; both
   shapes are parsed defensively either way.
 """
+
 from __future__ import annotations
 
 import json
 import os
 import re
 import zipfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 REDACTED = "[REDACTED]"
 
@@ -68,8 +70,10 @@ _SECRET_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"), "github_pat"),
     (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "aws_key_id"),
     (re.compile(r"\bxox[baprs]-[A-Za-z0-9\-]{10,}\b"), "slack_token"),
-    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
-     "private_key_block"),
+    (
+        re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
+        "private_key_block",
+    ),
 ]
 
 # key = value assignments: keep the key name, redact the value.
@@ -116,8 +120,14 @@ class ImportCandidate:
     redactions: int = 0  # filled by the scrub pass at import time
 
 
-_VALID_TYPES = ("preference", "fact", "episode", "skill_ref",
-                "personal", "project")  # two-domain taxonomy
+_VALID_TYPES = (
+    "preference",
+    "fact",
+    "episode",
+    "skill_ref",
+    "personal",
+    "project",
+)  # two-domain taxonomy
 
 
 def import_dedupe_key(source: Mapping[str, Any]) -> str:
@@ -135,6 +145,7 @@ def import_dedupe_key(source: Mapping[str, Any]) -> str:
     key = f"{base}#conv:{cid}"
     kind = source.get("kind")
     return f"{key}:{kind}" if kind else key
+
 
 # Largest single file the importer will read (DoS guard: a runaway agent log
 # renamed .md must not OOM the import; real memory files are kilobytes).
@@ -175,9 +186,7 @@ def _parse_markdown_file(path: Path) -> ImportCandidate | None:
 
     title = front.get("title", "")
     try:
-        mtime = datetime.fromtimestamp(
-            path.stat().st_mtime, tz=timezone.utc
-        ).isoformat()
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC).isoformat()
     except OSError:
         mtime = ""
     lines = body.splitlines()
@@ -252,9 +261,7 @@ class CodexImporter(HarnessImporter):
     harness = "codex"
 
     def __init__(self, memories_dir: str | os.PathLike[str] | None = None):
-        self.memories_dir = Path(
-            memories_dir or os.path.expanduser("~/.codex/memories")
-        )
+        self.memories_dir = Path(memories_dir or os.path.expanduser("~/.codex/memories"))
 
     def scan(self) -> tuple[list[ImportCandidate], str]:
         if not self.memories_dir.is_dir():
@@ -272,7 +279,7 @@ class CodexImporter(HarnessImporter):
                 {
                     "client_id": "codex",
                     "imported_from": str(path),
-                    "imported_at": datetime.now(timezone.utc).isoformat(),
+                    "imported_at": datetime.now(UTC).isoformat(),
                 }
             )
             candidates.append(cand)
@@ -332,7 +339,7 @@ class CursorImporter(HarnessImporter):
                     {
                         "client_id": "cursor",
                         "imported_from": str(path),
-                        "imported_at": datetime.now(timezone.utc).isoformat(),
+                        "imported_at": datetime.now(UTC).isoformat(),
                     }
                 )
                 candidates.append(cand)
@@ -407,7 +414,7 @@ def _seed_candidate(
         {
             "client_id": client_id,
             "imported_from": str(path),
-            "imported_at": datetime.now(timezone.utc).isoformat(),
+            "imported_at": datetime.now(UTC).isoformat(),
             "seed": True,
         }
     )
@@ -423,9 +430,7 @@ def _auto_memory_dir(claude_home: Path) -> Path | None:
     try:
         import json
 
-        settings = json.loads(
-            (claude_home / "settings.json").read_text(encoding="utf-8")
-        )
+        settings = json.loads((claude_home / "settings.json").read_text(encoding="utf-8"))
         raw = settings.get("autoMemoryDirectory")
         if isinstance(raw, str) and raw.strip():
             p = Path(os.path.expanduser(raw.strip()))
@@ -447,9 +452,7 @@ class ClaudeCodeImporter(HarnessImporter):
     harness = "claude-code"
 
     def __init__(self, claude_home: str | os.PathLike[str] | None = None):
-        self.claude_home = Path(
-            claude_home or os.path.expanduser("~/.claude")
-        )
+        self.claude_home = Path(claude_home or os.path.expanduser("~/.claude"))
 
     def scan(self) -> tuple[list[ImportCandidate], str]:
         candidates: list[ImportCandidate] = []
@@ -470,9 +473,7 @@ class ClaudeCodeImporter(HarnessImporter):
                         {
                             "client_id": "claude-code",
                             "imported_from": str(path),
-                            "imported_at": datetime.now(
-                                timezone.utc
-                            ).isoformat(),
+                            "imported_at": datetime.now(UTC).isoformat(),
                             "project": decoded,
                             "project_dir": proj.name,
                         }
@@ -485,9 +486,7 @@ class ClaudeCodeImporter(HarnessImporter):
                         {
                             "client_id": "claude-code",
                             "imported_from": str(proj / "MEMORY.md"),
-                            "imported_at": datetime.now(
-                                timezone.utc
-                            ).isoformat(),
+                            "imported_at": datetime.now(UTC).isoformat(),
                             "project": decoded,
                             "project_dir": proj.name,
                         }
@@ -505,7 +504,7 @@ class ClaudeCodeImporter(HarnessImporter):
                     {
                         "client_id": "claude-code",
                         "imported_from": str(path),
-                        "imported_at": datetime.now(timezone.utc).isoformat(),
+                        "imported_at": datetime.now(UTC).isoformat(),
                         "auto_memory_dir": True,
                     }
                 )
@@ -513,9 +512,7 @@ class ClaudeCodeImporter(HarnessImporter):
         # Global CLAUDE.md as a low-confidence seed preference.
         seed = self.claude_home / "CLAUDE.md"
         if seed.is_file() and not seed.is_symlink():
-            cand = _seed_candidate(
-                seed, client_id="claude-code", confidence=0.3, tags=[]
-            )
+            cand = _seed_candidate(seed, client_id="claude-code", confidence=0.3, tags=[])
             if cand is not None:
                 candidates.append(cand)
         note = (
@@ -537,10 +534,7 @@ class WindsurfImporter(HarnessImporter):
     harness = "windsurf"
 
     def __init__(self, memories_dir: str | os.PathLike[str] | None = None):
-        self.memories_dir = Path(
-            memories_dir
-            or os.path.expanduser("~/.codeium/windsurf/memories")
-        )
+        self.memories_dir = Path(memories_dir or os.path.expanduser("~/.codeium/windsurf/memories"))
 
     def scan(self) -> tuple[list[ImportCandidate], str]:
         if not self.memories_dir.is_dir():
@@ -558,7 +552,7 @@ class WindsurfImporter(HarnessImporter):
                 {
                     "client_id": "windsurf",
                     "imported_from": str(path),
-                    "imported_at": datetime.now(timezone.utc).isoformat(),
+                    "imported_at": datetime.now(UTC).isoformat(),
                 }
             )
             candidates.append(cand)
@@ -582,14 +576,12 @@ class _MemoryBankImporter(HarnessImporter):
         self.project_roots = [Path(p) for p in (project_roots or [])]
         self._client_id = client_id
 
-    def _tag_candidate(
-        self, cand: ImportCandidate, path: Path, **extra: Any
-    ) -> None:
+    def _tag_candidate(self, cand: ImportCandidate, path: Path, **extra: Any) -> None:
         cand.source.update(
             {
                 "client_id": self._client_id,
                 "imported_from": str(path),
-                "imported_at": datetime.now(timezone.utc).isoformat(),
+                "imported_at": datetime.now(UTC).isoformat(),
                 **extra,
             }
         )
@@ -619,9 +611,7 @@ class ClineImporter(_MemoryBankImporter):
 
     harness = "cline"
 
-    def __init__(
-        self, project_roots: list[str | os.PathLike[str]] | None = None
-    ):
+    def __init__(self, project_roots: list[str | os.PathLike[str]] | None = None):
         super().__init__(project_roots, client_id="cline")
 
 
@@ -634,9 +624,7 @@ class RooImporter(_MemoryBankImporter):
 
     harness = "roo"
 
-    def __init__(
-        self, project_roots: list[str | os.PathLike[str]] | None = None
-    ):
+    def __init__(self, project_roots: list[str | os.PathLike[str]] | None = None):
         super().__init__(project_roots, client_id="roo")
 
     def scan(self) -> tuple[list[ImportCandidate], str]:
@@ -653,13 +641,10 @@ class RooImporter(_MemoryBankImporter):
                     continue
                 cand.type = "skill_ref"
                 cand.scope_tags = sorted(set(cand.scope_tags) | {"rule"})
-                self._tag_candidate(
-                    cand, path, project_root=str(root), kind="rule"
-                )
+                self._tag_candidate(cand, path, project_root=str(root), kind="rule")
                 candidates.append(cand)
         return candidates, (
-            f"{note}; rules {scanned_rules or ['(no project roots)']}: "
-            f"{len(candidates)} total"
+            f"{note}; rules {scanned_rules or ['(no project roots)']}: {len(candidates)} total"
         )
 
 
@@ -679,9 +664,7 @@ class _GlobalMdSeedImporter(HarnessImporter):
         home_dir: str | os.PathLike[str] | None = None,
         project_roots: list[str | os.PathLike[str]] | None = None,
     ):
-        self.home_dir = Path(
-            home_dir or os.path.expanduser(f"~/.{self.tool_dir_name}")
-        )
+        self.home_dir = Path(home_dir or os.path.expanduser(f"~/.{self.tool_dir_name}"))
         self.project_roots = [Path(p) for p in (project_roots or [])]
 
     def scan(self) -> tuple[list[ImportCandidate], str]:
@@ -853,24 +836,25 @@ class AiderImporter(HarnessImporter):
                     continue
                 if len(chunk) > 20_000:  # same cap as the REST API
                     chunk = chunk[:20_000]
-                candidates.append(ImportCandidate(
-                    title=f"aider session {i + 1} ({root.name})",
-                    content=chunk,
-                    type="project",
-                    scope_tags=[f"project:{root.name}", "seed"],
-                    confidence=0.35,
-                    source={
-                        "client_id": "aider",
-                        "imported_from": str(p),
-                        "imported_at": datetime.now(timezone.utc).isoformat(),
-                        "project_root": str(root),
-                        "seed": True,
-                    },
-                    imported_from=str(p),
-                ))
+                candidates.append(
+                    ImportCandidate(
+                        title=f"aider session {i + 1} ({root.name})",
+                        content=chunk,
+                        type="project",
+                        scope_tags=[f"project:{root.name}", "seed"],
+                        confidence=0.35,
+                        source={
+                            "client_id": "aider",
+                            "imported_from": str(p),
+                            "imported_at": datetime.now(UTC).isoformat(),
+                            "project_root": str(root),
+                            "seed": True,
+                        },
+                        imported_from=str(p),
+                    )
+                )
         return candidates, (
-            f"scanned {seen}: {len(candidates)} aider sessions "
-            "(project-domain seeds)"
+            f"scanned {seen}: {len(candidates)} aider sessions (project-domain seeds)"
         )
 
 
@@ -885,9 +869,7 @@ class DevinImporter(HarnessImporter):
     harness = "devin"
     seed_confidence = 0.3
 
-    def __init__(
-        self, project_roots: list[str | os.PathLike[str]] | None = None
-    ):
+    def __init__(self, project_roots: list[str | os.PathLike[str]] | None = None):
         self.project_roots = [Path(p) for p in (project_roots or [])]
 
     def scan(self) -> tuple[list[ImportCandidate], str]:
@@ -926,9 +908,7 @@ class OpenHandsImporter(HarnessImporter):
     harness = "openhands"
     seed_confidence = 0.4
 
-    def __init__(
-        self, project_roots: list[str | os.PathLike[str]] | None = None
-    ):
+    def __init__(self, project_roots: list[str | os.PathLike[str]] | None = None):
         self.project_roots = [Path(p) for p in (project_roots or [])]
 
     def scan(self) -> tuple[list[ImportCandidate], str]:
@@ -945,14 +925,12 @@ class OpenHandsImporter(HarnessImporter):
                     continue
                 cand.type = "skill_ref"
                 cand.confidence = self.seed_confidence
-                cand.scope_tags = sorted(
-                    set(cand.scope_tags) | {"seed", "skill"}
-                )
+                cand.scope_tags = sorted(set(cand.scope_tags) | {"seed", "skill"})
                 cand.source.update(
                     {
                         "client_id": self.harness,
                         "imported_from": str(path),
-                        "imported_at": datetime.now(timezone.utc).isoformat(),
+                        "imported_at": datetime.now(UTC).isoformat(),
                         "project_root": str(root),
                         "kind": "skill",
                     }
@@ -1004,15 +982,11 @@ def _read_export_bytes(path: Path) -> tuple[bytes | None, str]:
         return _read_conversations_from_zip(path)
     if suffix != ".json":
         return None, (
-            f"{path}: expected a .json file or a .zip containing "
-            "conversations.json — skipped"
+            f"{path}: expected a .json file or a .zip containing conversations.json — skipped"
         )
     try:
         if path.stat().st_size > _MAX_EXPORT_BYTES:
-            return None, (
-                f"{path}: file exceeds "
-                f"{_MAX_EXPORT_BYTES // (1024 * 1024)}MB — skipped"
-            )
+            return None, (f"{path}: file exceeds {_MAX_EXPORT_BYTES // (1024 * 1024)}MB — skipped")
         return path.read_bytes(), ""
     except OSError as exc:
         return None, f"{path}: unreadable ({exc}) — skipped"
@@ -1051,9 +1025,7 @@ def _read_conversations_from_zip(path: Path) -> tuple[bytes | None, str]:
                 continue
             # Match by basename only; the file is read in memory, never
             # written out, so hostile entry paths cannot escape anywhere.
-            if info.filename.replace("\\", "/").rsplit("/", 1)[-1] == (
-                "conversations.json"
-            ):
+            if info.filename.replace("\\", "/").rsplit("/", 1)[-1] == ("conversations.json"):
                 target = info
                 break
         if target is None:
@@ -1067,13 +1039,9 @@ def _read_conversations_from_zip(path: Path) -> tuple[bytes | None, str]:
             with zf.open(target, "r") as fh:
                 data = fh.read(_MAX_EXPORT_BYTES + 1)
         except (zipfile.BadZipFile, RuntimeError, OSError) as exc:
-            return None, (
-                f"{path}: cannot read conversations.json ({exc}) — skipped"
-            )
+            return None, (f"{path}: cannot read conversations.json ({exc}) — skipped")
         if len(data) > _MAX_EXPORT_BYTES:
-            return None, (
-                f"{path}: conversations.json exceeds size cap — rejected"
-            )
+            return None, (f"{path}: conversations.json exceeds size cap — rejected")
         return data, ""
     finally:
         zf.close()
@@ -1095,7 +1063,7 @@ def _to_datetime(ts: Any) -> datetime | None:
         return None
     if isinstance(ts, (int, float)):
         try:
-            return datetime.fromtimestamp(ts, tz=timezone.utc)
+            return datetime.fromtimestamp(ts, tz=UTC)
         except (OverflowError, OSError, ValueError):
             return None
     if isinstance(ts, str):
@@ -1104,7 +1072,7 @@ def _to_datetime(ts: Any) -> datetime | None:
         except ValueError:
             return None
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
         return dt
     return None
 
@@ -1148,6 +1116,7 @@ def _extract_chatgpt_messages(conv: dict) -> list[tuple[str, str, Any]]:
         if not text.strip():
             continue
         out.append((role, text, msg.get("create_time")))
+
     # Sort by timestamp, oldest first. Timestamps in the wild are mixed
     # (epoch numbers, ISO strings, nulls, garbage): normalize defensively
     # so one hostile node cannot TypeError-crash the whole import. Unknown
@@ -1273,13 +1242,12 @@ class _ChatExportImporter(HarnessImporter):
         dates = _date_range([_to_datetime(ts) for _, _, ts in messages])
         short_title = title if len(title) <= 120 else title[:117] + "..."
         episode_content = (
-            f"{self.product_name} conversation '{short_title}' "
-            f"({n} messages, {dates})"
+            f"{self.product_name} conversation '{short_title}' ({n} messages, {dates})"
         )
         base_source = {
             "client_id": self.client_id,
             "imported_from": str(self.export_path),
-            "imported_at": datetime.now(timezone.utc).isoformat(),
+            "imported_at": datetime.now(UTC).isoformat(),
             "conversation_id": cid,
         }
         cands = [
@@ -1292,14 +1260,12 @@ class _ChatExportImporter(HarnessImporter):
                 imported_from=str(self.export_path),
             )
         ]
-        first_user = next((t for role, t, _ in messages if role == "user"),
-                          None)
+        first_user = next((t for role, t, _ in messages if role == "user"), None)
         if first_user and _looks_durable(first_user):
             preview = " ".join(first_user.split())
             cands.append(
                 ImportCandidate(
-                    title=(preview[:77] + "...") if len(preview) > 80
-                    else preview,
+                    title=(preview[:77] + "...") if len(preview) > 80 else preview,
                     content=first_user[:_FACT_CHARS],
                     type="fact",
                     confidence=0.5,
@@ -1318,9 +1284,7 @@ class _ChatExportImporter(HarnessImporter):
         try:
             # errors="replace" for non-UTF8 bytes; strip null bytes that
             # would otherwise survive into stored content.
-            data = json.loads(
-                raw.decode("utf-8", errors="replace").replace("\x00", "")
-            )
+            data = json.loads(raw.decode("utf-8", errors="replace").replace("\x00", ""))
         except (ValueError, RecursionError, MemoryError) as exc:
             return [], (
                 f"{self.export_path}: not parseable as JSON "
@@ -1510,9 +1474,7 @@ async def run_import(
         "duplicate_of": [],
     }
     for cand in candidates:
-        key = import_dedupe_key(
-            {**cand.source, "imported_from": cand.imported_from}
-        )
+        key = import_dedupe_key({**cand.source, "imported_from": cand.imported_from})
         if key in existing_keys:
             summary["skipped_already_imported"] += 1
             continue
@@ -1541,10 +1503,12 @@ async def run_import(
             memory_ids=[rec.id],
             scopes_used=["memory.admin"],
             client_id=None,
-            meta={"via": "importer",
-                  "harness": source.get("client_id"),
-                  "imported_from": cand.imported_from,
-                  "redactions": n_redact},
+            meta={
+                "via": "importer",
+                "harness": source.get("client_id"),
+                "imported_from": cand.imported_from,
+                "redactions": n_redact,
+            },
         )
         existing_keys.add(key)
         summary["imported"] += 1

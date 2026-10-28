@@ -8,6 +8,7 @@ Covers:
 - briefing rendering (human copy, encrypted placeholder, blank slate)
 - SwitchEvent audit persistence (action="harness_switch")
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -26,26 +27,36 @@ def _repo() -> InMemoryMemoryRepository:
     return InMemoryMemoryRepository(HashEmbedder())
 
 
-async def _add(repo, content, *, type="fact", tags=(), encrypted=False,
-               key_id=None):
+async def _add(repo, content, *, type="fact", tags=(), encrypted=False, key_id=None):
     """Write + approve (active) so handoff visibility rules apply."""
     if encrypted:
         rec, _ = await repo.create_pending(
-            content=content, type=type, scope_tags=list(tags),
-            confidence=0.9, source={}, encrypted=True, key_id=key_id,
+            content=content,
+            type=type,
+            scope_tags=list(tags),
+            confidence=0.9,
+            source={},
+            encrypted=True,
+            key_id=key_id,
         )
         return await repo.approve(rec.id)
     rec, _ = await repo.create_active(
-        content=content, type=type, scope_tags=list(tags),
-        confidence=0.9, source={},
+        content=content,
+        type=type,
+        scope_tags=list(tags),
+        confidence=0.9,
+        source={},
     )
     return rec
 
 
 async def _add_pending(repo, content, *, tags=()):
     rec, _ = await repo.create_pending(
-        content=content, type="fact", scope_tags=list(tags),
-        confidence=0.9, source={},
+        content=content,
+        type="fact",
+        scope_tags=list(tags),
+        confidence=0.9,
+        source={},
     )
     return rec
 
@@ -55,14 +66,20 @@ def test_handoff_groups_into_sections():
     async def run():
         repo = _repo()
         d = await _add(repo, "We decided to use Postgres", tags=[project_tag("demo"), "decision"])
-        p = await _add(repo, "Don't run migrations on Friday", tags=[project_tag("demo"), "pitfall"])
-        c = await _add(repo, "Use tabs for indentation", type="skill_ref", tags=[project_tag("demo")])
+        p = await _add(
+            repo, "Don't run migrations on Friday", tags=[project_tag("demo"), "pitfall"]
+        )
+        c = await _add(
+            repo, "Use tabs for indentation", type="skill_ref", tags=[project_tag("demo")]
+        )
         w = await _add(repo, "Refactoring auth module", tags=[project_tag("demo")])
         me = await _add(repo, "User prefers dark mode", type="personal")
         other = await _add(repo, "Other project memory", tags=[project_tag("other"), "decision"])
 
         h = await switch.build_handoff(
-            repo, project="demo", from_harness="claude-code",
+            repo,
+            project="demo",
+            from_harness="claude-code",
             to_harness="cursor",
         )
         assert h["project"] == "demo"
@@ -93,12 +110,13 @@ def test_handoff_groups_into_sections():
 def test_handoff_type_and_keyword_fallbacks():
     async def run():
         repo = _repo()
-        ep = await _add(repo, "Tried X then Y", type="episode",
-                        tags=[project_tag("demo")])
-        kw = await _add(repo, "We decided the API shape yesterday",
-                        tags=[project_tag("demo")])
+        ep = await _add(repo, "Tried X then Y", type="episode", tags=[project_tag("demo")])
+        kw = await _add(repo, "We decided the API shape yesterday", tags=[project_tag("demo")])
         h = await switch.build_handoff(
-            repo, project="demo", from_harness="a", to_harness="b",
+            repo,
+            project="demo",
+            from_harness="a",
+            to_harness="b",
         )
         return h, ep, kw
 
@@ -112,15 +130,24 @@ def test_handoff_empty_project_name_raises():
         repo = _repo()
         with pytest.raises(InvalidInput):
             await switch.build_handoff(
-                repo, project="  ", from_harness="a", to_harness="b",
+                repo,
+                project="  ",
+                from_harness="a",
+                to_harness="b",
             )
         with pytest.raises(InvalidInput):
             await switch.build_handoff(
-                repo, project="demo", from_harness="", to_harness="b",
+                repo,
+                project="demo",
+                from_harness="",
+                to_harness="b",
             )
         with pytest.raises(InvalidInput):
             await switch.build_handoff(
-                repo, project="demo", from_harness="a", to_harness="b",
+                repo,
+                project="demo",
+                from_harness="a",
+                to_harness="b",
                 top_k=0,
             )
 
@@ -132,7 +159,9 @@ def test_handoff_unknown_project_returns_empty_sections():
         repo = _repo()
         me = await _add(repo, "User prefers dark mode", type="personal")
         h = await switch.build_handoff(
-            repo, project="never-heard-of-it", from_harness="a",
+            repo,
+            project="never-heard-of-it",
+            from_harness="a",
             to_harness="b",
         )
         for name in ("in_progress", "decisions", "conventions", "pitfalls"):
@@ -148,13 +177,14 @@ def test_handoff_active_only():
     async def run():
         repo = _repo()
         ok = await _add(repo, "Active memory", tags=[project_tag("demo")])
-        pend = await _add_pending(repo, "Pending memory",
-                                  tags=[project_tag("demo")])
-        arch = await _add(repo, "Will be archived",
-                          tags=[project_tag("demo")])
+        pend = await _add_pending(repo, "Pending memory", tags=[project_tag("demo")])
+        arch = await _add(repo, "Will be archived", tags=[project_tag("demo")])
         await repo.archive(arch.id)
         h = await switch.build_handoff(
-            repo, project="demo", from_harness="a", to_harness="b",
+            repo,
+            project="demo",
+            from_harness="a",
+            to_harness="b",
         )
         all_ids = {e["id"] for s in h["sections"].values() for e in s}
         assert str(ok.id) in all_ids
@@ -168,10 +198,12 @@ def test_handoff_encrypted_memories_stay_ciphertext():
     async def run():
         repo = _repo()
         ct = base64.b64encode(b"fake-ciphertext-bytes").decode()
-        enc = await _add(repo, ct, type="personal", encrypted=True,
-                         key_id="k1")
+        enc = await _add(repo, ct, type="personal", encrypted=True, key_id="k1")
         h = await switch.build_handoff(
-            repo, project="demo", from_harness="a", to_harness="b",
+            repo,
+            project="demo",
+            from_harness="a",
+            to_harness="b",
         )
         (entry,) = h["sections"]["personal"]
         assert entry["id"] == str(enc.id)
@@ -196,28 +228,44 @@ def test_render_briefing_human_copy():
         "to_harness": "cursor",
         "at": "2026-10-14T00:00:00+00:00",
         "sections": {
-            "in_progress": [{
-                "id": "1", "content": "Refactoring auth module",
-                "type": "fact", "scope_tags": [], "source": {},
-                "confidence": 0.9, "status": "active",
-                "created_at": "2026-10-14T00:00:00+00:00",
-                "updated_at": "2026-10-14T00:00:00+00:00",
-                "superseded_by": None, "version": 1,
-                "encrypted": False, "key_id": None,
-                "untrusted_data": True,
-            }],
+            "in_progress": [
+                {
+                    "id": "1",
+                    "content": "Refactoring auth module",
+                    "type": "fact",
+                    "scope_tags": [],
+                    "source": {},
+                    "confidence": 0.9,
+                    "status": "active",
+                    "created_at": "2026-10-14T00:00:00+00:00",
+                    "updated_at": "2026-10-14T00:00:00+00:00",
+                    "superseded_by": None,
+                    "version": 1,
+                    "encrypted": False,
+                    "key_id": None,
+                    "untrusted_data": True,
+                }
+            ],
             "decisions": [],
             "conventions": [],
-            "pitfalls": [{
-                "id": "2", "content": "Don't deploy on Friday",
-                "type": "fact", "scope_tags": [], "source": {},
-                "confidence": 0.9, "status": "active",
-                "created_at": "2026-10-14T00:00:00+00:00",
-                "updated_at": "2026-10-14T00:00:00+00:00",
-                "superseded_by": None, "version": 1,
-                "encrypted": False, "key_id": None,
-                "untrusted_data": True,
-            }],
+            "pitfalls": [
+                {
+                    "id": "2",
+                    "content": "Don't deploy on Friday",
+                    "type": "fact",
+                    "scope_tags": [],
+                    "source": {},
+                    "confidence": 0.9,
+                    "status": "active",
+                    "created_at": "2026-10-14T00:00:00+00:00",
+                    "updated_at": "2026-10-14T00:00:00+00:00",
+                    "superseded_by": None,
+                    "version": 1,
+                    "encrypted": False,
+                    "key_id": None,
+                    "untrusted_data": True,
+                }
+            ],
             "personal": [],
         },
     }
@@ -269,9 +317,9 @@ def test_render_briefing_blank_slate():
 def test_switch_event_audit_record():
     async def run():
         repo = _repo()
-        ev = switch.SwitchEvent(from_harness="claude-code",
-                                to_harness="codex", project="demo",
-                                actor="user-1")
+        ev = switch.SwitchEvent(
+            from_harness="claude-code", to_harness="codex", project="demo", actor="user-1"
+        )
         rec = await ev.record(repo)
         assert rec.action == "harness_switch"
         assert rec.meta["from_harness"] == "claude-code"
@@ -289,18 +337,15 @@ def test_build_handoff_records_switch_event():
     async def run():
         repo = _repo()
         await _add(repo, "Something", tags=[project_tag("demo")])
-        await switch.build_handoff(repo, project="demo",
-                                   from_harness="a", to_harness="b")
+        await switch.build_handoff(repo, project="demo", from_harness="a", to_harness="b")
         rows = await repo.audit_list()
-        assert any(r.action == "harness_switch" and
-                   r.meta["project"] == "demo" for r in rows)
+        assert any(r.action == "harness_switch" and r.meta["project"] == "demo" for r in rows)
         # ...but not twice when the caller opts out (it records itself)
-        await switch.build_handoff(repo, project="demo",
-                                   from_harness="a", to_harness="b",
-                                   record_event=False)
+        await switch.build_handoff(
+            repo, project="demo", from_harness="a", to_harness="b", record_event=False
+        )
         rows = await repo.audit_list()
-        assert sum(1 for r in rows
-                   if r.action == "harness_switch") == 1
+        assert sum(1 for r in rows if r.action == "harness_switch") == 1
 
     asyncio.run(run())
 

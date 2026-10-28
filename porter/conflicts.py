@@ -40,29 +40,25 @@ Design notes:
 
 - Provenance helpers (``get_provenance`` / ``append_provenance``) are pure
   functions over the ``source`` dict; they never touch the DB.
-- Archived records get ``superseded_by`` linkage plus a provenance entry
-  via direct attribute assignment on the record object returned by
-  ``archive()``. That is metadata bookkeeping on an already-archived row
-  (same category as the documented ``touch_retrieved``/``set_pinned``
-  exceptions to the no-in-place-update rule): it adds lineage, it never
-  destroys content. It persists on implementations with mutable record
-  identity (in-memory); on Postgres the durable cross-implementation links
-  are the new record's provenance block and the change log. A future
-  migration could thread ``superseded_by`` through the archive path to
-  close that gap.
+- Archive writes persist superseded_by and provenance on both backends.
+  PostgreSQL merges and resolutions use a single transaction with source-row
+  locks; a failed operation rolls back records, audit and sync changes together.
 - Encrypted (E2EE) memories are never contradiction-scanned or merged:
   the server is ciphertext-blind and has no embedding to compare.
 """
+
 from __future__ import annotations
 
 import difflib
 import re
-from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import Callable, Sequence
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from .errors import InvalidInput, NotFound
 from .repositories import MemoryRecord, MemoryRepository
+from .visibility import can_read_memory
 
 __all__ = [
     "PROVENANCE_KEY",
@@ -89,7 +85,7 @@ MERGE_STRATEGIES = (
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _utcnow_iso() -> str:
@@ -130,9 +126,7 @@ def get_provenance(record: MemoryRecord) -> dict[str, Any]:
     return _provenance_from_source(record.source)
 
 
-def append_provenance(
-    record_source: dict[str, Any], event: dict[str, Any]
-) -> dict[str, Any]:
+def append_provenance(record_source: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
     """Pure function: return a copy of ``record_source`` with one provenance
     event appended. The input dict is never mutated and nothing is written
     to the DB — the caller persists the result through the normal write
@@ -151,9 +145,7 @@ def append_provenance(
     """
     kind = event.get("kind")
     if kind not in ("origin", "merge", "conflict"):
-        raise InvalidInput(
-            f"event kind must be one of origin|merge|conflict, got {kind!r}"
-        )
+        raise InvalidInput(f"event kind must be one of origin|merge|conflict, got {kind!r}")
     source = dict(record_source or {})
     prov = _provenance_from_source(source)
     fields = {k: v for k, v in event.items() if k != "kind"}
@@ -211,7 +203,7 @@ def _negation_markers(text: str) -> set[str]:
     if _CONTRACTION_NEG in low:
         found.add(_CONTRACTION_NEG)
     for m in _EN_NEGATIONS:
-        if re.search(r"\b%s\b" % re.escape(m), low):
+        if re.search(rf"\b{re.escape(m)}\b", low):
             found.add(m)
     return found
 
@@ -223,7 +215,7 @@ def _strip_negations(text: str) -> str:
     out = re.sub(r"非(?!常)", "", out)
     out = out.replace(_CONTRACTION_NEG, "")
     for m in _EN_NEGATIONS:
-        out = re.sub(r"\b%s\b" % re.escape(m), "", out, flags=re.IGNORECASE)
+        out = re.sub(rf"\b{re.escape(m)}\b", "", out, flags=re.IGNORECASE)
     return out
 
 
@@ -311,6 +303,7 @@ async def detect_contradictions(
     *,
     threshold: float = 0.75,
     top_k: int = 10,
+    granted_scopes: Sequence[str] = ("memory.read",),
 ) -> list[dict[str, Any]]:
     """Find active memories that semantically contradict the given one.
 
@@ -326,26 +319,20 @@ async def detect_contradictions(
     HashEmbedder used in tests needs a lower value (see tests).
     """
     record = await repo.get(memory_id)
-    if record is None or record.encrypted:
+    if not can_read_memory(record, granted_scopes) or record.encrypted:
         return []
-    vec = record.embedding or repo.embedder.embed_one(record.content)
+    vec = record.embedding or await repo.embedder.aembed_one(record.content)
     # +1: the probe usually returns the record itself; dropped below.
-    scored = await repo.find_similar_active(
-        vec, threshold=threshold, limit=top_k + 1
-    )
+    scored = await repo.find_similar_active(vec, threshold=threshold, limit=top_k + 1)
     out: list[dict[str, Any]] = []
     for s in scored:
         if s.record.id == record.id:
             continue
-        # find_similar_active may return id-only stubs (Postgres impl);
-        # re-fetch for the full content the rules need.
-        other = await repo.get(s.record.id)
-        if other is None or other.status != "active" or other.encrypted:
+        other = s.record
+        if not can_read_memory(other, granted_scopes) or other.encrypted:
             continue
         signals = [
-            name
-            for name, rule in CONTRADICTION_RULES
-            if rule(record.content, other.content)
+            name for name, rule in CONTRADICTION_RULES if rule(record.content, other.content)
         ]
         if signals:
             out.append(
@@ -354,6 +341,7 @@ async def detect_contradictions(
                     "similarity": round(s.score, 4),
                     "signals": signals,
                     "excerpt": other.content[:200],
+                    "untrusted_data": True,
                 }
             )
     return out[:top_k]
@@ -396,104 +384,102 @@ async def semantic_merge(
     Raises InvalidInput on unknown strategy, fewer than two distinct ids,
     missing/non-active/encrypted sources, or manual_pick without content.
     """
-    if strategy not in MERGE_STRATEGIES:
-        raise InvalidInput(
-            f"unknown merge strategy {strategy!r}; "
-            f"expected one of {MERGE_STRATEGIES}"
+    async with repo.atomic(memory_ids):
+        if strategy not in MERGE_STRATEGIES:
+            raise InvalidInput(
+                f"unknown merge strategy {strategy!r}; expected one of {MERGE_STRATEGIES}"
+            )
+        if strategy == "manual_pick" and not content:
+            raise InvalidInput("manual_pick requires the merged content")
+        ids = list(dict.fromkeys(memory_ids))  # dedupe, keep order
+        if len(ids) < 2:
+            raise InvalidInput("semantic_merge requires at least two memory ids")
+
+        records: list[MemoryRecord] = []
+        problems: list[str] = []
+        for mid in ids:
+            rec = await repo.get(mid)
+            if rec is None:
+                raise NotFound(f"memory {mid} not found")
+            elif rec.encrypted:
+                problems.append(f"{mid}: encrypted memories cannot be merged")
+            elif rec.status != "active":
+                problems.append(f"{mid}: status is {rec.status!r}, not active")
+            else:
+                records.append(rec)
+        if problems:
+            raise InvalidInput("cannot merge: " + "; ".join(problems))
+
+        ordered = _ordered_newest_last(records)
+        newest = ordered[-1]
+        merged_content = content if strategy == "manual_pick" else newest.content
+        if strategy == "newest_wins":
+            merged_type = newest.type
+            merged_tags = list(newest.scope_tags)
+            merged_conf = newest.confidence
+        else:  # newest_wins_per_aspect / manual_pick
+            merged_type = newest.type
+            merged_tags = sorted({t for r in ordered for t in r.scope_tags})
+            merged_conf = max(r.confidence for r in ordered)
+
+        now_iso = _utcnow_iso()
+        new_source = dict(newest.source)
+        prov = _provenance_from_source(new_source)
+        if prov["origin"] is None:
+            prov["origin"] = {
+                "harness": new_source.get("harness", "porter-merge"),
+                "at": now_iso,
+                "actor": str(actor_client_id) if actor_client_id else None,
+            }
+        for r in ordered:
+            prov["merges"].append({"from_id": str(r.id), "at": now_iso, "strategy": strategy})
+        new_source[PROVENANCE_KEY] = prov
+
+        new_rec, _dups = await repo.create_active(
+            content=merged_content,
+            type=merged_type,
+            scope_tags=merged_tags,
+            confidence=merged_conf,
+            source=new_source,
+            actor_client_id=actor_client_id,
+            triage_reasons=["semantic_merge"],
         )
-    if strategy == "manual_pick" and not content:
-        raise InvalidInput("manual_pick requires the merged content")
-    ids = list(dict.fromkeys(memory_ids))  # dedupe, keep order
-    if len(ids) < 2:
-        raise InvalidInput("semantic_merge requires at least two memory ids")
 
-    records: list[MemoryRecord] = []
-    problems: list[str] = []
-    for mid in ids:
-        rec = await repo.get(mid)
-        if rec is None:
-            raise NotFound(f"memory {mid} not found")
-        elif rec.encrypted:
-            problems.append(f"{mid}: encrypted memories cannot be merged")
-        elif rec.status != "active":
-            problems.append(f"{mid}: status is {rec.status!r}, not active")
-        else:
-            records.append(rec)
-    if problems:
-        raise InvalidInput("cannot merge: " + "; ".join(problems))
+        archived_ids: list[UUID] = []
+        for r in ordered:
+            arch = await repo.archive(
+                r.id,
+                actor_client_id=actor_client_id,
+                superseded_by=new_rec.id,
+                source=append_provenance(
+                    r.source,
+                    {
+                        "kind": "conflict",
+                        "with_id": new_rec.id,
+                        "resolution": resolution_merged_into(new_rec.id),
+                    },
+                ),
+            )
+            if arch is None:
+                continue
+            archived_ids.append(arch.id)
 
-    ordered = _ordered_newest_last(records)
-    newest = ordered[-1]
-    merged_content = content if strategy == "manual_pick" else newest.content
-    if strategy == "newest_wins":
-        merged_type = newest.type
-        merged_tags = list(newest.scope_tags)
-        merged_conf = newest.confidence
-    else:  # newest_wins_per_aspect / manual_pick
-        merged_type = newest.type
-        merged_tags = sorted({t for r in ordered for t in r.scope_tags})
-        merged_conf = max(r.confidence for r in ordered)
-
-    now_iso = _utcnow_iso()
-    new_source = dict(newest.source)
-    prov = _provenance_from_source(new_source)
-    if prov["origin"] is None:
-        prov["origin"] = {
-            "harness": new_source.get("harness", "porter-merge"),
-            "at": now_iso,
-            "actor": str(actor_client_id) if actor_client_id else None,
-        }
-    for r in ordered:
-        prov["merges"].append(
-            {"from_id": str(r.id), "at": now_iso, "strategy": strategy}
-        )
-    new_source[PROVENANCE_KEY] = prov
-
-    new_rec, _dups = await repo.create_active(
-        content=merged_content,
-        type=merged_type,
-        scope_tags=merged_tags,
-        confidence=merged_conf,
-        source=new_source,
-        actor_client_id=actor_client_id,
-        triage_reasons=["semantic_merge"],
-    )
-
-    archived_ids: list[UUID] = []
-    stamp = _utcnow()
-    for r in ordered:
-        arch = await repo.archive(r.id, actor_client_id=actor_client_id)
-        if arch is None:
-            continue
-        # Lineage linkage on the archived row (see module docstring).
-        arch.superseded_by = new_rec.id
-        arch.source = append_provenance(
-            arch.source,
-            {
-                "kind": "conflict",
-                "with_id": new_rec.id,
-                "resolution": resolution_merged_into(new_rec.id),
+        await repo.audit(
+            action="semantic_merge",
+            memory_ids=[new_rec.id, *archived_ids],
+            client_id=actor_client_id,
+            meta={
+                "strategy": strategy,
+                "merged_ids": [str(r.id) for r in ordered],
             },
         )
-        arch.updated_at = stamp
-        archived_ids.append(arch.id)
-
-    await repo.audit(
-        action="semantic_merge",
-        memory_ids=[new_rec.id, *archived_ids],
-        client_id=actor_client_id,
-        meta={
+        return {
+            "id": new_rec.id,
+            "merged_ids": [r.id for r in ordered],
+            "archived_ids": archived_ids,
             "strategy": strategy,
-            "merged_ids": [str(r.id) for r in ordered],
-        },
-    )
-    return {
-        "id": new_rec.id,
-        "merged_ids": [r.id for r in ordered],
-        "archived_ids": archived_ids,
-        "strategy": strategy,
-        "content": merged_content,
-    }
+            "content": merged_content,
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -532,49 +518,53 @@ async def resolve_conflict(
     calls ``resolve_conflict(winner, [loser_pending...],
     resolution=resolution_superseded_by(winner))``.
     """
-    winner = await repo.get(winner_id)
-    if winner is None:
-        raise NotFound(f"winner memory {winner_id} not found")
-    if winner.status != "active":
-        raise InvalidInput(
-            f"winner memory {winner_id} has status {winner.status!r}, "
-            "expected 'active'"
-        )
+    async with repo.atomic([winner_id, *loser_ids]):
+        winner = await repo.get(winner_id)
+        if winner is None:
+            raise NotFound(f"winner memory {winner_id} not found")
+        if winner.status != "active":
+            raise InvalidInput(
+                f"winner memory {winner_id} has status {winner.status!r}, expected 'active'"
+            )
 
-    archived_ids: list[UUID] = []
-    skipped_ids: list[UUID] = []
-    seen: set[UUID] = set()
-    stamp = _utcnow()
-    for lid in loser_ids:
-        if lid in seen or lid == winner_id:
-            continue
-        seen.add(lid)
-        rec = await repo.get(lid)
-        if rec is None or rec.status == "archived":
-            skipped_ids.append(lid)
-            continue
-        arch = await repo.archive(lid, actor_client_id=actor_client_id)
-        if arch is None:
-            skipped_ids.append(lid)
-            continue
-        # Lineage linkage on the archived row (see module docstring).
-        arch.superseded_by = winner_id
-        arch.source = append_provenance(
-            arch.source,
-            {"kind": "conflict", "with_id": winner_id, "resolution": resolution},
-        )
-        arch.updated_at = stamp
-        archived_ids.append(arch.id)
+        archived_ids: list[UUID] = []
+        skipped_ids: list[UUID] = []
+        seen: set[UUID] = set()
+        for lid in loser_ids:
+            if lid in seen or lid == winner_id:
+                continue
+            seen.add(lid)
+            rec = await repo.get(lid)
+            if rec is None or rec.status == "archived":
+                skipped_ids.append(lid)
+                continue
+            arch = await repo.archive(
+                lid,
+                actor_client_id=actor_client_id,
+                superseded_by=winner_id,
+                source=append_provenance(
+                    rec.source,
+                    {
+                        "kind": "conflict",
+                        "with_id": winner_id,
+                        "resolution": resolution,
+                    },
+                ),
+            )
+            if arch is None:
+                skipped_ids.append(lid)
+                continue
+            archived_ids.append(arch.id)
 
-    await repo.audit(
-        action="resolve_conflict",
-        memory_ids=[winner_id, *archived_ids],
-        client_id=actor_client_id,
-        meta={"resolution": resolution},
-    )
-    return {
-        "winner_id": winner_id,
-        "archived_ids": archived_ids,
-        "skipped_ids": skipped_ids,
-        "resolution": resolution,
-    }
+        await repo.audit(
+            action="resolve_conflict",
+            memory_ids=[winner_id, *archived_ids],
+            client_id=actor_client_id,
+            meta={"resolution": resolution},
+        )
+        return {
+            "winner_id": winner_id,
+            "archived_ids": archived_ids,
+            "skipped_ids": skipped_ids,
+            "resolution": resolution,
+        }

@@ -1,1 +1,21 @@
-{"_comment":"Porter MCP server for Claude Code. HOW TO APPLY: merge the mcpServers.porter block into your project .mcp.json (project scope) or ~/.claude.json (user scope) — do NOT replace the whole file. Replace {{PORTER_TOKEN}} with a real Porter access token (mint via the OAuth flow; needs memory.read + memory.write, prefer memory.read.<tag> for least privilege). REMOTE ALTERNATIVE: instead of stdio you can point Claude Code at Porter's Streamable HTTP endpoint (POST http://localhost:8000/mcp) with an Authorization: Bearer header — see DEPLOY.md. No secrets are stored in this file.","mcpServers":{"porter":{"args":["-m","porter.mcp_stdio"],"command":"python","env":{"PORTER_TOKEN":"{{PORTER_TOKEN}}"}}}}
+{
+  "_comment": "Porter MCP server for Claude Code. HOW TO APPLY: merge the mcpServers.porter block into your project .mcp.json (project scope) or ~/.claude.json (user scope) — do NOT replace the whole file. Replace {{PORTER_TOKEN}} with a real Porter access token (mint via the OAuth flow; needs memory.read + memory.write, prefer memory.read.<tag> for least privilege). REMOTE ALTERNATIVE: instead of stdio you can point Claude Code at Porter's Streamable HTTP endpoint (POST http://localhost:8000/mcp) with an Authorization: Bearer header — see DEPLOY.md. No secrets are stored in this file.",
+  "mcpServers": {
+    "porter": {
+      "args": [
+        "-m",
+        "porter.mcp_stdio"
+      ],
+      "command": "python",
+      "env": {
+        "PORTER_TOKEN": "{{PORTER_TOKEN}}",
+        "PORTER_REPO": "postgres",
+        "DATABASE_URL": "postgresql://porter:porter@localhost:5432/porter",
+        "PORTER_JWT_SECRET": "{{PORTER_JWT_SECRET}}",
+        "PORTER_EMBEDDER": "http",
+        "EMBEDDER_URL": "http://localhost:8001",
+        "PYTHONPATH": "/path/to/porter"
+      }
+    }
+  }
+}

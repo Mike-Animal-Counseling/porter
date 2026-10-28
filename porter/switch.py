@@ -22,17 +22,15 @@ content (ciphertext) is passed through opaquely, exactly like
 sync._record_to_dict.
 
 Visibility: build_handoff includes ACTIVE memories only (same idea as
-sync.build_sync_delta's non-admin rule). OAuth tag-scope filtering is the
-CALLER's job (REST/MCP layer), mirroring the division of labor in sync.py.
+sync.build_sync_delta's non-admin rule). OAuth tag-scope filtering uses granted_scopes supplied by the REST/MCP layer.
 
 -----------------------------------------------------------------------
 WIRING SPEC (for the integrator — this module changes no existing files):
 
 REST (suggested):
     POST /api/v1/switch/handoff
-    Auth: Bearer token with `memory.read` scope. Tag-scope filtering is
-    enforced by the caller before/after build_handoff (same division of
-    labor as build_sync_delta: effective_tag_filter on the result).
+    Auth: Bearer token with `memory.read` scope. The transport supplies
+    granted_scopes for filtering inside build_handoff.
     Request body (JSON):
         {"project": str, "from_harness": str, "to_harness": str,
          "top_k": int = 10}
@@ -51,22 +49,25 @@ MCP (suggested):
     returns: handoff payload dict (same shape as REST)
     scope: memory.read (enforced by the MCP layer via _need_scope)
 """
+
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Sequence
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from .errors import InvalidInput
 from .repositories import AuditRecord, MemoryRecord, MemoryRepository
+from .visibility import can_read_memory
 
 # ---------------------------------------------------------------------------
 # SwitchEvent
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 @dataclass
@@ -115,27 +116,63 @@ class SwitchEvent:
 _SECTION_TAGS: dict[str, frozenset[str]] = {
     "pitfalls": frozenset(
         {
-            "pitfall", "pitfalls", "gotcha", "gotchas", "lesson", "lessons",
-            "mistake", "mistakes", "debugging", "warning", "warnings",
-            "踩坑", "教训",
+            "pitfall",
+            "pitfalls",
+            "gotcha",
+            "gotchas",
+            "lesson",
+            "lessons",
+            "mistake",
+            "mistakes",
+            "debugging",
+            "warning",
+            "warnings",
+            "踩坑",
+            "教训",
         }
     ),
     "decisions": frozenset(
         {
-            "decision", "decisions", "adr", "choice", "chosen", "decided",
-            "决策", "决定",
+            "decision",
+            "decisions",
+            "adr",
+            "choice",
+            "chosen",
+            "decided",
+            "决策",
+            "决定",
         }
     ),
     "conventions": frozenset(
         {
-            "convention", "conventions", "style", "standard", "standards",
-            "rule", "rules", "guide", "guideline", "规范", "约定",
+            "convention",
+            "conventions",
+            "style",
+            "standard",
+            "standards",
+            "rule",
+            "rules",
+            "guide",
+            "guideline",
+            "规范",
+            "约定",
         }
     ),
     "in_progress": frozenset(
         {
-            "task", "tasks", "todo", "wip", "in-progress", "in_progress",
-            "status", "blocked", "doing", "progress", "任务", "状态", "进展",
+            "task",
+            "tasks",
+            "todo",
+            "wip",
+            "in-progress",
+            "in_progress",
+            "status",
+            "blocked",
+            "doing",
+            "progress",
+            "任务",
+            "状态",
+            "进展",
         }
     ),
 }
@@ -149,8 +186,7 @@ _TYPE_FALLBACK: dict[str, str] = {
 # Content-keyword fallback (plaintext only — never applied to encrypted
 # records, whose content is opaque ciphertext).
 _CONTENT_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "pitfalls": ("gotcha", "don't", "avoid", "warning", "failed", "broken",
-                 "踩坑", "别"),
+    "pitfalls": ("gotcha", "don't", "avoid", "warning", "failed", "broken", "踩坑", "别"),
     "decisions": ("decided", "chose", "decision:", "决定"),
     "conventions": ("always", "never", "must ", "convention", "规范", "约定"),
 }
@@ -231,6 +267,7 @@ async def build_handoff(
     top_k: int = 10,
     actor_client_id: UUID | None = None,
     record_event: bool = True,
+    granted_scopes: Sequence[str] = ("memory.read",),
 ) -> dict[str, Any]:
     """Assemble the handoff payload for a harness switch.
 
@@ -240,8 +277,8 @@ async def build_handoff(
     records the switch as an audit event (action="harness_switch").
 
     Visibility: ACTIVE memories only — the same rule sync.build_sync_delta
-    applies to non-admin callers. OAuth tag-scope filtering stays the
-    caller's responsibility (REST/MCP layer).
+    applies to non-admin callers. granted_scopes filters both project and
+    personal memories before inclusion in the response or audit event.
 
     Returns::
         {"project", "from_harness", "to_harness", "at",
@@ -268,10 +305,11 @@ async def build_handoff(
     # Project-domain working memory for THIS project. The tag filter does
     # the coarse pass; project_names() re-checks so case/format variants of
     # the tag still resolve to the same normalized project.
-    proj_recs = await repo.list(status="active", tags=[f"project:{want}"],
-                                limit=top_k)
+    proj_recs = await repo.list(status="active", tags=[f"project:{want}"], limit=top_k)
     proj_recs = [
-        r for r in proj_recs if want in project_names(r.scope_tags or ())
+        r
+        for r in proj_recs
+        if want in project_names(r.scope_tags or ()) and can_read_memory(r, granted_scopes)
     ]
 
     # Personal domain: the luggage follows the person, not the tool. All of
@@ -280,7 +318,7 @@ async def build_handoff(
     seen: set[UUID] = set()
     for ptype in ("personal", "preference"):
         for r in await repo.list(status="active", type=ptype, limit=top_k):
-            if r.id not in seen:
+            if r.id not in seen and can_read_memory(r, granted_scopes):
                 seen.add(r.id)
                 personal_recs.append(r)
     personal_recs = personal_recs[:top_k]
@@ -358,8 +396,8 @@ def _rel_time(iso: str | None, lang: str = "en") -> str:
     except (ValueError, TypeError):
         return ""
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    secs = int((datetime.now(timezone.utc) - dt).total_seconds())
+        dt = dt.replace(tzinfo=UTC)
+    secs = int((datetime.now(UTC) - dt).total_seconds())
     if secs < 0:
         return ""
     if lang == "zh":
@@ -470,9 +508,7 @@ def render_briefing(handoff: dict[str, Any], lang: str | None = "en") -> str:
         lines.append("")
 
     if zh:
-        lines.append(
-            "💡 以上都是过去的记录转述，仅供参考——动手前还是按现状核实一下。"
-        )
+        lines.append("💡 以上都是过去的记录转述，仅供参考——动手前还是按现状核实一下。")
     else:
         lines.append(
             "💡 All of the above is retold from past records — "

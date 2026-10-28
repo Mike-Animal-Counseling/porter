@@ -1,0 +1,41 @@
+{
+  "memories": 14,
+  "queries": 12,
+  "duplicate_pairs": 15,
+  "distinct_pairs": 10,
+  "threshold": 0.92,
+  "results": [
+    {
+      "embedder": "hash",
+      "dimension": 1024,
+      "dedup_precision": 1.0,
+      "dedup_recall": 0.06666666666666667,
+      "true_positives": 1,
+      "false_positives": 0,
+      "recall_at": {
+        "1": 0.75,
+        "3": 0.8333333333333334,
+        "5": 0.8333333333333334
+      },
+      "model": "hash"
+    },
+    {
+      "embedder": "http",
+      "dimension": 1024,
+      "dedup_precision": 0.8333333333333334,
+      "dedup_recall": 0.3333333333333333,
+      "true_positives": 5,
+      "false_positives": 1,
+      "recall_at": {
+        "1": 0.5833333333333334,
+        "3": 0.9166666666666666,
+        "5": 1.0
+      },
+      "model": "BAAI/bge-m3"
+    }
+  ],
+  "scope": "Small bilingual acceptance fixture; not a general retrieval benchmark",
+  "auto_merge_threshold": 0.97,
+  "distinct_pairs_above_auto_merge_threshold": 0,
+  "maximum_distinct_similarity": 0.95095
+}

@@ -47,15 +47,19 @@ Wiring (spec only — this module is transport-agnostic, no endpoints here):
 - MCP tool: ``writeback_sync(harness, project?, dry_run?,
   include_sensitive?)`` with identical semantics.
 """
+
 from __future__ import annotations
 
 import os
 import re
 import shutil
+import stat
+import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 __all__ = [
     "MARK_START",
@@ -115,7 +119,7 @@ def _apply_marker_zone(existing: str, block: str) -> str:
     """
     zone = f"{MARK_START}\n{block}\n{MARK_END}"
     if _ZONE_RE.search(existing):
-        return _ZONE_RE.sub(zone, existing, count=1)
+        return _ZONE_RE.sub(lambda _match: zone, existing, count=1)
     if not existing.strip():
         return zone + "\n"
     tail = existing if existing.endswith("\n") else existing + "\n"
@@ -141,19 +145,13 @@ def _triage_flagged_sensitive(mem: Mapping[str, Any]) -> bool:
     return False
 
 
-def _eligible(
-    mem: Mapping[str, Any], *, include_sensitive: bool
-) -> tuple[bool, str]:
+def _eligible(mem: Mapping[str, Any], *, include_sensitive: bool) -> tuple[bool, str]:
     """Eligibility gate for write-back. Returns (ok, reason)."""
     if mem.get("status") != "active":
         return False, f"status={mem.get('status')!r} (not active)"
     if mem.get("encrypted"):
         return False, "encrypted (E2EE ciphertext is never rendered)"
-    if (
-        not include_sensitive
-        and mem.get("type") == "personal"
-        and _triage_flagged_sensitive(mem)
-    ):
+    if not include_sensitive and mem.get("type") == "personal" and _triage_flagged_sensitive(mem):
         return False, "sensitive personal memory (triage-flagged)"
     if not (mem.get("content") or "").strip():
         return False, "empty content"
@@ -161,7 +159,7 @@ def _eligible(
 
 
 def _utc_stamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S-%fZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%S-%fZ")
 
 
 # ---------------------------------------------------------------------------
@@ -202,14 +200,11 @@ class HarnessWriter:
         """(target files, note fragment). Empty list = nothing to write to."""
         raise NotImplementedError
 
-    def _header_lines(
-        self, memories: list[Mapping[str, Any]], *, project: str | None
-    ) -> list[str]:
-        when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    def _header_lines(self, memories: list[Mapping[str, Any]], *, project: str | None) -> list[str]:
+        when = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
         scope = project or "global"
         return [
-            f"Porter synced memories ({len(memories)}), "
-            f"scope: {scope}, synced {when}.",
+            f"Porter synced memories ({len(memories)}), scope: {scope}, synced {when}.",
             "Managed by Porter — edit outside the markers, not inside.",
             "",
         ]
@@ -217,9 +212,7 @@ class HarnessWriter:
     # -- rendering ----------------------------------------------------------
     def _render_one(self, mem: Mapping[str, Any]) -> list[str]:
         content = (mem.get("content") or "").strip()
-        first = next(
-            (ln.strip() for ln in content.splitlines() if ln.strip()), ""
-        )
+        first = next((ln.strip() for ln in content.splitlines() if ln.strip()), "")
         heading = first[:80] if first else f"memory {str(mem.get('id', '?'))[:8]}"
         tags = ", ".join(mem.get("scope_tags") or [])
         meta = f"type: {mem.get('type', '?')}"
@@ -227,9 +220,7 @@ class HarnessWriter:
             meta += f" · tags: {tags}"
         return [f"### {heading}", "", content, "", f"*{meta}*", ""]
 
-    def _render(
-        self, memories: list[Mapping[str, Any]], *, project: str | None
-    ) -> str:
+    def _render(self, memories: list[Mapping[str, Any]], *, project: str | None) -> str:
         lines = self._header_lines(memories, project=project)
         for mem in memories:
             lines.extend(self._render_one(mem))
@@ -265,24 +256,21 @@ class HarnessWriter:
             res.note = "; ".join(note_parts)
             return res
         if not targets:
-            note_parts.append(
-                "no write target for this harness/project combination"
-            )
+            note_parts.append("no write target for this harness/project combination")
             res.note = "; ".join(note_parts)
             return res
 
         block = self._render(eligible, project=project)
         for target in targets:
-            if target.is_symlink():
+            if target.is_symlink() or any(parent.is_symlink() for parent in target.parents):
                 res.skipped.append(f"{target}: symlink target refused")
                 continue
             try:
-                existing = (
-                    target.read_text(encoding="utf-8", errors="replace")
-                    if target.is_file()
-                    else ""
-                )
-            except OSError as exc:
+                existing = ""
+                if target.is_file():
+                    with target.open(encoding="utf-8", newline="") as stream:
+                        existing = stream.read()
+            except (OSError, UnicodeError) as exc:
                 res.skipped.append(f"{target}: unreadable ({exc})")
                 continue
             new_text = _apply_marker_zone(existing, block)
@@ -300,7 +288,16 @@ class HarnessWriter:
                     shutil.copy2(target, bpath)
                     res.backed_up.append(str(bpath))
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(new_text, encoding="utf-8")
+                mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else 0o600
+                descriptor, temporary = tempfile.mkstemp(prefix=".porter-write-", dir=target.parent)
+                try:
+                    with os.fdopen(descriptor, "w", encoding="utf-8", newline="") as stream:
+                        stream.write(new_text)
+                    os.chmod(temporary, mode)
+                    os.replace(temporary, target)
+                finally:
+                    if os.path.exists(temporary):
+                        os.unlink(temporary)
             except OSError as exc:
                 res.skipped.append(f"{target}: write failed ({exc})")
                 continue
@@ -357,9 +354,7 @@ class CodexWriter(HarnessWriter):
     ):
         super().__init__(home)
         self.memories_dir = (
-            Path(memories_dir)
-            if memories_dir
-            else self.home / ".codex" / "memories"
+            Path(memories_dir) if memories_dir else self.home / ".codex" / "memories"
         )
 
     def _targets(self, project: str | None) -> tuple[list[Path], str]:
@@ -378,11 +373,7 @@ class ClaudeCodeWriter(HarnessWriter):
         claude_home: str | os.PathLike[str] | None = None,
     ):
         super().__init__(home)
-        self.claude_home = (
-            Path(claude_home)
-            if claude_home
-            else self.home / ".claude"
-        )
+        self.claude_home = Path(claude_home) if claude_home else self.home / ".claude"
 
     def _targets(self, project: str | None) -> tuple[list[Path], str]:
         if project:
@@ -400,12 +391,9 @@ class ClaudeCodeWriter(HarnessWriter):
                             f"matched Claude Code project dir {d.name}"
                         )
             return [self.claude_home / "CLAUDE.md"], (
-                "no matching ~/.claude/projects dir; "
-                "falling back to global CLAUDE.md"
+                "no matching ~/.claude/projects dir; falling back to global CLAUDE.md"
             )
-        return [self.claude_home / "CLAUDE.md"], (
-            "no project given; writing to global CLAUDE.md"
-        )
+        return [self.claude_home / "CLAUDE.md"], ("no project given; writing to global CLAUDE.md")
 
 
 class CursorWriter(HarnessWriter):
@@ -437,9 +425,7 @@ class WindsurfWriter(HarnessWriter):
     ):
         super().__init__(home)
         self.memories_dir = (
-            Path(memories_dir)
-            if memories_dir
-            else self.home / ".codeium" / "windsurf" / "memories"
+            Path(memories_dir) if memories_dir else self.home / ".codeium" / "windsurf" / "memories"
         )
 
     def _targets(self, project: str | None) -> tuple[list[Path], str]:

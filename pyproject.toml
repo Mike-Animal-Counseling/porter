@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "porter-memory"
+description = "Portable, self-hosted memory for AI coding assistants"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+keywords = ["memory", "mcp", "fastapi", "self-hosted"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+    "Operating System :: OS Independent",
+]
+dynamic = ["version", "dependencies", "optional-dependencies"]
+
+[project.urls]
+Repository = "https://github.com/Mike-Animal-Counseling/porter"
+Documentation = "https://github.com/Mike-Animal-Counseling/porter#readme"
+Issues = "https://github.com/Mike-Animal-Counseling/porter/issues"
+Changelog = "https://github.com/Mike-Animal-Counseling/porter/blob/main/CHANGELOG.md"
+Security = "https://github.com/Mike-Animal-Counseling/porter/security/policy"
+
+[project.scripts]
+porter-import = "porter.import_cli:main"
+porter-mcp = "porter.mcp_stdio:main"
+
+[tool.setuptools]
+include-package-data = false
+packages = ["porter", "porter.migrations"]
+package-dir = {"porter.migrations" = "migrations"}
+
+[tool.setuptools.dynamic]
+version = {file = ["VERSION"]}
+dependencies = {file = ["api/requirements.txt"]}
+
+[tool.setuptools.dynamic.optional-dependencies]
+dev = {file = ["requirements-dev-tools.txt"]}
+ml = {file = ["requirements-ml.txt"]}
+
+[tool.setuptools.package-data]
+porter = ["static/*.js", "static/css/*.css", "static/js/*.js"]
+"porter.migrations" = ["*.sql"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".review-venv", "venv"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-config --strict-markers"

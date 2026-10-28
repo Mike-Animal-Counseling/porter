@@ -4,6 +4,7 @@
 deployments each worker enforces its own bucket (documented limitation —
 acceptable for self-hosted v1, upgrade to Redis in P2 if needed).
 """
+
 from __future__ import annotations
 
 import threading

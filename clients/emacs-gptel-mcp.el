@@ -5,12 +5,18 @@
 ;; `mcp-hub-servers').  Replace {{PORTER_TOKEN}} with a real Porter
 ;; access token, then restart Emacs or re-evaluate the form.
 ;;
-;; aidermacs users: Aider is already covered by aider-conf.yml; this file
-;; is for gptel users.
+;; aidermacs users: aider-conf.yml loads a manually exported handoff file;
+;; it does not configure Aider MCP. The MCP setup below is for gptel users.
 ;;
 ;; UNVERIFIED: not tested against a live Emacs install here.
 
 (setq mcp-hub-servers
       '(("porter" :command "python"
          :args ("-m" "porter.mcp_stdio")
-         :env (("PORTER_TOKEN" . "{{PORTER_TOKEN}}")))))
+         :env (("PORTER_TOKEN" . "{{PORTER_TOKEN}}")
+               ("PORTER_REPO" . "postgres")
+               ("DATABASE_URL" . "postgresql://porter:porter@localhost:5432/porter")
+               ("PORTER_JWT_SECRET" . "{{PORTER_JWT_SECRET}}")
+               ("PORTER_EMBEDDER" . "http")
+               ("EMBEDDER_URL" . "http://localhost:8001")
+               ("PYTHONPATH" . "/path/to/porter")))))

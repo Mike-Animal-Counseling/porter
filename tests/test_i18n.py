@@ -1,4 +1,5 @@
 """Panel i18n (zh/en) tests: key completeness, persistence, both-language render."""
+
 from __future__ import annotations
 
 import json
@@ -91,7 +92,8 @@ def test_set_get_roundtrip(langfile):
 def test_settings_file_is_not_world_readable(langfile):
     set_lang("en")
     mode = stat.S_IMODE(os.stat(langfile).st_mode)
-    assert mode == 0o600, f"settings file mode is {oct(mode)}, want 0600"
+    if os.name != "nt":
+        assert mode == 0o600, f"settings file mode is {oct(mode)}, want 0600"
 
 
 def test_set_lang_rejects_unknown(langfile):
@@ -168,8 +170,7 @@ def test_settings_toggle_persists_across_restart(langfile, tmp_path):
         return TestClient(app)
 
     c1 = make_client()
-    r = c1.post("/panel/settings/language", data={"lang": "en"},
-                follow_redirects=False)
+    r = c1.post("/panel/settings/language", data={"lang": "en"}, follow_redirects=False)
     assert r.status_code == 302, r.text
     assert get_lang() == "en"
 
@@ -181,8 +182,7 @@ def test_settings_toggle_persists_across_restart(langfile, tmp_path):
     assert "语言" not in r.text  # nav no longer Chinese
 
     # And back to Chinese.
-    r = c2.post("/panel/settings/language", data={"lang": "zh"},
-                follow_redirects=False)
+    r = c2.post("/panel/settings/language", data={"lang": "zh"}, follow_redirects=False)
     assert r.status_code == 302
     c3 = make_client()
     r = c3.get("/panel/settings")
@@ -219,15 +219,17 @@ def test_redirect_messages_are_translated(pclient):
     from urllib.parse import unquote
 
     set_lang("en")
-    r = pclient.post("/panel/settings/tags/add",
-                     data={"tag": "parenting", "label": "Parenting"},
-                     follow_redirects=False)
+    r = pclient.post(
+        "/panel/settings/tags/add",
+        data={"tag": "parenting", "label": "Parenting"},
+        follow_redirects=False,
+    )
     assert r.status_code == 302
     assert "Tag added: parenting" in unquote(r.headers["location"])
 
     set_lang("zh")
-    r = pclient.post("/panel/settings/tags/add",
-                     data={"tag": "gaming", "label": "游戏"},
-                     follow_redirects=False)
+    r = pclient.post(
+        "/panel/settings/tags/add", data={"tag": "gaming", "label": "游戏"}, follow_redirects=False
+    )
     assert r.status_code == 302
     assert "已添加标签 gaming" in unquote(r.headers["location"])

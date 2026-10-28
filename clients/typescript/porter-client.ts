@@ -27,9 +27,9 @@ import sodium from "libsodium-wrappers";
 // Types
 // ---------------------------------------------------------------------------
 
-export type MemoryType = "preference" | "fact" | "episode" | "skill_ref";
+export type MemoryType = "preference" | "fact" | "episode" | "skill_ref" | "personal" | "project";
 export type MemoryStatus = "pending" | "active" | "archived";
-export type ChangeOp = "create" | "revise" | "approve" | "delete";
+export type ChangeOp = "create" | "revise" | "approve" | "delete" | "archive";
 
 export interface Memory {
   id: string;
@@ -59,9 +59,9 @@ export interface SyncChange {
   seq: number;
   memory_id: string;
   op: ChangeOp;
-  status: MemoryStatus;
+  status: MemoryStatus | null;
   at: string; // ISO-8601
-  actor_client_id: string;
+  actor_client_id: string | null;
   memory: Memory | null; // null for "delete"
 }
 
@@ -97,7 +97,7 @@ export class PorterError extends Error {
 // E2EE helpers (P2 contract; see docs/DEVELOPER.md §6)
 // ---------------------------------------------------------------------------
 
-const KEYS_DIR = path.join(os.homedir(), ".porter", "keys");
+const KEYS_DIR = process.env.PORTER_KEYS_DIR ?? path.join(os.homedir(), ".porter", "keys");
 const NONCE_BYTES = 24;
 
 await sodium.ready; // libsodium-wrappers must be initialized
@@ -109,21 +109,27 @@ export function generateKey(): Uint8Array {
 
 /** Save a key to ~/.porter/keys/<key_id>.key with mode 0600. */
 export function saveKey(keyId: string, key: Uint8Array): string {
+  const p = keyPath(keyId);
+  if (key.length !== 32) throw new Error("key must be exactly 32 bytes");
   fs.mkdirSync(KEYS_DIR, { recursive: true });
-  const p = path.join(KEYS_DIR, `${keyId}.key`);
-  fs.writeFileSync(p, Buffer.from(key), { mode: 0o600 });
+  fs.writeFileSync(p, Buffer.from(key), { mode: 0o600, flag: "wx" });
   fs.chmodSync(p, 0o600); // belt and braces
   return p;
 }
 
 /** Load a key previously stored with saveKey(). */
 export function loadKey(keyId: string): Uint8Array {
-  const p = path.join(KEYS_DIR, `${keyId}.key`);
+  const p = keyPath(keyId);
   const key = fs.readFileSync(p);
   if (key.length !== sodium.crypto_aead_xchacha20poly1305_ietf_KEYBYTES) {
     throw new PorterError(0, "bad_key", `${p} is not a 32-byte key`);
   }
   return new Uint8Array(key);
+}
+
+function keyPath(keyId: string): string {
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(keyId)) throw new Error("invalid key_id");
+  return path.join(KEYS_DIR, `${keyId}.key`);
 }
 
 /**
@@ -234,6 +240,7 @@ export class PorterClient {
       scopeTags?: string[];
       confidence?: number;
       source?: Record<string, unknown>;
+      project?: string;
     } = {},
   ): Promise<AddResult> {
     return this.request("POST", "/memories", {
@@ -242,6 +249,7 @@ export class PorterClient {
       scope_tags: opts.scopeTags ?? [],
       confidence: opts.confidence ?? 1.0,
       source: opts.source ?? {},
+      project: opts.project,
     });
   }
 
@@ -300,8 +308,8 @@ export class PorterClient {
   // -- sync (P1) ------------------------------------------------------------
 
   /** GET /sync/delta -> {changes, cursor}. v1-only servers answer 501. */
-  async getDelta(since = 0, limit = 100): Promise<SyncDelta> {
-    return this.request("GET", "/sync/delta", undefined, { since, limit });
+  async getDelta(since = 0, limit = 100, project?: string): Promise<SyncDelta> {
+    return this.request("GET", "/sync/delta", undefined, { since, limit, ...(project ? { project } : {}) });
   }
 
   /** POST /sync/cursor {"cursor": n} — persist position server-side. */
@@ -330,8 +338,14 @@ export class PorterClient {
 
     const sleep = (ms: number) =>
       new Promise<void>((resolve) => {
-        const t = setTimeout(resolve, ms);
-        ctl.signal.addEventListener("abort", () => { clearTimeout(t); resolve(); });
+        if (ctl.signal.aborted) { resolve(); return; }
+        const finish = () => {
+          clearTimeout(t);
+          ctl.signal.removeEventListener("abort", finish);
+          resolve();
+        };
+        const t = setTimeout(finish, ms);
+        ctl.signal.addEventListener("abort", finish, { once: true });
       });
 
     (async () => {
@@ -341,10 +355,11 @@ export class PorterClient {
           for (const change of delta.changes) {
             await onChange(change);
           }
-          if (delta.changes.length > 0) {
+          if (delta.cursor > cursor) {
+            await this.ackCursor(delta.cursor);
             cursor = delta.cursor;
-            await this.ackCursor(cursor);
             if (opts.stateFile) fs.writeFileSync(opts.stateFile, String(cursor));
+            continue; // Drain filtered and visible pages before waiting.
           }
         } catch (err) {
           if (err instanceof PorterError && err.code === "sync_not_available") {

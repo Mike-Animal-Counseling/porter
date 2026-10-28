@@ -1,0 +1,22 @@
+# Porter MCP server for Continue Agent mode; HTTP avoids database/server keys.
+# HOW TO APPLY: save as <workspace>/.continue/mcpServers/porter.yaml.
+# If adding to an existing config.yaml, merge only the mcpServers list entry;
+# preserve the existing name/version/schema, models and other settings.
+# Replace {{PORTER_TOKEN}} with a scoped Porter access token obtained through
+# Porter's OAuth flow, not your model-provider key or Porter client secret.
+# Use memory.read.<tag>, plus memory.write only when writes are needed.
+# Match the URL to your Porter instance. Keep real credentials out of Git.
+# Official schema reviewed 2026-10-23:
+# https://docs.continue.dev/customize/deep-dives/mcp
+# https://docs.continue.dev/reference#mcpservers
+# UNVERIFIED: not tested against a live Continue install here.
+name: Porter MCP
+version: 0.1.0
+schema: v1
+mcpServers:
+  - name: Porter
+    type: streamable-http
+    url: http://127.0.0.1:8000/mcp
+    requestOptions:
+      headers:
+        Authorization: "Bearer {{PORTER_TOKEN}}"

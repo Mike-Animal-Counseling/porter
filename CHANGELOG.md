@@ -8,6 +8,159 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Formal deployment recovery (2026-10-27)
+
+- Verify retained PostgreSQL/BGE-M3 data in separate restored Porter volumes,
+  preserving the original backup. Native Codex writes a new synthetic record;
+  the official DSH Desktop GUI retrieves the same ID, independently confirmed
+  by the dedicated reader's server audit.
+- Verify scoped denials, signed encrypted snapshot import into review, API
+  recreation and database/embedder restart with unchanged credentials and
+  snapshot bytes. Publish [bilingual evidence](docs/FORMAL_RESTORE.2026-10-27.md)
+  and the unchanged small bilingual retrieval metrics; retain broader UI and
+  owner sign-off as open gates.
+
+### DSH native acceptance (2026-10-25)
+
+- Verify the official DeepSeek Harness Desktop bundled CLI 0.2.1-rc.3, using
+  saved DeepSeek account login, retrieves the memory written by native Codex.
+  Confirm sensitive-record isolation, denied writes, independent revocation
+  before token expiry and retrieval with the original reader after API restart.
+- Publish [bilingual evidence](docs/DSH_ACCEPTANCE.2026-10-25.md) and sanitized
+  actual MCP calls, distinguishing PostgreSQL/hash protocol checks from semantic
+  quality and Desktop GUI configuration.
+- Exercise the local narrow-window browser flow for search, detail, copy,
+  keyboard focus, language and Handoff preview/download. Give Handoff inputs
+  explicit text types so they receive the existing full-width form styles.
+
+### Client template corrections (2026-10-25)
+
+- Replace Aider's unsupported MCP configuration with a static, owner-exported
+  handoff file loaded through its documented `read` setting. Document the
+  existing `.aider.chat.history.md` importer separately.
+- Move Continue's MCP template to YAML for `.continue/mcpServers/porter.yaml`
+  in Agent mode, and include YAML templates in source distributions.
+- Add Antigravity's documented HTTP Authorization header. These corrected
+  templates remain unverified in their respective native clients.
+
+### Native-client acceptance and embedding failures (2026-10-22)
+
+- Verify native Codex CLI 0.160.0 saving project context and a fresh OpenCode
+  2.1.2 conversation retrieving the exact same ID over HTTP. OpenCode used
+  saved ChatGPT OAuth with the inherited API key removed from its test children.
+- Verify synthetic sensitive-record review, scoped read/write denials,
+  persistence through API recreation and revocation of a disposable credential
+  while the original Codex/OpenCode clients remain usable. Publish a
+  [sanitized bilingual record](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md);
+  browser interaction and owner sign-off remain open.
+- Map HTTP embedding timeouts to safe 504 errors and connection, upstream HTTP
+  and invalid-JSON failures to safe 503 errors. Keep existing timeout defaults
+  and add no automatic retry; cold-model latency still needs consideration.
+- Add an OpenCode V2 HTTP template and bilingual setup/login instructions,
+  verified with OpenCode 2.1.2.
+- Correct the legacy OpenCode V1 stdio `environment` field and extend existing
+  template checks to cover the V2 shape and environment-variable credentials.
+
+### Acceptance and open-source readiness (2026-10-20)
+
+- Restrict graph edges, duplicate candidates and update targets to readable
+  memories. Require matching memory types and complete tag sets for automatic
+  merges, and preserve full PostgreSQL candidate metadata for permission checks.
+- Validate an entire snapshot before importing and commit PostgreSQL imports
+  and their audit records atomically. Accept both personal/project memory types
+  in REST filters and clarify OAuth write consent.
+- Improve bilingual form labels, navigation, drawer keyboard handling, mobile
+  controls, copy/error feedback, reduced motion and text/button contrast. Bind
+  graph events once and debounce resize work. Browser visual acceptance remains
+  a separate gate.
+- Update vulnerable certifi/setuptools pins, align shared model constraints and
+  install the CPU PyTorch wheel separately from its PyPI dependencies; enforce
+  dependency consistency and CPU-only PyTorch during the image build.
+- Add bilingual acceptance, maintainer, dependency audit and UI review guides;
+  refresh README, deployment, community and security policies. Add local link,
+  metadata and migration checks to CI and document third-party components.
+- Update the public repository description/topics and enable private security
+  reports, dependency alerts and automated security-fix proposals.
+
+### Owner handoff and optional extraction
+
+- Use an independent temporary directory for deployment acceptance so a fresh
+  CI checkout does not require the developer's local virtual-environment path.
+- Add an owner handoff page with project suggestions, bilingual preview,
+  copy/download and audited exports; enforce owner access, CSRF and no-store.
+- Persist lifecycle feedback atomically across both repositories, and apply
+  the workspace personal boundary to legacy preference records too.
+- Add opt-in local Ollama structured extraction off the API event loop.
+  Validate bounded outputs, require review for every model fact and save
+  PostgreSQL capture batches transactionally. Keep the rules backend as default.
+
+### Switching integration (2026-10-19)
+
+- Integrate upstream through `4000dd5`, retaining its workspace/key migrations
+  and upgrading earlier review databases without deleting data.
+- Filter handoff, contradictions and writeback by scopes; default to preview
+  and require owner permissions for filesystem writes, merge and key management.
+- Enforce workspace write roles and reject personal memories in workspaces.
+- Persist archive provenance and make PostgreSQL merge/resolve transactional.
+  Repair envelope-claim SQL, install API crypto dependencies and preserve
+  Windows writeback files through atomic replacement.
+
+### Runtime hardening (2026-10-19)
+
+- Render inbox duplicate hints from stored vectors without model requests,
+  retrieval timestamp updates or confidence decay. Return full Postgres
+  similarity records so project tags and labels match the memory backend.
+- Add a recommended Codex HTTP template requiring only a scoped access token;
+  both transports parse in Codex CLI 0.160.0. Use the canonical embedder flag
+  in stdio templates so an inherited setting cannot override their HTTP backend.
+
+- Reject unknown HTTP hosts before owner/auth routing; custom domains require
+  login even behind a loopback proxy. Support explicit public origins for TLS
+  termination and disable forwarded-header trust in bundled launch commands.
+- Reject malformed Origin/Referer headers cleanly and normalize default ports.
+- Parse authentication flags consistently across HTTP and stdio. Invalid flags
+  and repository modes now stop startup instead of disabling auth or selecting
+  temporary storage. Use the package version in OpenAPI metadata.
+
+### Repository standards
+
+- Standardize Python packaging, version metadata, lightweight development and optional ML dependencies.
+- Apply Ruff lint/import sorting/formatting and add matching pre-commit hooks, UTF-8/LF conventions and Dependabot updates.
+- Harden CI permissions and action references; add source/wheel build and installed-package verification.
+- Correct deployment, contribution and security documentation to reflect the actual PostgreSQL, Docker and BGE-M3 acceptance results.
+
+### Fixed and verified (2026-10-18)
+
+- Repair real startup failures: trailing comment-only SQL, resumable OAuth
+  migrations, and the text default blocking the cursor's bigint conversion.
+- Fix the model Dockerfile's nested requirements file, use CPU PyTorch by
+  default, constrain verified model dependencies, and trim the build context.
+- Remove memory plaintext from auto-merge audit metadata.
+- Add reproducible Docker acceptance covering real Postgres, OAuth,
+  HTTP/stdio MCP, encrypted snapshots and container recreation. The complete
+  local suite passed all 404 tests; BGE-M3 also passed live end-to-end checks.
+- Add HTTP-based embedding evaluation with JSON results. On the small
+  bilingual fixture BGE-M3 achieved R@5=1.0 and R@1=0.583; this is not a
+  general benchmark. Keep review gates for semantic duplicate candidates.
+
+### Fixed (2026-10-14)
+
+- Prevent sync pagination and concurrent database commits from dropping changes;
+  acknowledge filtered pages, scope deletion events, and retire archived IDs.
+- Complete persistent memory/audit enums and asyncpg JSON decoding; preserve pins
+  on edits and serialize startup migrations across API/stdio processes.
+- Repair Windows binary snapshot writes, support both new memory types, avoid
+  same-second filename collisions, and validate malformed snapshot metadata.
+- Wire Docker secrets, localhost dependency ports, and durable settings/snapshots.
+  Add owner unlock sessions for container gateway peers and same-origin consent.
+- Share persistent configuration across stdio templates; fix HTTP embedder setup,
+  add installable packaging, and generate stable random local credentials.
+- Move embedding inference off the event loop; retry transient triage errors.
+  Guard client key paths and prevent accidental key replacement.
+- Add Windows/Linux CI, real Postgres/pgvector regressions and dependency
+  constraints. Correct setup instructions and distinguish templates/prototypes
+  from integrations that have been validated on a real machine.
+
 ### Added
 
 **New embedding challengers** — `porter/embeddings.py` gains
@@ -157,15 +310,15 @@ QWEN.md seeds as `project`-domain inbox seeds with `project:<dir>` tags
 
 **Second harness batch: 12 more harnesses (27 total)**
 - 12 new MCP client configs in `clients/`: `devin-mcp_config.json`
-  (`~/.config/devin/mcp_config.json`), `continue-config.json`
-  (`~/.continue/config.json`, Agent mode only), `junie-mcp.json`
+  (`~/.config/devin/mcp_config.json`), `continue-config.yaml`
+  (`.continue/mcpServers/porter.yaml`, Agent mode only; corrected 2026-10-25), `junie-mcp.json`
   (`~/.junie/mcp/mcp.json`), `droid-mcp.json` (`~/.factory/mcp.json`,
   `type: stdio`), `openhands-mcp.json` (`~/.openhands/mcp.json`),
   `tabnine-settings.json` (restart required), `zencoder-settings.json`
   (VS Code `zencoder.mcpServers` key), `neovim-mcphub-servers.json`
   (via mcphub.nvim, covers avante.nvim + codecompanion.nvim),
   `emacs-gptel-mcp.el` (via mcp.el), `antigravity-mcp_config.json`
-  (HTTP `serverUrl`; Authorization-header support UNVERIFIED — flagged),
+  (HTTP `serverUrl`; Authorization header documented, native client unverified),
   `kiro-mcp.json`, `augment-mcp.json` (`transport: stdio`).
 - 5 new seed importers (read-only, pending inbox, `seed`-tagged):
   `junie` (`~/.junie/guidelines.md` + `<project>/.junie/guidelines.md`),
@@ -317,9 +470,10 @@ the next version cut.
 - Qwen Code: `~/.qwen/QWEN.md` (+ project) — same treatment.
 - All scanners skip symlinks (a symlink inside a harness dir can no
   longer pull outside files into the import).
-- Honest registry `NO_NATIVE_STORE`: OpenCode / Amp / Kilo Code /
-  Kimi CLI / Copilot CLI / Aider have no portable memory store —
-  MCP implant only, no parsers invented.
+- Initial registry `NO_NATIVE_STORE`: OpenCode / Amp / Kilo Code /
+  Kimi CLI / Copilot CLI had no native-store importer. Aider later gained a
+  `.aider.chat.history.md` importer; its handoff template is a static file,
+  rather than a live MCP connection.
 
 **MCP client configs (`clients/`, 15 total)**
 - New: `claude-code-mcp.json`, `opencode.json` (top-level `mcp` key),
@@ -328,7 +482,8 @@ the next version cut.
   `windsurf-mcp_config.json`, `roo-mcp.json`, `cline-mcp.json`,
   `kilocode-mcp.json`, `kimi-mcp.json`,
   `copilot-cli-mcp.json` (`type: stdio`; config path UNVERIFIED —
-  confirm on a real install), `aider-conf.yml` (`mcp-servers:` key).
+  confirm on a real install), `aider-conf.yml` (corrected to a static `read`
+  handoff on 2026-10-25; the original `mcp-servers:` field was unsupported).
 - Every file carries a header comment: target path(s), how to apply,
   and UNVERIFIED caveats where they exist.
 

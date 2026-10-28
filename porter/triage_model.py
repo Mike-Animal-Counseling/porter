@@ -23,6 +23,7 @@ Design notes:
   short text on a modern CPU after the one-time model load. First use
   downloads ~1.1 GB from HuggingFace and takes noticeably longer.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -32,8 +33,8 @@ import threading
 import time
 import unicodedata
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Sequence
 
 from .config import settings
 
@@ -82,8 +83,7 @@ _DOMAIN_HYPOTHESES: dict[str, list[str]] = {
         "this text is a personal memory about the user",
     ],
     "project": [
-        "this text is project documentation, coding instructions or "
-        "codebase knowledge",
+        "this text is project documentation, coding instructions or codebase knowledge",
         "this text is about an ongoing task, decision or work context",
     ],
 }
@@ -136,9 +136,7 @@ _DOMAIN_PATTERNS: list[tuple[str, str]] = [
     ),
 ]
 
-_COMPILED_DOMAINS = [
-    (name, re.compile(pat, re.IGNORECASE)) for name, pat in _DOMAIN_PATTERNS
-]
+_COMPILED_DOMAINS = [(name, re.compile(pat, re.IGNORECASE)) for name, pat in _DOMAIN_PATTERNS]
 
 
 def _heuristic_domain(text: str, sensitive: bool) -> tuple[str, dict[str, float]]:
@@ -201,9 +199,12 @@ class HeuristicTriageModel(BaseTriageModel):
         latency_ms = (time.perf_counter() - t0) * 1000.0
         domain, domain_scores = _heuristic_domain(text, bool(cats))
         return TriageScore(
-            sensitive=bool(cats), categories=cats,
-            latency_ms=latency_ms, backend="heuristic",
-            domain=domain, domain_scores=domain_scores,
+            sensitive=bool(cats),
+            categories=cats,
+            latency_ms=latency_ms,
+            backend="heuristic",
+            domain=domain,
+            domain_scores=domain_scores,
         )
 
 
@@ -262,9 +263,7 @@ class ZeroShotTriageModel(BaseTriageModel):
                 # hypotheses; the domain score is the max over its set so
                 # the broad project definition (instructions AND task state)
                 # is covered.
-                domain_hypos = [
-                    h for hyps in _DOMAIN_HYPOTHESES.values() for h in hyps
-                ]
+                domain_hypos = [h for hyps in _DOMAIN_HYPOTHESES.values() for h in hyps]
                 domain_out = pipe(
                     clipped,
                     candidate_labels=domain_hypos,
@@ -277,17 +276,13 @@ class ZeroShotTriageModel(BaseTriageModel):
                 if cat is not None:
                     cats[cat] = float(s)
             over = {c: s for c, s in cats.items() if s >= self.threshold}
-            hypo_to_domain = {
-                h: d for d, hyps in _DOMAIN_HYPOTHESES.items() for h in hyps
-            }
+            hypo_to_domain = {h: d for d, hyps in _DOMAIN_HYPOTHESES.items() for h in hyps}
             domain_scores: dict[str, float] = {}
             for label, s in zip(domain_out["labels"], domain_out["scores"]):
                 d = hypo_to_domain.get(label)
                 if d is not None:
                     domain_scores[d] = max(domain_scores.get(d, 0.0), float(s))
-            best_domain = max(
-                domain_scores, key=domain_scores.get, default="unknown"
-            )
+            best_domain = max(domain_scores, key=domain_scores.get, default="unknown")
             if domain_scores.get(best_domain, 0.0) < DOMAIN_THRESHOLD:
                 best_domain = "unknown"
         except Exception:
@@ -301,14 +296,11 @@ class ZeroShotTriageModel(BaseTriageModel):
             latency_ms=round(latency_ms, 1),
             backend="zeroshot",
             domain=best_domain,
-            domain_scores={
-                c: round(s, 4) for c, s in domain_scores.items()
-            },
+            domain_scores={c: round(s, 4) for c, s in domain_scores.items()},
         )
 
     def over_threshold_categories(self, score: TriageScore) -> list[str]:
-        return [c for c, s in score.categories.items()
-                if s >= self.threshold]
+        return [c for c, s in score.categories.items() if s >= self.threshold]
 
 
 #: Fine-tune head labels: 2 domain labels (inference takes argmax) + 4
@@ -350,13 +342,10 @@ class FinetunedTriageModel(BaseTriageModel):
             from transformers import AutoModelForSequenceClassification, AutoTokenizer
         except ImportError as e:
             raise RuntimeError(
-                "finetuned triage model needs transformers + torch: "
-                "pip install transformers torch"
+                "finetuned triage model needs transformers + torch: pip install transformers torch"
             ) from e
         if importlib.util.find_spec("torch") is None:
-            raise RuntimeError(
-                "finetuned triage model needs torch: pip install torch"
-            )
+            raise RuntimeError("finetuned triage model needs torch: pip install torch")
         self.threshold = threshold
         self._tokenizer = AutoTokenizer.from_pretrained(model_path)
         self._model = AutoModelForSequenceClassification.from_pretrained(model_path)
@@ -377,30 +366,31 @@ class FinetunedTriageModel(BaseTriageModel):
 
             with self._lock:
                 enc = self._tokenizer(
-                    text[:2000], return_tensors="pt",
-                    truncation=True, max_length=256,
+                    text[:2000],
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=256,
                 )
                 with torch.no_grad():
                     logits = self._model(**enc).logits[0]
                 probs = torch.sigmoid(logits).tolist()
             # First 2 are domain logits (argmax), last 4 are sensitivity.
-            domain_probs = {
-                DOMAINS[i]: round(float(probs[i]), 4) for i in range(2)
-            }
+            domain_probs = {DOMAINS[i]: round(float(probs[i]), 4) for i in range(2)}
             best_domain = max(domain_probs, key=domain_probs.get)
             if domain_probs[best_domain] < DOMAIN_THRESHOLD:
                 best_domain = "unknown"
-            cats = {
-                CATEGORIES[i]: round(float(probs[2 + i]), 4) for i in range(4)
-            }
+            cats = {CATEGORIES[i]: round(float(probs[2 + i]), 4) for i in range(4)}
             over = {c: s for c, s in cats.items() if s >= self.threshold}
         except Exception:
             cats, over, domain_probs, best_domain = {}, {}, {}, "unknown"
         latency_ms = (time.perf_counter() - t0) * 1000.0
         return TriageScore(
-            sensitive=bool(over), categories=cats,
-            latency_ms=round(latency_ms, 1), backend="finetuned",
-            domain=best_domain, domain_scores=domain_probs,
+            sensitive=bool(over),
+            categories=cats,
+            latency_ms=round(latency_ms, 1),
+            backend="finetuned",
+            domain=best_domain,
+            domain_scores=domain_probs,
         )
 
 
@@ -432,8 +422,7 @@ def build_triage_model(kind: str, **kwargs) -> BaseTriageModel:
     kind = (kind or "auto").strip().lower()
 
     def _threshold() -> float:
-        return float(kwargs.get("threshold",
-                                getattr(settings, "triage_model_threshold", 0.65)))
+        return float(kwargs.get("threshold", getattr(settings, "triage_model_threshold", 0.65)))
 
     if kind == "heuristic":
         return HeuristicTriageModel()
@@ -443,7 +432,8 @@ def build_triage_model(kind: str, **kwargs) -> BaseTriageModel:
         import os
 
         path = kwargs.get("model_path") or getattr(
-            settings, "triage_model_path", "models/triage-v1")
+            settings, "triage_model_path", "models/triage-v1"
+        )
         if not path or not os.path.isdir(path):
             raise RuntimeError(
                 f"PORTER_TRIAGE_MODEL=finetuned but no model at {path!r} — "
@@ -462,8 +452,7 @@ def build_triage_model(kind: str, **kwargs) -> BaseTriageModel:
                 continue
         return HeuristicTriageModel()  # unreachable, belt-and-suspenders
     raise ValueError(
-        "unknown triage model kind: "
-        f"{kind} (choose auto|finetuned|zeroshot|heuristic)"
+        f"unknown triage model kind: {kind} (choose auto|finetuned|zeroshot|heuristic)"
     )
 
 
@@ -500,8 +489,7 @@ def _cache_key(content: str, tags: Sequence[str], backend: str) -> str:
     return h.hexdigest()
 
 
-def cached_score(model: BaseTriageModel, content: str,
-                 tags: Sequence[str]) -> TriageScore:
+def cached_score(model: BaseTriageModel, content: str, tags: Sequence[str]) -> TriageScore:
     """Score with an in-process LRU cache. Never raises: on any model
     error returns a non-sensitive score so the caller falls back to rules."""
     key = _cache_key(content, tags, model.backend)
@@ -512,7 +500,7 @@ def cached_score(model: BaseTriageModel, content: str,
     try:
         result = model.score(content, tags)
     except Exception:
-        result = TriageScore(sensitive=False, backend=model.backend)
+        result = TriageScore(sensitive=False, backend=model.backend, latency_ms=-1.0)
     # Cache only confident, successful scores — never cache an error-shaped
     # or timed-out result (transient conditions must not stick).
     if result.latency_ms >= 0:

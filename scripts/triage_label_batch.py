@@ -39,6 +39,7 @@ Notes:
 - A few hundred corrected examples is enough to beat zero-shot on YOUR
   distribution; past ~2000 the gains flatten for this 6-label task.
 """
+
 import argparse
 import asyncio
 import json
@@ -65,8 +66,7 @@ def predict_labels(text, model=None, tags=()):
     score = tm.cached_score(model, text, tags)
     threshold = float(getattr(settings, "triage_model_threshold", 0.65))
     sensitivity = {
-        cat: 1 if score.categories.get(cat, 0.0) >= threshold else 0
-        for cat in SENS_LABELS
+        cat: 1 if score.categories.get(cat, 0.0) >= threshold else 0 for cat in SENS_LABELS
     }
     domain = score.domain if score.domain in DOMAIN_LABELS else "personal"
     project = None
@@ -93,10 +93,8 @@ async def iter_from_db(limit):
     try:
         import asyncpg
     except ImportError:
-        raise SystemExit(
-            "asyncpg is required for --from-db: pip install asyncpg")
-    dsn = os.getenv("DATABASE_URL",
-                    getattr(settings, "database_url", ""))
+        raise SystemExit("asyncpg is required for --from-db: pip install asyncpg")
+    dsn = os.getenv("DATABASE_URL", getattr(settings, "database_url", ""))
     conn = await asyncpg.connect(dsn)
     try:
         rows = await conn.fetch(
@@ -120,31 +118,34 @@ def write_jsonl(texts, output_path, model=None):
     with open(output_path, "w", encoding="utf-8") as out:
         for item in texts:
             text, tags = item if isinstance(item, tuple) else (item, ())
-            domain, project, sensitivity, backend = predict_labels(
-                text, model, tags)
-            out.write(json.dumps({
-                "text": text,
-                "domain": domain,
-                "project": project,
-                "sensitivity": sensitivity,
-                "predicted_by": backend,
-            }, ensure_ascii=False) + "\n")
+            domain, project, sensitivity, backend = predict_labels(text, model, tags)
+            out.write(
+                json.dumps(
+                    {
+                        "text": text,
+                        "domain": domain,
+                        "project": project,
+                        "sensitivity": sensitivity,
+                        "predicted_by": backend,
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
             n += 1
     return n
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(
-        description="Predict triage labels for hand-correction (JSONL).")
+    ap = argparse.ArgumentParser(description="Predict triage labels for hand-correction (JSONL).")
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--input", help="text file, one memory per line")
-    src.add_argument("--from-db", action="store_true",
-                     help="sample recent memories from Postgres")
-    ap.add_argument("--limit", type=int, default=200,
-                    help="max rows for --from-db (default 200)")
+    src.add_argument("--from-db", action="store_true", help="sample recent memories from Postgres")
+    ap.add_argument("--limit", type=int, default=200, help="max rows for --from-db (default 200)")
     ap.add_argument("--output", required=True, help="output JSONL path")
-    ap.add_argument("--model", default=None,
-                    help="triage model kind (default: PORTER_TRIAGE_MODEL)")
+    ap.add_argument(
+        "--model", default=None, help="triage model kind (default: PORTER_TRIAGE_MODEL)"
+    )
     args = ap.parse_args(argv)
 
     if args.model:
@@ -154,16 +155,17 @@ def main(argv=None):
     print(f"triage backend: {model.backend}", file=sys.stderr)
 
     if args.from_db:
+
         async def _collect():
             return [t async for t in iter_from_db(args.limit)]
+
         texts = asyncio.run(_collect())
     else:
         texts = list(iter_input_file(args.input))
 
     n = write_jsonl(texts, args.output, model)
     print(f"wrote {n} labeled lines -> {args.output}", file=sys.stderr)
-    print("next: hand-correct the 0/1 labels, then run "
-          "scripts/finetune_triage.py", file=sys.stderr)
+    print("next: hand-correct the 0/1 labels, then run scripts/finetune_triage.py", file=sys.stderr)
 
 
 if __name__ == "__main__":

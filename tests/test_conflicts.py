@@ -5,6 +5,7 @@ Uses InMemoryMemoryRepository + HashEmbedder. HashEmbedder is coarse
 threshold; the 0.75 default in detect_contradictions targets production
 embeddings (BGE-M3), where "use tabs" vs "use spaces" scores ~0.9+.
 """
+
 import asyncio
 from uuid import UUID, uuid4
 
@@ -53,16 +54,12 @@ def test_provenance_blank_for_plain_record(repo: InMemoryMemoryRepository):
 
 def test_append_provenance_roundtrip_and_pure(repo: InMemoryMemoryRepository):
     src = {"harness": "claude-code"}
-    out = append_provenance(
-        src, {"kind": "origin", "harness": "claude-code", "actor": "u1"}
-    )
+    out = append_provenance(src, {"kind": "origin", "harness": "claude-code", "actor": "u1"})
     # input untouched (pure function)
     assert src == {"harness": "claude-code"}
     assert PROVENANCE_KEY not in src
 
-    out = append_provenance(
-        out, {"kind": "merge", "from_id": uuid4(), "strategy": "newest_wins"}
-    )
+    out = append_provenance(out, {"kind": "merge", "from_id": uuid4(), "strategy": "newest_wins"})
     out = append_provenance(
         out,
         {
@@ -177,12 +174,8 @@ def test_detect_missing_memory_returns_empty(repo: InMemoryMemoryRepository):
 
 def test_semantic_merge_newest_wins_per_aspect(repo: InMemoryMemoryRepository):
     async def go():
-        a = await _mk_active(
-            repo, "old decision", scope_tags=["a"], confidence=0.5
-        )
-        b = await _mk_active(
-            repo, "new decision", scope_tags=["b"], confidence=0.9
-        )
+        a = await _mk_active(repo, "old decision", scope_tags=["a"], confidence=0.5)
+        b = await _mk_active(repo, "new decision", scope_tags=["b"], confidence=0.9)
         res = await semantic_merge(repo, [a.id, b.id])
         new = await repo.get(res["id"])
         old_a = await repo.get(a.id)
@@ -215,12 +208,8 @@ def test_semantic_merge_newest_wins_per_aspect(repo: InMemoryMemoryRepository):
 
 def test_semantic_merge_newest_wins(repo: InMemoryMemoryRepository):
     async def go():
-        a = await _mk_active(
-            repo, "old", scope_tags=["a"], confidence=0.99, type="preference"
-        )
-        b = await _mk_active(
-            repo, "new", scope_tags=["b"], confidence=0.5, type="fact"
-        )
+        a = await _mk_active(repo, "old", scope_tags=["a"], confidence=0.99, type="preference")
+        b = await _mk_active(repo, "new", scope_tags=["b"], confidence=0.5, type="fact")
         res = await semantic_merge(repo, [a.id, b.id], strategy="newest_wins")
         return res, await repo.get(res["id"])
 
@@ -237,7 +226,9 @@ def test_semantic_merge_manual_pick(repo: InMemoryMemoryRepository):
         a = await _mk_active(repo, "tabs forever", scope_tags=["x"])
         b = await _mk_active(repo, "spaces forever", scope_tags=["y"])
         res = await semantic_merge(
-            repo, [a.id, b.id], strategy="manual_pick",
+            repo,
+            [a.id, b.id],
+            strategy="manual_pick",
             content="use tabs for Go, spaces for Python",
         )
         return res, await repo.get(res["id"])
@@ -308,11 +299,15 @@ def test_resolve_conflict_idempotent(repo: InMemoryMemoryRepository):
         winner = await _mk_active(repo, "keep me")
         loser = await _mk_active(repo, "drop me")
         r1 = await resolve_conflict(
-            repo, winner.id, [loser.id],
+            repo,
+            winner.id,
+            [loser.id],
             resolution=resolution_superseded_by(winner.id),
         )
         r2 = await resolve_conflict(
-            repo, winner.id, [loser.id, uuid4()],
+            repo,
+            winner.id,
+            [loser.id, uuid4()],
             resolution=resolution_superseded_by(winner.id),
         )
         return r1, r2
@@ -327,9 +322,7 @@ def test_resolve_conflict_rejects_missing_winner(repo: InMemoryMemoryRepository)
     async def go():
         loser = await _mk_active(repo, "drop me")
         with pytest.raises(NotFound):
-            await resolve_conflict(
-                repo, uuid4(), [loser.id], resolution="x"
-            )
+            await resolve_conflict(repo, uuid4(), [loser.id], resolution="x")
 
     _run(go())
 
@@ -343,7 +336,9 @@ def test_merge_then_detect_chain(repo: InMemoryMemoryRepository):
         hits = await detect_contradictions(repo, a.id, threshold=0.7)
         assert hits and "antonym_swap" in hits[0]["signals"]
         res = await semantic_merge(
-            repo, [a.id, b.id], strategy="manual_pick",
+            repo,
+            [a.id, b.id],
+            strategy="manual_pick",
             content="项目使用 tabs 缩进（团队决议 2026-10）",
         )
         new = await repo.get(res["id"])
@@ -352,6 +347,7 @@ def test_merge_then_detect_chain(repo: InMemoryMemoryRepository):
     new = _run(go())
     prov = get_provenance(new)
     assert len(prov["merges"]) == 2
+
     # every merge entry points at a real archived source
     async def check():
         return [await repo.get(UUID(m["from_id"])) for m in prov["merges"]]

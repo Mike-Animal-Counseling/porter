@@ -1,0 +1,2051 @@
+{
+  "audit_date": "2026-10-20",
+  "ecosystem": "PyPI",
+  "source": "https://api.osv.dev/v1/querybatch",
+  "api_documentation": "https://google.github.io/osv.dev/post-v1-querybatch/",
+  "scope": "Exact package/version pairs in the two public constraints files; includes development, optional and platform-specific entries without evaluating markers. No source code, environment variables or user data submitted.",
+  "limitations": [
+    "A dated known-advisory lookup, not proof of absence of vulnerabilities.",
+    "Does not enumerate dependencies absent from the constraints, container OS packages, downloaded model weights, or vendored browser assets.",
+    "Does not prove installation compatibility, reachability, exploitability, or release readiness.",
+    "Dependabot alerts reflect GitHub indexing of the default branch, not necessarily the local review commit."
+  ],
+  "query_count": 96,
+  "batch_request_count": 1,
+  "advisory_count": 6,
+  "packages": [
+    {
+      "name": "annotated-doc",
+      "version": "0.0.5",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "annotated-types",
+      "version": "0.8.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "anyio",
+      "version": "4.15.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "argon2-cffi",
+      "version": "25.1.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "argon2-cffi-bindings",
+      "version": "26.1.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "asyncpg",
+      "version": "0.32.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "attrs",
+      "version": "26.1.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "build",
+      "version": "1.6.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "certifi",
+      "version": "2026.7.22",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": [
+        "GHSA-6q48-6c7w-9gw2",
+        "PYSEC-2026-4320"
+      ]
+    },
+    {
+      "name": "cffi",
+      "version": "2.1.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "cfgv",
+      "version": "3.5.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.5.2",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "click",
+      "version": "8.5.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "cloudpickle",
+      "version": "3.1.2",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "colorama",
+      "version": "0.4.6",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "cryptography",
+      "version": "50.0.2",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "distlib",
+      "version": "0.4.4",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "fastapi",
+      "version": "0.143.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "filelock",
+      "version": "3.32.3",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "filelock",
+      "version": "4.2.3",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "fsspec",
+      "version": "2026.7.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "hf-xet",
+      "version": "1.7.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "httpcore",
+      "version": "1.0.9",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "httpcore2",
+      "version": "2.13.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "httptools",
+      "version": "0.9.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "httpx",
+      "version": "0.28.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "httpx2",
+      "version": "2.13.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "huggingface-hub",
+      "version": "1.33.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "identify",
+      "version": "2.6.20",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "idna",
+      "version": "3.20",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "iniconfig",
+      "version": "2.3.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "jinja2",
+      "version": "3.1.6",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "joblib",
+      "version": "1.6.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "jsonschema",
+      "version": "4.26.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "jsonschema-specifications",
+      "version": "2025.9.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "markdown-it-py",
+      "version": "4.2.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "markupsafe",
+      "version": "3.0.3",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "mcp",
+      "version": "2.3.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "mcp-types",
+      "version": "2.3.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "mdurl",
+      "version": "0.1.2",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "mpmath",
+      "version": "1.3.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "narwhals",
+      "version": "2.27.1",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "networkx",
+      "version": "3.6.1",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "nodeenv",
+      "version": "1.11.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.4",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "opentelemetry-api",
+      "version": "1.45.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "packaging",
+      "version": "26.3",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "platformdirs",
+      "version": "4.13.5",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "pluggy",
+      "version": "1.6.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "pre-commit",
+      "version": "4.7.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "pycparser",
+      "version": "3.11",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "pydantic",
+      "version": "2.14.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "pydantic-core",
+      "version": "2.50.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "pygments",
+      "version": "2.21.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "pyjwt",
+      "version": "2.15.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "pynacl",
+      "version": "1.6.2",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "pyproject-hooks",
+      "version": "1.3.3",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "pytest",
+      "version": "9.1.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "python-discovery",
+      "version": "1.6.3",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "python-dotenv",
+      "version": "1.2.4",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "python-multipart",
+      "version": "0.0.32",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "pywin32",
+      "version": "312",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.3",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "referencing",
+      "version": "0.37.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "regex",
+      "version": "2026.9.29",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "requests",
+      "version": "2.34.2",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "rich",
+      "version": "15.0.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "rpds-py",
+      "version": "2026.9.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "ruff",
+      "version": "0.17.1",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "safetensors",
+      "version": "0.8.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "scikit-learn",
+      "version": "1.9.1",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "scipy",
+      "version": "1.18.1",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "sentence-transformers",
+      "version": "6.1.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "setuptools",
+      "version": "78.1.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": [
+        "GHSA-5rjg-fvgr-3xxf",
+        "GHSA-h35f-9h28-mq5c",
+        "PYSEC-2025-49",
+        "PYSEC-2026-3447"
+      ]
+    },
+    {
+      "name": "setuptools",
+      "version": "84.0.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "shellingham",
+      "version": "1.5.4",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "sse-starlette",
+      "version": "3.5.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "starlette",
+      "version": "1.8.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "sympy",
+      "version": "1.14.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "threadpoolctl",
+      "version": "3.7.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "tokenizers",
+      "version": "0.23.3",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "torch",
+      "version": "2.14.1",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "tqdm",
+      "version": "4.70.1",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "transformers",
+      "version": "5.20.1",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "truststore",
+      "version": "0.10.5",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "typer",
+      "version": "0.27.3",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "typing-extensions",
+      "version": "4.16.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.4",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "urllib3",
+      "version": "2.8.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "uvicorn",
+      "version": "0.54.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "uvloop",
+      "version": "0.23.0",
+      "constraints": [
+        "requirements-embedder-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "virtualenv",
+      "version": "21.14.11",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "watchfiles",
+      "version": "1.3.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "websockets",
+      "version": "17.2",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    },
+    {
+      "name": "wheel",
+      "version": "0.48.0",
+      "constraints": [
+        "requirements-lock.txt"
+      ],
+      "advisories": []
+    }
+  ],
+  "advisories": [
+    {
+      "id": "GHSA-5rjg-fvgr-3xxf",
+      "aliases": [
+        "BIT-setuptools-2025-47273",
+        "CVE-2025-47273",
+        "PYSEC-2025-49"
+      ],
+      "summary": "setuptools has a path traversal vulnerability in PackageIndex.download that leads to Arbitrary File Write",
+      "withdrawn": null,
+      "severity": [
+        {
+          "type": "CVSS_V4",
+          "score": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:H/VA:N/SC:N/SI:N/SA:N/E:P"
+        }
+      ],
+      "affected": [
+        {
+          "package": {
+            "name": "setuptools",
+            "ecosystem": "PyPI",
+            "purl": "pkg:pypi/setuptools"
+          },
+          "ranges": [
+            {
+              "type": "ECOSYSTEM",
+              "events": [
+                {
+                  "introduced": "0"
+                },
+                {
+                  "fixed": "78.1.1"
+                }
+              ]
+            }
+          ],
+          "database_specific": {
+            "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2025/05/GHSA-5rjg-fvgr-3xxf/GHSA-5rjg-fvgr-3xxf.json"
+          }
+        }
+      ],
+      "references": [
+        {
+          "type": "WEB",
+          "url": "https://github.com/pypa/setuptools/security/advisories/GHSA-5rjg-fvgr-3xxf"
+        },
+        {
+          "type": "ADVISORY",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-47273"
+        },
+        {
+          "type": "WEB",
+          "url": "https://github.com/pypa/setuptools/issues/4946"
+        },
+        {
+          "type": "WEB",
+          "url": "https://github.com/pypa/setuptools/commit/250a6d17978f9f6ac3ac887091f2d32886fbbb0b"
+        },
+        {
+          "type": "WEB",
+          "url": "https://github.com/pypa/advisory-database/tree/main/vulns/setuptools/PYSEC-2025-49.yaml"
+        },
+        {
+          "type": "PACKAGE",
+          "url": "https://github.com/pypa/setuptools"
+        },
+        {
+          "type": "WEB",
+          "url": "https://github.com/pypa/setuptools/blob/6ead555c5fb29bc57fe6105b1bffc163f56fd558/setuptools/package_index.py#L810C1-L825C88"
+        },
+        {
+          "type": "WEB",
+          "url": "https://lists.debian.org/debian-lts-announce/2025/05/msg00035.html"
+        }
+      ]
+    },
+    {
+      "id": "GHSA-6q48-6c7w-9gw2",
+      "aliases": [
+        "PYSEC-2026-4320"
+      ],
+      "summary": "certifi bundles emSign root CAs with compromised intermediate CA keys",
+      "withdrawn": null,
+      "severity": [
+        {
+          "type": "CVSS_V4",
+          "score": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+        }
+      ],
+      "affected": [
+        {
+          "package": {
+            "name": "certifi",
+            "ecosystem": "PyPI",
+            "purl": "pkg:pypi/certifi"
+          },
+          "ranges": [
+            {
+              "type": "ECOSYSTEM",
+              "events": [
+                {
+                  "introduced": "2019.03.09"
+                },
+                {
+                  "fixed": "2026.10.19"
+                }
+              ]
+            }
+          ],
+          "database_specific": {
+            "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2026/10/GHSA-6q48-6c7w-9gw2/GHSA-6q48-6c7w-9gw2.json"
+          }
+        }
+      ],
+      "references": [
+        {
+          "type": "WEB",
+          "url": "https://github.com/certifi/python-certifi/security/advisories/GHSA-6q48-6c7w-9gw2"
+        },
+        {
+          "type": "WEB",
+          "url": "https://discuss.python.org/t/information-for-python-users-regarding-emudhra-emsign-ca-certificate-security-incident/109576"
+        },
+        {
+          "type": "WEB",
+          "url": "https://emudhra.we-have-a-problem.com"
+        },
+        {
+          "type": "PACKAGE",
+          "url": "https://github.com/certifi/python-certifi"
+        }
+      ]
+    },
+    {
+      "id": "GHSA-h35f-9h28-mq5c",
+      "aliases": [
+        "BIT-setuptools-2026-59890",
+        "CVE-2026-59890",
+        "PYSEC-2026-3447"
+      ],
+      "summary": "setuptools: MANIFEST.in exclusion bypass in sdist via Unicode normalization collision (NFC/NFD) on macOS APFS/HFS+",
+      "withdrawn": null,
+      "severity": [
+        {
+          "type": "CVSS_V3",
+          "score": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N"
+        }
+      ],
+      "affected": [
+        {
+          "package": {
+            "name": "setuptools",
+            "ecosystem": "PyPI",
+            "purl": "pkg:pypi/setuptools"
+          },
+          "ranges": [
+            {
+              "type": "ECOSYSTEM",
+              "events": [
+                {
+                  "introduced": "0"
+                },
+                {
+                  "fixed": "83.0.0"
+                }
+              ]
+            }
+          ],
+          "database_specific": {
+            "source": "https://github.com/github/advisory-database/blob/main/advisories/github-reviewed/2026/07/GHSA-h35f-9h28-mq5c/GHSA-h35f-9h28-mq5c.json"
+          }
+        }
+      ],
+      "references": [
+        {
+          "type": "WEB",
+          "url": "https://github.com/pypa/setuptools/security/advisories/GHSA-h35f-9h28-mq5c"
+        },
+        {
+          "type": "ADVISORY",
+          "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-59890"
+        },
+        {
+          "type": "WEB",
+          "url": "https://github.com/pypa/setuptools/commit/dd9f436a36486b4cb8a4c70a2321548b0be09b8f"
+        },
+        {
+          "type": "WEB",
+          "url": "https://github.com/pypa/advisory-database/tree/main/vulns/setuptools/PYSEC-2026-3447.yaml"
+        },
+        {
+          "type": "PACKAGE",
+          "url": "https://github.com/pypa/setuptools"
+        },
+        {
+          "type": "WEB",
+          "url": "https://github.com/pypa/setuptools/releases/tag/v83.0.0"
+        }
+      ]
+    },
+    {
+      "id": "PYSEC-2025-49",
+      "aliases": [
+        "BIT-setuptools-2025-47273",
+        "CVE-2025-47273",
+        "GHSA-5rjg-fvgr-3xxf"
+      ],
+      "summary": "",
+      "withdrawn": null,
+      "severity": [
+        {
+          "type": "CVSS_V3",
+          "score": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H"
+        }
+      ],
+      "affected": [
+        {
+          "package": {
+            "name": "setuptools",
+            "ecosystem": "PyPI",
+            "purl": "pkg:pypi/setuptools"
+          },
+          "ranges": [
+            {
+              "type": "GIT",
+              "repo": "https://github.com/pypa/setuptools",
+              "events": [
+                {
+                  "introduced": "0"
+                },
+                {
+                  "fixed": "250a6d17978f9f6ac3ac887091f2d32886fbbb0b"
+                }
+              ]
+            },
+            {
+              "type": "ECOSYSTEM",
+              "events": [
+                {
+                  "introduced": "0"
+                },
+                {
+                  "fixed": "78.1.1"
+                }
+              ]
+            }
+          ],
+          "database_specific": {
+            "source": "https://github.com/pypa/advisory-database/blob/main/vulns/setuptools/PYSEC-2025-49.yaml"
+          }
+        }
+      ],
+      "references": [
+        {
+          "type": "EVIDENCE",
+          "url": "https://github.com/pypa/setuptools/security/advisories/GHSA-5rjg-fvgr-3xxf"
+        },
+        {
+          "type": "ARTICLE",
+          "url": "https://lists.debian.org/debian-lts-announce/2025/05/msg00035.html"
+        },
+        {
+          "type": "REPORT",
+          "url": "https://github.com/pypa/setuptools/issues/4946"
+        },
+        {
+          "type": "FIX",
+          "url": "https://github.com/pypa/setuptools/commit/250a6d17978f9f6ac3ac887091f2d32886fbbb0b"
+        },
+        {
+          "type": "WEB",
+          "url": "https://github.com/pypa/setuptools/blob/6ead555c5fb29bc57fe6105b1bffc163f56fd558/setuptools/package_index.py#L810C1-L825C88"
+        }
+      ]
+    },
+    {
+      "id": "PYSEC-2026-3447",
+      "aliases": [
+        "BIT-setuptools-2026-59890",
+        "CVE-2026-59890",
+        "GHSA-h35f-9h28-mq5c"
+      ],
+      "summary": "",
+      "withdrawn": null,
+      "severity": [
+        {
+          "type": "CVSS_V3",
+          "score": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:N"
+        }
+      ],
+      "affected": [
+        {
+          "package": {
+            "name": "setuptools",
+            "ecosystem": "PyPI",
+            "purl": "pkg:pypi/setuptools"
+          },
+          "ranges": [
+            {
+              "type": "ECOSYSTEM",
+              "events": [
+                {
+                  "introduced": "0"
+                },
+                {
+                  "fixed": "83.0.0"
+                }
+              ]
+            }
+          ],
+          "ecosystem_specific": {},
+          "database_specific": {
+            "source": "https://github.com/pypa/advisory-database/blob/main/vulns/setuptools/PYSEC-2026-3447.yaml"
+          }
+        }
+      ],
+      "references": [
+        {
+          "type": "ADVISORY",
+          "url": "https://github.com/pypa/setuptools/releases/tag/v83.0.0"
+        },
+        {
+          "type": "FIX",
+          "url": "https://github.com/pypa/setuptools/commit/dd9f436a36486b4cb8a4c70a2321548b0be09b8f"
+        },
+        {
+          "type": "EVIDENCE",
+          "url": "https://github.com/pypa/setuptools/security/advisories/GHSA-h35f-9h28-mq5c"
+        }
+      ]
+    },
+    {
+      "id": "PYSEC-2026-4320",
+      "aliases": [
+        "GHSA-6q48-6c7w-9gw2"
+      ],
+      "summary": "certifi bundles emSign root CAs with compromised intermediate CA keys",
+      "withdrawn": null,
+      "severity": [
+        {
+          "type": "CVSS_V4",
+          "score": "CVSS:4.0/AV:N/AC:H/AT:P/PR:N/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+        }
+      ],
+      "affected": [
+        {
+          "package": {
+            "name": "certifi",
+            "ecosystem": "PyPI",
+            "purl": "pkg:pypi/certifi"
+          },
+          "ranges": [
+            {
+              "type": "ECOSYSTEM",
+              "events": [
+                {
+                  "introduced": "2019.03.09"
+                },
+                {
+                  "fixed": "2026.10.19"
+                }
+              ]
+            }
+          ],
+          "database_specific": {
+            "source": "https://github.com/pypa/advisory-database/blob/main/vulns/certifi/PYSEC-2026-4320.yaml"
+          }
+        }
+      ],
+      "references": [
+        {
+          "type": "WEB",
+          "url": "https://github.com/certifi/python-certifi/security/advisories/GHSA-6q48-6c7w-9gw2"
+        },
+        {
+          "type": "WEB",
+          "url": "https://discuss.python.org/t/information-for-python-users-regarding-emudhra-emsign-ca-certificate-security-incident/109576"
+        },
+        {
+          "type": "WEB",
+          "url": "https://emudhra.we-have-a-problem.com"
+        },
+        {
+          "type": "PACKAGE",
+          "url": "https://github.com/certifi/python-certifi"
+        },
+        {
+          "type": "PACKAGE",
+          "url": "https://pypi.org/project/certifi"
+        },
+        {
+          "type": "ADVISORY",
+          "url": "https://github.com/advisories/GHSA-6q48-6c7w-9gw2"
+        }
+      ]
+    }
+  ],
+  "dependabot_open_alerts": [],
+  "distinct_advisory_groups": [
+    {
+      "id": "GHSA-6q48-6c7w-9gw2",
+      "aliases": [
+        "PYSEC-2026-4320"
+      ],
+      "package": "certifi",
+      "version": "2026.7.22"
+    },
+    {
+      "id": "GHSA-5rjg-fvgr-3xxf",
+      "aliases": [
+        "CVE-2025-47273",
+        "PYSEC-2025-49"
+      ],
+      "package": "setuptools",
+      "version": "78.1.0"
+    },
+    {
+      "id": "GHSA-h35f-9h28-mq5c",
+      "aliases": [
+        "CVE-2026-59890",
+        "PYSEC-2026-3447"
+      ],
+      "package": "setuptools",
+      "version": "78.1.0"
+    }
+  ],
+  "source_differences": [
+    {
+      "id": "GHSA-6q48-6c7w-9gw2",
+      "upstream": "https://github.com/certifi/python-certifi/security/advisories/GHSA-6q48-6c7w-9gw2",
+      "upstream_patched_version": "2026.10.18",
+      "osv_fixed_version": "2026.10.19"
+    },
+    {
+      "id": "GHSA-h35f-9h28-mq5c",
+      "upstream": "https://github.com/pypa/setuptools/security/advisories/GHSA-h35f-9h28-mq5c",
+      "upstream_patched_version": null,
+      "upstream_affected_range": "<=82.0.1",
+      "osv_fixed_version": "83.0.0"
+    }
+  ],
+  "constraints_conflicts": [
+    {
+      "name": "filelock",
+      "requirements-lock.txt": "4.2.3",
+      "requirements-embedder-lock.txt": "3.32.3"
+    },
+    {
+      "name": "setuptools",
+      "requirements-lock.txt": "84.0.0",
+      "requirements-embedder-lock.txt": "78.1.0"
+    }
+  ],
+  "baseline_note": "Top-level packages, advisories, advisory_count, distinct_advisory_groups and constraints_conflicts retain the pre-remediation baseline. Final pins and re-query results are under post_remediation.",
+  "post_remediation": {
+    "audit_date": "2026-10-20",
+    "source": "https://api.osv.dev/v1/querybatch",
+    "query_count": 94,
+    "batch_request_count": 1,
+    "advisory_count": 0,
+    "source_sha256": {
+      "requirements-lock.txt": "e0f12eeaf65fd22f36aaa5dc1b80ac92b3d9b638189d4e7ee42d482bd343e807",
+      "requirements-embedder-lock.txt": "aca0b645b35b4b98981b5a474cdc879a86f49f911fe81587a04df142ca6d3047"
+    },
+    "remediations": [
+      {
+        "name": "certifi",
+        "before": "2026.7.22",
+        "after": "2026.10.19",
+        "addresses": [
+          "GHSA-6q48-6c7w-9gw2"
+        ]
+      },
+      {
+        "name": "setuptools",
+        "before": "78.1.0 (model constraints)",
+        "after": "84.0.0 (both constraints)",
+        "addresses": [
+          "GHSA-5rjg-fvgr-3xxf",
+          "GHSA-h35f-9h28-mq5c"
+        ]
+      },
+      {
+        "name": "filelock",
+        "before": "3.32.3 (model constraints), 4.2.3 (core constraints)",
+        "after": "4.2.3 (both constraints)",
+        "addresses": []
+      }
+    ],
+    "packages": [
+      {
+        "name": "annotated-doc",
+        "version": "0.0.5",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "annotated-types",
+        "version": "0.8.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "anyio",
+        "version": "4.15.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "argon2-cffi",
+        "version": "25.1.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "argon2-cffi-bindings",
+        "version": "26.1.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "asyncpg",
+        "version": "0.32.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "attrs",
+        "version": "26.1.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "build",
+        "version": "1.6.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "certifi",
+        "version": "2026.10.19",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "cffi",
+        "version": "2.1.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "cfgv",
+        "version": "3.5.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "charset-normalizer",
+        "version": "3.5.2",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "click",
+        "version": "8.5.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "cloudpickle",
+        "version": "3.1.2",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "colorama",
+        "version": "0.4.6",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "cryptography",
+        "version": "50.0.2",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "distlib",
+        "version": "0.4.4",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "fastapi",
+        "version": "0.143.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "filelock",
+        "version": "4.2.3",
+        "constraints": [
+          "requirements-lock.txt",
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "fsspec",
+        "version": "2026.7.0",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "h11",
+        "version": "0.16.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "hf-xet",
+        "version": "1.7.0",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "httpcore",
+        "version": "1.0.9",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "httpcore2",
+        "version": "2.13.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "httptools",
+        "version": "0.9.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "httpx",
+        "version": "0.28.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "httpx2",
+        "version": "2.13.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "huggingface-hub",
+        "version": "1.33.0",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "identify",
+        "version": "2.6.20",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "idna",
+        "version": "3.20",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "iniconfig",
+        "version": "2.3.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "jinja2",
+        "version": "3.1.6",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "joblib",
+        "version": "1.6.0",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "jsonschema",
+        "version": "4.26.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "jsonschema-specifications",
+        "version": "2025.9.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "markdown-it-py",
+        "version": "4.2.0",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "markupsafe",
+        "version": "3.0.3",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "mcp",
+        "version": "2.3.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "mcp-types",
+        "version": "2.3.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "mdurl",
+        "version": "0.1.2",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "mpmath",
+        "version": "1.3.0",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "narwhals",
+        "version": "2.27.1",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "networkx",
+        "version": "3.6.1",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "nodeenv",
+        "version": "1.11.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "numpy",
+        "version": "2.5.4",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "opentelemetry-api",
+        "version": "1.45.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "packaging",
+        "version": "26.3",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "platformdirs",
+        "version": "4.13.5",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "pluggy",
+        "version": "1.6.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "pre-commit",
+        "version": "4.7.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "pycparser",
+        "version": "3.11",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "pydantic",
+        "version": "2.14.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "pydantic-core",
+        "version": "2.50.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "pygments",
+        "version": "2.21.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "pyjwt",
+        "version": "2.15.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "pynacl",
+        "version": "1.6.2",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "pyproject-hooks",
+        "version": "1.3.3",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "pytest",
+        "version": "9.1.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "python-discovery",
+        "version": "1.6.3",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "python-dotenv",
+        "version": "1.2.4",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "python-multipart",
+        "version": "0.0.32",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "pywin32",
+        "version": "312",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "pyyaml",
+        "version": "6.0.3",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "referencing",
+        "version": "0.37.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "regex",
+        "version": "2026.9.29",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "requests",
+        "version": "2.34.2",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "rich",
+        "version": "15.0.0",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "rpds-py",
+        "version": "2026.9.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "ruff",
+        "version": "0.17.1",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "safetensors",
+        "version": "0.8.0",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "scikit-learn",
+        "version": "1.9.1",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "scipy",
+        "version": "1.18.1",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "sentence-transformers",
+        "version": "6.1.0",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "setuptools",
+        "version": "84.0.0",
+        "constraints": [
+          "requirements-lock.txt",
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "shellingham",
+        "version": "1.5.4",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "sse-starlette",
+        "version": "3.5.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "starlette",
+        "version": "1.8.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "sympy",
+        "version": "1.14.0",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "threadpoolctl",
+        "version": "3.7.0",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "tokenizers",
+        "version": "0.23.3",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "torch",
+        "version": "2.14.1",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "tqdm",
+        "version": "4.70.1",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "transformers",
+        "version": "5.20.1",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "truststore",
+        "version": "0.10.5",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "typer",
+        "version": "0.27.3",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "typing-extensions",
+        "version": "4.16.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "typing-inspection",
+        "version": "0.4.4",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "urllib3",
+        "version": "2.8.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "uvicorn",
+        "version": "0.54.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "uvloop",
+        "version": "0.23.0",
+        "constraints": [
+          "requirements-embedder-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "virtualenv",
+        "version": "21.14.11",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "watchfiles",
+        "version": "1.3.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "websockets",
+        "version": "17.2",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      },
+      {
+        "name": "wheel",
+        "version": "0.48.0",
+        "constraints": [
+          "requirements-lock.txt"
+        ],
+        "advisories": []
+      }
+    ],
+    "advisories": [],
+    "constraints_conflicts": [],
+    "dependabot_open_alerts": [],
+    "result": "No matching OSV records for the queried final package/version pairs.",
+    "limitations": [
+      "A dated known-advisory lookup, not proof of absence of vulnerabilities.",
+      "Does not enumerate dependencies absent from the constraints, container OS packages, downloaded model weights, or vendored browser assets.",
+      "Does not prove installation compatibility, reachability, exploitability, or release readiness.",
+      "Dependabot alerts reflect GitHub indexing of the default branch, not necessarily the local review commit."
+    ],
+    "source_hash_format": "SHA-256 of UTF-8 text with CRLF normalized to LF, for reproducibility across checkout platforms."
+  }
+}

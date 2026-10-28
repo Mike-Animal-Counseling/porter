@@ -1,14 +1,19 @@
-# Porter MCP server — Aider config template.
+# Porter handoff file — Aider read-only context template, NOT an MCP connection.
 #
-# HOW TO APPLY: merge the `mcp-servers:` block below into your Aider config
-# file (~/.aider.conf.yml or ./.aider.conf.yml). Replace {{PORTER_TOKEN}}
-# with a real Porter access token (mint via the OAuth flow).
+# HOW TO APPLY:
+# 1. Open Porter's /panel/handoff, select your project and preview the briefing.
+# 2. Download it as porter-handoff.txt into the Aider project's root directory.
+# 3. Merge this `read` entry into that project's .aider.conf.yml, preserving
+#    your existing model settings and other read-only files. Launch Aider there.
+#    Alternative: aider --read porter-handoff.txt
 #
-# UNVERIFIED: key layout per Aider docs 2026-10-11; not tested against a
-# live Aider install in this environment. No secrets are stored here.
-mcp-servers:
-  porter:
-    command: python
-    args: ["-m", "porter.mcp_stdio"]
-    env:
-      PORTER_TOKEN: "{{PORTER_TOKEN}}"
+# This is a static file: refresh the export and reload it when context changes.
+# It does not enable Porter tool calls, automatic capture or live memory sync.
+# Aider's documented config does not establish native MCP support. No Porter
+# access token, database access or server signing secret is needed to read it.
+# Review the exported context before sharing it with your chosen model provider.
+# Official config reviewed 2026-10-23:
+# https://aider.chat/docs/config/aider_conf.html
+# UNVERIFIED: not tested against a live Aider install here.
+read:
+  - porter-handoff.txt
