@@ -15,9 +15,11 @@ Native-client checks completed on **2026-10-22**, starting from source baseline
 tree. See the [sanitized native-client report](NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md).
 Candidate: review branch
 `fix/porter-review-hardening`; use the final head and CI recorded on the PR.
-[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1) is a draft and
-has not been merged into `main`. An upload label such as `13/13` describes a
-commit batch, not acceptance or functional completion.
+Review history and merge status are recorded on
+[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1).
+Before it is merged, use its source branch; after merge, use `main`.
+An upload label such as `13/13` describes a commit batch, not acceptance or
+functional completion.
 
 - The earlier full review recorded **650 local tests passing with no skips**, with real
   PostgreSQL and the isolated Docker stack configured. See the
@@ -104,9 +106,9 @@ artifacts, not a publicly hosted demo.
   caches and local reports with secrets out of source and built artifacts.
 - Confirm the support matrix distinguishes templates from verified clients.
   Keep alpha limits and known issues visible in release notes.
-- Merge and publish only after review, preserving the evidence and commit link.
-  A green PR is not a published release; the current PR remains a draft until
-  the missing gates are closed.
+- Merge after maintainer review and required checks, preserving the evidence
+  and commit link. Publish a release after the applicable acceptance gates and
+  human sign-off. Merging does not close untested gates or publish a release.
 
 ## Known limits and work after alpha
 

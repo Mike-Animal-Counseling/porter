@@ -11,7 +11,8 @@
 **2026-10-22** 已完成原生客户端检查，源码起点为 `0b9e83d`；后续向量服务错误处理修复在工作区单独验证。
 见 [已去敏的原生验收记录](NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md)。
 候选分支为 `fix/porter-review-hardening`，最终 head 与对应 CI 以 PR 记录为准。
-[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1) 目前为草稿，尚未合并到 `main`。
+[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1) 记录评审历史与合并状态。
+合并前使用其来源分支，合并后使用 `main`。
 `13/13` 之类的上传标题表示提交批次，不是验收完成度。
 
 - 较早的全量检查记录为 **650 项本地测试通过、无跳过**，已配置真实 PostgreSQL 与隔离 Docker 环境。
@@ -81,8 +82,8 @@
 - 核对 README、中英文步骤、description、topics、许可、贡献/安全策略与更新记录。
   凭据、用户数据、模型缓存和含密钥的本机报告不能进入源码或构建产物。
 - 支持矩阵明确区分模板与实测客户端；发布说明保留 alpha 限制和已知问题。
-- 评审通过后再合并和发布，保留证据和 commit 链接。PR 绿灯不等于正式发布；
-  当前草稿 PR 需等剩余门槛关闭后再转为可发布状态。
+- 维护者评审与必要检查通过后合并，保留证据和 commit 链接。完成适用的验收门槛与人工签收
+  后再正式发布；合并本身不会关闭未测试的门槛，也不等于发布版本。
 
 ## 已知限制与 alpha 后工作
 

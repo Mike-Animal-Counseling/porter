@@ -14,18 +14,19 @@ deployment. Use synthetic data throughout.
 
 ## 1. Choose the candidate and connect two tools
 
-If you are accepting the current review, use the head of
-[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1), branch
-`fix/porter-review-hardening`; it is a draft and is not yet merged into `main`.
-Record `git rev-parse HEAD`. Do not assume a fresh clone of `main` contains the
-candidate fixes.
+Before [PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1) is merged,
+use its source branch `fix/porter-review-hardening`. After merge, use `main`.
+Record `git rev-parse HEAD` and check that the selected revision matches the
+acceptance and CI evidence.
 
-On the maintainer's review machine, the retained real BGE-M3 preview is
-**http://127.0.0.1:18010/panel**, unlocked with the setup token in the private
-`.env.review`. This address is local to that machine. A fresh standard deployment
-uses **http://127.0.0.1:8000/panel**, started with the
-[README quickstart](../README.md#quickstart). Use the same base URL in both client
-configurations.
+On the maintainer's review machine, the restored PostgreSQL/BGE-M3 deployment
+uses **http://127.0.0.1:8000/panel**; see the
+[dated recovery evidence](FORMAL_RESTORE.2026-10-27.md). The separate retained
+preview on port 18010 uses hash embeddings and a different database. These
+addresses are local to that machine. A fresh standard deployment also uses
+port 8000, started with the [README quickstart](../README.md#quickstart).
+Use the same base URL in both client configurations and the setup token for
+that specific deployment.
 
 Create two independent clients in **Clients** and complete the OAuth
 consent/code exchange in the [deploy guide](../DEPLOY.md). Keep the access token

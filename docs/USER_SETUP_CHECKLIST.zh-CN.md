@@ -11,16 +11,15 @@
 
 ## 1. 选定候选版本，接入两个工具
 
-验收当前检查结果时，使用
-[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1) 的来源分支
-`fix/porter-review-hardening`。该 PR 目前是草稿，尚未合入 `main`。
-记录 `git rev-parse HEAD`；不要假定新拉取的 `main` 已经包含候选修复。
+[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1) 合并前，使用来源分支
+`fix/porter-review-hardening`；合并后使用 `main`。
+记录 `git rev-parse HEAD`，核对所选版本与验收及 CI 证据一致。
 
-在维护者当前的检查机器上，保留的真实 BGE-M3 预览地址是
-**http://127.0.0.1:18010/panel**，用私有 `.env.review` 里的 setup token 解锁。
-这个地址只在该机器上有效。全新标准部署按
-[README 快速开始](../README.zh-CN.md#快速开始) 启动，地址为
-**http://127.0.0.1:8000/panel**。两个客户端使用同一个服务地址。
+在维护者当前的检查机器上，恢复后的 PostgreSQL/BGE-M3 正式服务地址是
+**http://127.0.0.1:8000/panel**，见[当日恢复证据](FORMAL_RESTORE.2026-10-27.zh-CN.md)。
+另行保留的 18010 端口预览使用 hash 向量和不同的数据库。这些地址只在该机器上有效。
+全新标准部署按 [README 快速开始](../README.zh-CN.md#快速开始) 启动，也使用 8000 端口。
+两个客户端使用同一个服务地址，并使用对应部署的 setup token 解锁。
 
 在「接入方 / Clients」新建两个独立客户端，按
 [部署指南](../DEPLOY.zh-CN.md) 完成 OAuth 授权与 code 交换。
