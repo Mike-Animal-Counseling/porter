@@ -56,6 +56,13 @@ from .origin import (
     owner_only,
     owner_session,
 )
+from .owner_login import (
+    LINK_SECONDS,
+    PRIVATE_HEADERS,
+    OwnerBrowserLinks,
+    login_language,
+    render_login,
+)
 from .ratelimit import TokenBucket
 from .repositories import MemoryRepository
 from .schemas import (
@@ -167,6 +174,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.wiki_service = wiki_service
+    app.state.owner_browser_links = OwnerBrowserLinks()
     app.middleware("http")(auth.auth_middleware)
     app.add_exception_handler(PorterError, porter_error_handler)
 
@@ -976,29 +984,53 @@ def create_app(
         return await call_next(request)
 
     @app.get("/owner/login", response_class=HTMLResponse)
-    async def owner_login_page():
-        return HTMLResponse("""<!doctype html><html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Unlock Porter / 解锁 Porter</title>
-<link rel="stylesheet" href="/panel/static/css/tokens.css">
-<link rel="stylesheet" href="/panel/static/css/app.css"></head><body>
-<main class="owner-login"><div class="card"><h1>Porter</h1>
-<p>Unlock your memory library / 解锁你的记忆库</p>
-<form method="post" action="/owner/login"><label class="f" for="owner-token">Setup token / 初始访问密钥</label>
-<input id="owner-token" name="token" type="password" autocomplete="current-password" required>
-<p class="muted">Use PORTER_SETUP_TOKEN from your .env file / 使用 .env 中的 PORTER_SETUP_TOKEN</p>
-<button class="btn btn--primary" type="submit">Unlock / 解锁</button></form></div></main>
-</body></html>""")
+    async def owner_login_page(request: Request):
+        return render_login(login_language(request))
 
-    @app.post("/owner/login")
-    async def owner_login(request: Request, token: str = Form(...)):
+    @app.post("/owner/browser-link")
+    async def owner_browser_link(request: Request):
         check_same_origin(request)
         peer = request.client.host if request.client else "unknown"
         if not request.app.state.rate_limiter.allow("owner-login:" + peer):
             raise RateLimited("too many login attempts")
-        if not compare_digest(token.encode(), settings.setup_token.encode()):
+        token = request.headers.get("X-Porter-Setup-Token", "")
+        if not token or not compare_digest(token.encode(), settings.setup_token.encode()):
             raise Unauthorized("invalid setup token")
-        response = RedirectResponse("/panel/", status_code=303)
+        return JSONResponse(
+            {
+                "code": app.state.owner_browser_links.issue(settings.setup_token),
+                "expires_in": LINK_SECONDS,
+            },
+            headers=PRIVATE_HEADERS,
+        )
+
+    @app.post("/owner/login")
+    async def owner_login(
+        request: Request,
+        token: str = Form(default=""),
+        code: str = Form(default=""),
+        lang: str = Form(default=""),
+    ):
+        def failure(kind: str, error: PorterError):
+            if "text/html" in request.headers.get("accept", ""):
+                return render_login(
+                    login_language(request, lang), error=kind, status_code=error.status_code
+                )
+            raise error
+
+        try:
+            check_same_origin(request)
+        except Unauthorized as exc:
+            return failure("origin", exc)
+        peer = request.client.host if request.client else "unknown"
+        if not request.app.state.rate_limiter.allow("owner-login:" + peer):
+            return failure("rate", RateLimited("too many login attempts"))
+        if code:
+            if token or not app.state.owner_browser_links.consume(code, settings.setup_token):
+                return failure("link", Unauthorized("invalid or expired browser link"))
+        elif not token or not compare_digest(token.encode(), settings.setup_token.encode()):
+            return failure("key", Unauthorized("invalid setup token"))
+        response = RedirectResponse("/panel/", status_code=303, headers=PRIVATE_HEADERS)
         response.set_cookie(
             OWNER_COOKIE,
             owner_session(),

@@ -34,6 +34,9 @@ Porter 是用于自托管 AI 记忆的 alpha 软件。回归测试覆盖鉴权�
 1. **Owner 权限很高。** 原生 loopback 连接受信任。通过 Docker 转发的浏览器用
    `PORTER_SETUP_TOKEN` 解锁 `/owner/login`；签名 HttpOnly 会话有效 12 小时。
    此令牌也限制首次客户端注册，应妥善保管。转发头不能授予 owner 权限。
+   本机入口通过直接 loopback 请求将管理密钥兑换成两分钟有效的一次性码。
+   码在容量受限的进程内以 HMAC 索引保存，通过 URL fragment 传递，页面先清除 fragment，
+   再同源提交。解锁响应禁用缓存与 referrer。一次性链接仍是临时凭据，不应分享。
 2. **网络边界必须明确。** 内置 Compose 端口绑定本机。默认允许域名为 localhost、
    127.0.0.1 和 [::1]。自定义域名即使经过本机代理，也要求 owner 会话。
    TLS 代理须保留 Host 并设置 `PORTER_PUBLIC_ORIGIN`；内置命令不信任转发头。

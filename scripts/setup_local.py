@@ -25,7 +25,8 @@ def main() -> int:
     env_path.chmod(0o600)
     print("Created .env with random credentials. Start with: docker compose up --build -d")
     print(
-        "For stdio clients, copy DATABASE_URL and PORTER_JWT_SECRET from .env into their template."
+        "When services are ready, double-click Open-Porter.cmd on Windows "
+        "or run: python scripts/open_panel.py"
     )
     return 0
 

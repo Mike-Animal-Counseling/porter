@@ -79,10 +79,18 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Open **http://127.0.0.1:8000/panel**. If prompted, unlock with
-`PORTER_SETUP_TOKEN` from your local `.env`. The setup helper generates stable
-random credentials and preserves an existing `.env`; complete missing values
-using [`.env.example`](.env.example). Keep this file private.
+Open **http://127.0.0.1:8000/panel**. If it asks you to unlock, double-click
+**`Open-Porter.cmd`** in this folder on Windows, or run
+`python scripts/open_panel.py --lang en` on macOS/Linux. Paste its one-time link
+into the browser you use. The helper reads your local settings; the administrator
+key stays out of the URL and terminal output. Links expire after two minutes
+and one use; the browser session lasts up to 12 hours.
+
+The setup helper generates stable random credentials and preserves an existing
+`.env`; complete missing values using [`.env.example`](.env.example). Keep this
+file private. Custom deployments can select their file and local address with
+`--env-file PATH --url http://127.0.0.1:PORT`. The manual administrator-key form
+remains available for other deployment setups.
 
 The first launch needs network access for images, Python packages and model
 weights. The measured BGE-M3 cache was about **3.8 GB**; image layers need

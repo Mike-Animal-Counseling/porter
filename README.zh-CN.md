@@ -70,8 +70,13 @@ docker compose up --build -d
 docker compose ps
 ```
 
-打开 **http://127.0.0.1:8000/panel**。出现登录提示时，使用本地 `.env` 中的
-`PORTER_SETUP_TOKEN` 解锁。初始化脚本生成稳定的随机凭据；已有 `.env` 会保留，
+打开 **http://127.0.0.1:8000/panel**。如提示解锁，Windows 在此文件夹双击
+**`Open-Porter.cmd`**；macOS/Linux 运行 `python scripts/open_panel.py`。
+把生成的一次性链接粘贴到正在使用的浏览器即可。入口自动读取本机设置，管理员密钥不会出现在
+链接或终端输出中。链接两分钟有效、仅能使用一次；浏览器解锁状态最多保留 12 小时。
+
+自定义部署可用 `--env-file 配置文件 --url http://127.0.0.1:端口` 指定对应服务。
+页面仍保留手动输入管理员密钥的备用方式。初始化脚本生成稳定的随机凭据；已有 `.env` 会保留，
 缺失项请参照 [`.env.example`](.env.example) 补齐。不要分享或提交该文件。
 
 首次启动需要联网下载镜像、Python 依赖和模型。实测 BGE-M3 模型缓存约 **3.8 GB**，

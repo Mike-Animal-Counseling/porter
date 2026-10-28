@@ -32,10 +32,20 @@ docker compose logs --tail 50 embedder api
 首次模型下载可能较慢，API 会等待模型服务健康。就绪后访问
 **http://127.0.0.1:8000/healthz** 应返回 200。不要通过删除数据卷解决启动错误。
 
-打开 **http://127.0.0.1:8000/panel**。Docker 转发的浏览器连接需要在 `/owner/login`
-使用 `.env` 中的 `PORTER_SETUP_TOKEN` 解锁。签名 owner 会话持续 12 小时，也保护
+打开 **http://127.0.0.1:8000/panel**。Windows 双击 `Open-Porter.cmd`，
+macOS/Linux 运行 `python scripts/open_panel.py`，把生成的一次性链接粘贴到浏览器即可。
+链接两分钟有效、仅能使用一次。自定义配置或本机端口使用
+`--env-file 配置文件 --url http://127.0.0.1:端口`。入口只使用 Python 标准库，
+不会打开浏览器，拒绝远程目标和跳转，也不会将长期管理密钥放进链接或终端输出。
+`/owner/login` 仍保留使用 `PORTER_SETUP_TOKEN` 的手动解锁方式。
+一次性码保存在单个进程内，服务重启后失效；使用默认的单 API worker，
+多 worker 部署可用手动解锁。签名 owner 会话持续 12 小时，也保护
 OAuth 授权页面。原生 loopback URL 保留本机 owner 访问；自定义域名需要登录。
 面板默认英语，可在设置中切换中英文；Docker 将语言偏好保存在 `porter-data` 数据卷。
+
+已有自定义本机部署可在入口旁放置不提交的 `.porter-panel.local.json`，内容为
+`{"env_file": "配置文件路径", "url": "http://127.0.0.1:8000"}`。
+这里仅保存配置路径，不保存密钥；命令行选项优先，目标地址仍限 loopback。
 
 ## 2. 创建受限客户端，取得 token
 

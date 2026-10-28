@@ -41,6 +41,11 @@ and repository settings that maintainers must verify.
    Browsers forwarded through Docker unlock `/owner/login` with
    `PORTER_SETUP_TOKEN`; the signed HttpOnly session lasts 12 hours.
    Protect the setup token, which also gates initial client registration.
+   The local helper exchanges that key over a direct loopback request for a
+   single-use, two-minute code. Codes are HMAC-indexed in a bounded process-local
+   store and sent in URL fragments, removed before the page submits its
+   same-origin form. Sign-in responses use no-store and no-referrer policies.
+   The one-time URL is still a temporary credential; do not share it.
    Forwarded headers cannot grant owner access.
 2. **Network boundaries must be explicit.** Bundled Compose ports bind to
    loopback. Allowed hosts default to localhost, 127.0.0.1 and [::1]. Custom
