@@ -1,5 +1,5 @@
 # Optional local embedding and ML triage backends.
-sentence-transformers>=3
-transformers>=4.40
+sentence-transformers>=6.2.0
+transformers>=5.20.2
 torch>=2.2
 scikit-learn>=1.4
