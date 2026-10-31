@@ -1,6 +1,6 @@
-fastapi>=0.115
+fastapi>=0.162.0
 # Host validation needs the IPv6-aware middleware/parser in Starlette 1.8+.
-starlette>=1.8
+starlette>=1.10.0
 uvicorn[standard]>=0.30
 asyncpg>=0.29
 pydantic>=2.7
@@ -12,4 +12,4 @@ python-multipart>=0.0.18  # OAuth form posts (authorize/token/revoke)
 cryptography>=42  # snapshot AES-256-GCM encryption (PRD §9.2)
 pynacl>=1.5  # device public keys and sealed key envelopes
 mcp>=2.0  # MCP server: stdio + Streamable HTTP transports (PRD §8 F3)
-sse-starlette>=2.0  # Streamable HTTP SSE transport (mcp dependency)
+sse-starlette>=3.6.0  # Streamable HTTP SSE transport (mcp dependency)

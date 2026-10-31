@@ -2,7 +2,7 @@
 # Used by .github/workflows/ci.yml. Keep this lightweight — no torch/transformers
 # (the test suite stubs those out).
 -r api/requirements.txt
-pytest>=8.0
+pytest>=9.2.0
 requests
 pynacl
 PyYAML>=6
