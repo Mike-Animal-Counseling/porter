@@ -8,6 +8,11 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Packaging dependency security
+
+- Require patched setuptools 84.1.0 for isolated builds and both tested constraint sets.
+- Update the development virtualenv constraint to 21.14.13 to fix prompt expansion in Bash activation scripts.
+
 ### Easier owner unlock
 
 - Explain local owner unlock in plain English/Chinese, with a Windows shortcut
