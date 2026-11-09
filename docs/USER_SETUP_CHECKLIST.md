@@ -14,8 +14,8 @@ deployment. Use synthetic data throughout.
 
 ## 1. Choose the candidate and connect two tools
 
-Before [PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1) is merged,
-use its source branch `fix/porter-review-hardening`. After merge, use `main`.
+For a new setup, use the default branch, `main`. The earlier review is recorded
+in [PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1).
 Record `git rev-parse HEAD` and check that the selected revision matches the
 acceptance and CI evidence.
 

@@ -11,8 +11,8 @@
 
 ## 1. 选定候选版本，接入两个工具
 
-[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1) 合并前，使用来源分支
-`fix/porter-review-hardening`；合并后使用 `main`。
+新部署使用默认分支 `main`。历史检查见
+[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1)。
 记录 `git rev-parse HEAD`，核对所选版本与验收及 CI 证据一致。
 
 在维护者当前的检查机器上，恢复后的 PostgreSQL/BGE-M3 正式服务地址是

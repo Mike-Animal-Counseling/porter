@@ -10,9 +10,8 @@
 
 **2026-10-22** 已完成原生客户端检查，源码起点为 `0b9e83d`；后续向量服务错误处理修复在工作区单独验证。
 见 [已去敏的原生验收记录](NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md)。
-候选分支为 `fix/porter-review-hardening`，最终 head 与对应 CI 以 PR 记录为准。
-[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1) 记录评审历史与合并状态。
-合并前使用其来源分支，合并后使用 `main`。
+历史评审和 CI 结果见已合并的 [PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1)。
+新部署使用 `main`，并记录实际验收的提交。
 `13/13` 之类的上传标题表示提交批次，不是验收完成度。
 
 - 较早的全量检查记录为 **650 项本地测试通过、无跳过**，已配置真实 PostgreSQL 与隔离 Docker 环境。

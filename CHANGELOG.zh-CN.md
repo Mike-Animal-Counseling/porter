@@ -238,7 +238,7 @@ QWEN.md 种子，成为 `project` 域的 inbox 种子并带 `project:<目录>`
   按钮按压反馈、抽屉缓动曲线、时间戳/ID 等宽数字、
   长记忆摘要 2 行截断。
 
-**面板 UI 重设计（按 `ui-redesign-spec.md`）**
+**面板 UI 重设计（按 [UI 设计稿](docs/ui-redesign-spec.zh-CN.md)）**
 - 深色优先的设计系统，浅色模式通过 CSS 变量 token 切换：
   `porter/static/css/tokens.css`（深/浅精确 token 集、单一
   indigo-violet 强调色 `#6E6BF2`、语义化状态色）+

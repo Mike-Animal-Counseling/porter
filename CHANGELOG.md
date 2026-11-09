@@ -290,7 +290,7 @@ QWEN.md seeds as `project`-domain inbox seeds with `project:<dir>` tags
   active state, button press feedback, drawer easing curve, tabular-nums
   for timestamps/IDs, 2-line clamp on long memory snippets.
 
-**Panel UI redesign (per `ui-redesign-spec.md`)**
+**Panel UI redesign (per [UI design spec](docs/ui-redesign-spec.md))**
 - Dark-first design system with light mode via CSS-variable token swap:
   `porter/static/css/tokens.css` (exact dark/light token sets, single
   indigo-violet accent `#6E6BF2`, semantic status colors) +

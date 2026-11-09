@@ -13,11 +13,9 @@ verified in every tool named by a template.
 Native-client checks completed on **2026-10-22**, starting from source baseline
 `0b9e83d`, with the subsequent embedding error-handling fix tested in the working
 tree. See the [sanitized native-client report](NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md).
-Candidate: review branch
-`fix/porter-review-hardening`; use the final head and CI recorded on the PR.
-Review history and merge status are recorded on
-[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1).
-Before it is merged, use its source branch; after merge, use `main`.
+The historical review and its CI results are recorded in
+[PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1), now merged.
+For a new deployment, use `main` and record the exact revision under test.
 An upload label such as `13/13` describes a commit batch, not acceptance or
 functional completion.
 
