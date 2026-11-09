@@ -1,20 +1,38 @@
-# Porter
+<div align="center">
+  <img src="assets/porter-mark.svg" width="64" height="64" alt="Porter project mark">
+  <h1>Porter</h1>
+  <p><strong>Carry project context between AI coding tools.</strong></p>
+  <p><a href="#quickstart"><strong>Quickstart</strong></a> · <a href="#architecture">Architecture</a> · <a href="README.zh-CN.md">中文</a></p>
+</div>
 
-**Carry project context between AI coding tools.**
+**Self-hosted alpha** · Python 3.12+ · FastAPI · PostgreSQL + pgvector
 
-[中文](README.zh-CN.md) · Alpha · MIT
+When you switch from Codex to OpenCode, project decisions usually stay in the old chat. Porter gives your tools a shared place to save and retrieve those decisions through MCP, with a review inbox and separate permissions for each client.
 
-Porter is a self-hosted memory service for AI coding assistants. Save a project decision in one tool and retrieve it in another through MCP. You own the database and control what each client can read or write.
+## Features
 
-## What it looks like
+- **Save and find context.** Store project decisions and conventions, then search by meaning or narrow the results with tags.
+- **Review what gets shared.** Sensitive or conflicting writes go to the owner inbox. Strict mode queues every new write.
+- **Grant limited access.** Give each client revocable OAuth credentials for read, write, or tag-restricted read.
+- **Hand off a project.** Export a briefing from the owner panel, or back up the store with a signed snapshot.
 
-**Codex saves a project decision → Porter stores it → OpenCode retrieves it in a fresh conversation.** The [native-client test](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md) verified that both tools saw the same memory ID.
+## See it in use
 
-- **Review writes.** Sensitive or conflicting candidates go to the review inbox. Strict mode queues every new write.
-- **Limit access.** Give clients separate OAuth credentials with read, write, or tag-restricted read permissions. Revoke them individually.
-- **Keep data local.** PostgreSQL and pgvector power search. The owner panel also exports handoff briefings and supports backups.
+In the [native-client test](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md), **Codex saved a synthetic project memory** and **OpenCode found the same record in a fresh conversation**. OpenCode had a separate read-only credential. The test also confirmed that a work-scoped client could not retrieve the private fixture.
 
-This alpha is designed for a single owner. Assistants call MCP tools explicitly. Standard memories are stored in plaintext on your server. See the [security policy](SECURITY.md) for deployment boundaries.
+The panel can turn saved context into a shareable briefing. [See the handoff screen with synthetic data](assets/dsh-handoff-acceptance.2026-10-25.png) (Chinese UI).
+
+## Architecture
+
+```mermaid
+flowchart LR
+    tools["AI coding tools"] <-->|Scoped HTTP MCP| api["Porter API"]
+    panel["Owner panel"] <-->|Review and handoff| api
+    api <--> store[("PostgreSQL + pgvector")]
+    api --> embedder["Local embedding service"]
+```
+
+This alpha is designed for a single owner. Assistants call MCP tools explicitly, and standard memories are stored in plaintext on your server. See the [security policy](SECURITY.md) for the deployment boundary.
 
 ## Quickstart
 

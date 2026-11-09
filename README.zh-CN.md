@@ -1,18 +1,36 @@
-# Porter
+<div align="center">
+  <img src="assets/porter-mark.svg" width="64" height="64" alt="Porter 项目标记">
+  <h1>Porter</h1>
+  <p><strong>在 AI 编程工具之间共享项目上下文。</strong></p>
+  <p><a href="#快速开始"><strong>快速开始</strong></a> · <a href="#架构">架构</a> · <a href="README.md">English</a></p>
+</div>
 
-**在 AI 编程工具之间共享项目上下文。**
+**自托管 Alpha** · Python 3.12+ · FastAPI · PostgreSQL + pgvector
 
-[English](README.md) · Alpha · MIT
+从 Codex 切到 OpenCode 时，项目决策往往还留在原来的聊天里。Porter 让不同工具通过 MCP 保存和查找同一份上下文。你可以在收件箱审核写入，并为每个客户端单独设置权限。
 
-Porter 是面向 AI 编程助手的自托管记忆服务。在一个工具里保存项目决策，再通过 MCP 从另一个工具找回。数据库由你管理，每个客户端的读写权限也由你决定。
+## 功能
+
+- **保存和查找上下文。** 保存项目决策与约定，按语义检索，也可用标签缩小范围。
+- **审核共享内容。** 敏感或冲突的写入进入审核收件箱。严格模式下，每条新写入都需审核。
+- **限制访问。** 为每个客户端授予可撤销的 OAuth 凭据，支持读取、写入和按标签限读。
+- **交接与备份。** 从管理面板导出项目交接简报，或用签名快照备份记忆库。
 
 ## 实际怎么用
 
-**Codex 写入一条项目决策 → Porter 保存 → OpenCode 在新对话中找回。** [真实客户端验收](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md)确认两个工具拿到了同一条记忆 ID。
+在[真实客户端验收](docs/NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md)中，**Codex 写入一条合成的项目记忆**，**OpenCode 在新对话中找回同一条记录**。OpenCode 使用独立的只读凭据。测试还验证了仅有工作权限的客户端无法取回私密测试记录。
 
-- **审核写入。** 敏感或冲突的内容进入审核收件箱。严格模式下，每条新写入都需审核。
-- **限制访问。** 分别为客户端授予可撤销的 OAuth 凭据，支持读取、写入和按标签限读。
-- **本地保存。** 用 PostgreSQL 和 pgvector 检索记忆，也可在管理面板导出交接简报和备份。
+管理面板可以把已保存的上下文整理成交接简报。[查看使用合成数据的交接界面](assets/dsh-handoff-acceptance.2026-10-25.png)。
+
+## 架构
+
+```mermaid
+flowchart LR
+    tools["AI 编程工具"] <-->|受限 HTTP MCP| api["Porter API"]
+    panel["管理面板"] <-->|审核与交接| api
+    api <--> store[("PostgreSQL + pgvector")]
+    api --> embedder["本地向量模型服务"]
+```
 
 当前 Alpha 面向单一所有者。助手需主动调用 MCP 工具，普通记忆以明文保存在你的服务器上。部署边界见[安全策略](SECURITY.zh-CN.md)。
 

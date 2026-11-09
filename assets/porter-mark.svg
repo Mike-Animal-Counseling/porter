@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Porter project mark</title>
+  <rect x="1" y="1" width="62" height="62" rx="15" fill="#22243B" stroke="#505577" stroke-width="2"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="3">
+    <path d="M23 23h-5a3 3 0 0 0-3 3v16a3 3 0 0 0 3 3h11a3 3 0 0 0 3-3v-2" stroke="#ADB4EB"/>
+    <path d="M41 41h5a3 3 0 0 0 3-3V22a3 3 0 0 0-3-3H35a3 3 0 0 0-3 3v2" stroke="#EAEAFF"/>
+    <path d="M23 32h18m-6-6 6 6-6 6" stroke="#EAEAFF"/>
+  </g>
+</svg>
