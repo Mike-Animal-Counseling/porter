@@ -511,7 +511,7 @@ def _start_uvicorn(app):
     return srv, t, port
 
 
-def _mint_via_http(base: str, scopes: str) -> str:
+def _mint_via_http(base: str, scopes: str, admin_token: str | None = None) -> str:
     """Full OAuth round-trip over raw HTTP against the running server."""
     import httpx2
 
@@ -519,7 +519,7 @@ def _mint_via_http(base: str, scopes: str) -> str:
     r = c.post(
         "/api/v1/clients",
         json={"name": "http-cli", "redirect_uris": [REDIRECT]},
-        headers={"X-Porter-Setup-Token": settings.setup_token},
+        headers=_setup_headers(admin_token),
     )
     assert r.status_code == 201, r.text
     reg = r.json()
@@ -559,6 +559,96 @@ def _mint_via_http(base: str, scopes: str) -> str:
     )
     assert r.status_code == 200, r.text
     return r.json()["access_token"]
+
+
+def test_automatic_hooks_share_only_approved_project_memory(tmp_path, monkeypatch):
+    from porter.auto_memory import handle
+
+    repo = InMemoryMemoryRepository(HashEmbedder())
+    store = InMemoryOAuthStore()
+    server, thread, port = _start_uvicorn(create_app(repo, store, auth_enabled=True))
+    try:
+        base = f"http://127.0.0.1:{port}"
+        admin = _mint_via_http(base, "memory.admin")
+        monkeypatch.setenv(
+            "PORTER_TEST_HOOK_TOKEN", _mint_via_http(base, "memory.read.work memory.write", admin)
+        )
+        monkeypatch.setenv(
+            "PORTER_TEST_OTHER_TOKEN", _mint_via_http(base, "memory.read.dietary", admin)
+        )
+        config = tmp_path / "config.json"
+        other = tmp_path / "other"
+        other.mkdir()
+        config.write_text(
+            json.dumps(
+                {
+                    "projects": [
+                        {
+                            "root": str(tmp_path),
+                            "base_url": base,
+                            "tag": "work",
+                            "token_env": "PORTER_TEST_HOOK_TOKEN",
+                            "recall": True,
+                            "capture": True,
+                        },
+                        {
+                            "root": str(other),
+                            "base_url": base,
+                            "tag": "dietary",
+                            "token_env": "PORTER_TEST_OTHER_TOKEN",
+                            "recall": True,
+                        },
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        stop = {
+            "cwd": str(tmp_path),
+            "session_id": "synthetic-codex",
+            "turn_id": "turn-1",
+            "hook_event_name": "Stop",
+            "last_assistant_message": "The project decided to run pytest on every release.",
+        }
+        submit = {
+            "cwd": str(tmp_path),
+            "session_id": "synthetic-claude",
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "The project decided to run pytest on every release",
+        }
+
+        async def exercise():
+            assert await handle("codex", stop, config) == {}
+            assert await handle("codex", stop, config) == {}
+            assert await handle("claude", submit, config) == {}
+            pending = await repo.list(status="pending")
+            assert len(pending) == 1
+            assert pending[0].scope_tags == ["work"]  # The stub also infers work.
+            assert pending[0].source["automatic"] is True
+            await repo.approve(pending[0].id)
+            context = (await handle("claude", submit, config))["hookSpecificOutput"]
+            assert "pytest" in context["additionalContext"]
+            assert "untrusted historical data" in context["additionalContext"]
+            assert await handle("claude", {**submit, "cwd": str(other)}, config) == {}
+            assert await handle("claude", {**submit, "cwd": str(tmp_path.parent)}, config) == {}
+            assert (
+                await handle(
+                    "codex",
+                    {
+                        **stop,
+                        "turn_id": "turn-2",
+                        "last_assistant_message": "The password is sample.",
+                    },
+                    config,
+                )
+                == {}
+            )
+            assert await repo.list(status="pending") == []
+
+        asyncio.run(exercise())
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
 
 
 def test_streamable_http_with_real_sdk_client():
