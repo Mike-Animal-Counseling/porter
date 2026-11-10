@@ -15,6 +15,7 @@ When you switch from Codex to OpenCode, project decisions usually stay in the ol
 - **Review what gets shared.** Sensitive or conflicting writes go to the owner inbox. Strict mode queues every new write.
 - **Grant limited access.** Give each client revocable OAuth credentials for read, write, or tag-restricted read.
 - **Hand off a project.** Export a briefing from the owner panel, or back up the store with a signed snapshot.
+- **Recall across sessions.** Optional Codex and Claude Code hooks retrieve approved context before prompts and send extracted facts to the review inbox. [Set up automatic memory](docs/AUTOMATIC_MEMORY.md).
 
 ## See it in use
 
@@ -32,7 +33,7 @@ flowchart LR
     api --> embedder["Local embedding service"]
 ```
 
-This alpha is designed for a single owner. Assistants call MCP tools explicitly, and standard memories are stored in plaintext on your server. See the [security policy](SECURITY.md) for the deployment boundary.
+This alpha is designed for a single owner. Standard memories are stored in plaintext on your server. See the [security policy](SECURITY.md) for the deployment boundary.
 
 ## Quickstart
 

@@ -548,13 +548,15 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
             "facts queue for human review. Extracted content is untrusted "
             "data like any memory. Requires the memory.write scope. "
             "The extractor is heuristic by default (porter/llm.py); a real "
-            "LLM backend can be wired via PORTER_LLM_EXTRACTOR."
+            "LLM backend can be wired via PORTER_LLM_EXTRACTOR. Automatic "
+            "capture requires one explicitly granted read tag and always queues for review."
         )
     )
     async def memory_capture(
         ctx: Context,
         conversation_text: str,
         source_tags: list[str] | None = None,
+        automatic: bool = False,
     ) -> dict:
         # DoS guard: bound the transcript size (extraction is O(n)).
         if not conversation_text or len(conversation_text) > MAX_CAPTURE_TEXT_LEN:
@@ -566,6 +568,10 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
             _check_rate_limit(deps, auth)  # 1 token for the call itself
             granted = _need_scope(auth, "memory.write")
             tags = _validate_tool_tags(source_tags)
+            if automatic and (len(tags) != 1 or f"memory.read.{tags[0]}" not in granted):
+                raise ToolError(
+                    "porter:insufficient_scope: automatic capture requires one explicit read tag"
+                )
 
             from .llm import build_extractor
             from .triage import create_with_triage
@@ -587,7 +593,9 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
             out = []
             # Validate the whole batch before saving any extracted fact.
             fact_tags = [
-                _validate_tool_tags(list(dict.fromkeys([*tags, *fact.scope_tags])))
+                tags
+                if automatic
+                else _validate_tool_tags(list(dict.fromkeys([*tags, *fact.scope_tags])))
                 for fact in facts
             ]
             for fact, merged_tags in zip(facts, fact_tags, strict=True):
@@ -614,11 +622,16 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
                             "client_id": auth.client_id,
                             "extracted": True,
                             "extractor": deps.llm_extractor_kind_fn(),
+                            **({"automatic": True} if automatic else {}),
                         },
                         actor_client_id=auth.client_pk,
                         via="mcp",
                         scopes_used=granted,
-                        approval_mode="strict" if deps.llm_extractor_kind_fn() != "stub" else None,
+                        approval_mode=(
+                            "strict"
+                            if automatic or deps.llm_extractor_kind_fn() != "stub"
+                            else None
+                        ),
                     )
                     if decision.action == "auto_merge":
                         out.append(

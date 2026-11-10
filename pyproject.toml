@@ -29,6 +29,7 @@ Security = "https://github.com/Mike-Animal-Counseling/porter/security/policy"
 [project.scripts]
 porter-import = "porter.import_cli:main"
 porter-mcp = "porter.mcp_stdio:main"
+porter-auto-memory = "porter.auto_memory:main"
 
 [tool.setuptools]
 include-package-data = false
