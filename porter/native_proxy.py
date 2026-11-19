@@ -7,6 +7,7 @@ import hashlib
 import os
 import sqlite3
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx2
 from mcp.server.mcpserver import MCPServer
@@ -33,6 +34,7 @@ async def run_proxy(config: Path) -> None:
             async with (
                 asyncio.timeout(timeout),
                 httpx2.AsyncClient(
+                    verify=urlsplit(project.base_url).scheme == "https",
                     trust_env=False,
                     follow_redirects=False,
                     timeout=httpx2.Timeout(timeout, connect=0.45),

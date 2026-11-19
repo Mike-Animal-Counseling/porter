@@ -8,6 +8,8 @@
 
 ## 候选版本与已有证据
 
+[项目接力验收](PROJECT_HANDOFF_ACCEPTANCE.zh-CN.md)记录了 11 月的 Codex 和 DeepSeek Harness 实机、性能与回滚结果。
+
 **2026-10-22** 已完成原生客户端检查，源码起点为 `0b9e83d`；后续向量服务错误处理修复在工作区单独验证。
 见 [已去敏的原生验收记录](NATIVE_CLIENT_ACCEPTANCE.2026-10-22.zh-CN.md)。
 历史评审和 CI 结果见已合并的 [PR #1](https://github.com/Mike-Animal-Counseling/porter/pull/1)。

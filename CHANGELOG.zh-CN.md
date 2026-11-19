@@ -8,6 +8,8 @@ Porter 的所有重要变更都记录在此。格式遵循
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-18
+
 ### 原生自动记忆连接
 
 - 使用 `porter-connect` 安装、诊断、暂停或移除 Codex 和 Claude Code 的项目连接。
@@ -15,6 +17,7 @@ Porter 的所有重要变更都记录在此。格式遵循
 - 托管采集使用项目标签专用权限，原有手工 Hook 配置继续可用。
 - PostgreSQL 持久化托管交接队列。经批准的交接保留出处、版本和可选生效时间窗，
   DeepSeek Harness 可通过项目专用 MCP 适配器使用同一套凭据流程。
+- Graphiti 影子评测后继续使用 Postgres 检索。见[实机验收和回滚记录](docs/PROJECT_HANDOFF_ACCEPTANCE.zh-CN.md)。
 
 ### 打包依赖安全
 
