@@ -275,27 +275,17 @@ def test_deployed_oauth_memory_mcp_snapshot_and_recreation():
         assert restored.status_code == 200 and restored.json()["imported"] == 2
         assert owner.post("/panel/settings/language", data={"lang": "zh"}).status_code == 302
         if os.getenv("PORTER_TEST_RECREATE") == "1":
+            from scripts.verify_deployment import verification_compose
+
             assert base == "http://127.0.0.1:18000", (
                 "recreation is limited to the isolated verification port"
             )
             subprocess.run(
-                [
-                    "docker",
-                    "compose",
-                    "--env-file",
-                    ".env.review",
-                    "-p",
-                    "porter-review",
-                    "-f",
-                    "docker-compose.yml",
-                    "-f",
-                    "docker-compose.verify.yml",
-                    "up",
-                    "-d",
-                    "--no-deps",
-                    "--force-recreate",
-                    "api",
-                ],
+                verification_compose(
+                    os.getenv("PORTER_TEST_COMPOSE_ENV_FILE", ".env.review"),
+                    os.getenv("PORTER_TEST_COMPOSE_PROJECT", "porter-review"),
+                )
+                + ["up", "-d", "--no-deps", "--force-recreate", "api"],
                 cwd=ROOT,
                 check=True,
                 capture_output=True,

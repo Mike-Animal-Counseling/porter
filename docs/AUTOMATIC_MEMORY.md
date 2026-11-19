@@ -4,7 +4,47 @@
 
 Porter can capture candidate facts after a Codex or Claude Code turn and look up approved memories before the next prompt. Each repository opts in separately. Capture and recall can be enabled independently.
 
-## Connect one repository
+## Connect a project with `porter-connect`
+
+Install Porter from the same version as the server with `python -m pip install .`
+and keep that Python environment available to the client. Windows uses Windows
+Credential Manager. Linux requires `secret-tool` and an unlocked Secret Service
+in the same desktop or D-Bus session as the client.
+
+1. In the owner panel, create a dedicated custom project tag. Register a
+   separate OAuth client per project and harness. Set the redirect URI to
+   `http://127.0.0.1:8766/porter/callback`. If this port is occupied, register a
+   different URI with the same host and path and pass `--callback-port`.
+2. Run the commands below in a terminal. Enter the OAuth client secret at the
+   hidden prompt. Open the printed URL in a browser with an owner session for
+   the Porter instance and approve the requested project scopes.
+
+   ```console
+   porter-connect install codex
+   porter-connect connect codex . --url http://127.0.0.1:8000 --tag my_project --client-id PORTER_CLIENT_ID --recall --capture
+   porter-connect doctor codex .
+   ```
+
+3. Repeat with `claude` and its own client ID and secret. Use `--recall`,
+   `--capture`, or both. In Codex review and trust the installed commands via
+   `/hooks`. Start the agents from the enrolled directory. Each worktree needs
+   its own connection. Installation adds two user-level hooks and preserves
+   other handlers. Choose a separate `--config` and `--hooks-file` before the
+   subcommand when testing isolated client settings.
+4. Leave a synthetic project decision in a turn, approve the extracted memory,
+   and ask about it from a fresh session in the other client. For renewal
+   troubleshooting run `porter-connect doctor codex . --renew` or the equivalent
+   for Claude Code. The diagnostic reads health and a scoped endpoint using the
+   stored credential.
+
+`porter-connect pause codex .` and `resume` change one local connection.
+`porter-connect disconnect codex .` revokes that OAuth client's tokens and
+removes its local enrollment and system credential. Use `--local-only` when
+the server is offline and complete revocation in the owner panel when it
+returns. `porter-connect uninstall codex` removes the installed handlers after
+disconnecting the harness's projects. Replace `codex` with `claude` as needed.
+
+## Manual preview setup
 
 1. Run the updated Porter server. In your local Python 3.12+ environment, run `python -m pip install .` from the same checkout to install `porter-auto-memory`.
 2. Register a dedicated scope tag for the repository in the Porter owner panel. Create an OAuth client for each connected tool and grant `memory.read.<tag>`. Also grant `memory.write` to clients that capture. See the [OAuth setup](DEVELOPER.md).

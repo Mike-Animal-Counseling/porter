@@ -7,6 +7,7 @@ Requires Docker and requirements-test.txt. Credentials stay in .env.review.
 import argparse
 import asyncio
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -19,18 +20,23 @@ import httpx
 from dotenv import dotenv_values
 
 ROOT = Path(__file__).resolve().parents[1]
-COMPOSE = [
-    "docker",
-    "compose",
-    "--env-file",
-    ".env.review",
-    "-p",
-    "porter-review",
-    "-f",
-    "docker-compose.yml",
-    "-f",
-    "docker-compose.verify.yml",
-]
+
+
+def verification_compose(env_file, project_name):
+    if not re.fullmatch(r"porter-review(?:-[a-z0-9-]+)?", project_name):
+        raise ValueError("Use an isolated Compose project named porter-review or porter-review-*")
+    return [
+        "docker",
+        "compose",
+        "--env-file",
+        str(env_file),
+        "-p",
+        project_name,
+        "-f",
+        "docker-compose.yml",
+        "-f",
+        "docker-compose.verify.yml",
+    ]
 
 
 async def prepare_test_database(url):
@@ -52,8 +58,11 @@ def main(argv=None):
         action="store_true",
         help="leave only the isolated verification stack running",
     )
+    parser.add_argument("--project-name", default="porter-review")
+    parser.add_argument("--env-file", type=Path, default=Path(".env.review"))
     args = parser.parse_args(argv)
-    path = ROOT / ".env.review"
+    path = (ROOT / args.env_file).resolve()
+    compose = verification_compose(path, args.project_name)
     if not path.exists():
         fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as output:
@@ -68,7 +77,7 @@ def main(argv=None):
     base = "http://127.0.0.1:18000"
     try:
         subprocess.run(
-            COMPOSE + ["up", "--build", "-d", "--wait", "--wait-timeout", "90"],
+            compose + ["up", "--build", "-d", "--wait", "--wait-timeout", "90"],
             cwd=ROOT,
             check=True,
         )
@@ -92,6 +101,8 @@ def main(argv=None):
             PORTER_TEST_STDIO_DATABASE_URL=database,
             PORTER_TEST_EMBEDDER_URL="http://127.0.0.1:18001",
             PORTER_TEST_RECREATE="1",
+            PORTER_TEST_COMPOSE_ENV_FILE=str(path),
+            PORTER_TEST_COMPOSE_PROJECT=args.project_name,
             PYTHONUTF8="1",
         )
         with tempfile.TemporaryDirectory(prefix="porter-deployment-") as directory:
@@ -116,20 +127,20 @@ def main(argv=None):
                 "Verified: real Postgres, OAuth, HTTP/stdio MCP, snapshots and container recreation."
             )
             if args.keep_running:
-                print("Panel: " + base + "/panel (setup token is in .env.review)")
+                print("Panel: " + base + "/panel (setup token is in the selected env file)")
             print(
                 "Embedding mode: deterministic hash; model quality is a separate acceptance check."
             )
         else:
-            subprocess.run(COMPOSE + ["logs", "--tail", "100"], cwd=ROOT, check=False)
+            subprocess.run(compose + ["logs", "--tail", "100"], cwd=ROOT, check=False)
         return result.returncode
     except Exception:
-        subprocess.run(COMPOSE + ["logs", "--tail", "100"], cwd=ROOT, check=False)
+        subprocess.run(compose + ["logs", "--tail", "100"], cwd=ROOT, check=False)
         raise
     finally:
         if not args.keep_running:
             # Keep all named volumes; never affect another Compose project.
-            subprocess.run(COMPOSE + ["down"], cwd=ROOT, check=True)
+            subprocess.run(compose + ["down"], cwd=ROOT, check=True)
 
 
 if __name__ == "__main__":

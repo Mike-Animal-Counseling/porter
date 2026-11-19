@@ -72,7 +72,7 @@ BASE_SCOPES: dict[str, tuple[str, str]] = {
     ),
 }
 
-ALL_KNOWN_SCOPES = list(BASE_SCOPES)  # + memory.read.<tag> (dynamic)
+ALL_KNOWN_SCOPES = list(BASE_SCOPES)  # plus dynamic tag scopes
 
 
 def describe_scope(scope: str, custom_tags: dict[str, str] | None = None) -> tuple[str, str] | None:
@@ -90,6 +90,14 @@ def describe_scope(scope: str, custom_tags: dict[str, str] | None = None) -> tup
             return (
                 f"读取「{cn}」类记忆",
                 f"允许检索并查看标签为「{tag}」的记忆条目，其他标签不可见。",
+            )
+    if scope.startswith("memory.capture."):
+        tag = scope.removeprefix("memory.capture.")
+        cn = (custom_tags or {}).get(tag)
+        if cn and tag not in PRESET_SCOPE_TAGS:
+            return (
+                f"提交「{cn}」项目的自动记忆",
+                f"仅允许为「{tag}」项目提交自动提取的待审核记忆。",
             )
     return None
 

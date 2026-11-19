@@ -546,10 +546,11 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
             "extracted fact goes through the same triage as memory_add: "
             "low-risk facts auto-approve, sensitive/conflicting/low-confidence "
             "facts queue for human review. Extracted content is untrusted "
-            "data like any memory. Requires the memory.write scope. "
+            "data like any memory. Manual capture requires the memory.write scope. "
             "The extractor is heuristic by default (porter/llm.py); a real "
             "LLM backend can be wired via PORTER_LLM_EXTRACTOR. Automatic "
-            "capture requires one explicitly granted read tag and always queues for review."
+            "capture requires an explicit project read tag and a matching capture grant, "
+            "or a legacy write grant, and always queues for review."
         )
     )
     async def memory_capture(
@@ -566,8 +567,11 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
         try:
             auth = await _resolve_mcp_auth(ctx, deps)
             _check_rate_limit(deps, auth)  # 1 token for the call itself
-            granted = _need_scope(auth, "memory.write")
             tags = _validate_tool_tags(source_tags)
+            scoped_capture = (
+                automatic and len(tags) == 1 and f"memory.capture.{tags[0]}" in auth.scopes
+            )
+            granted = auth.scopes if scoped_capture else _need_scope(auth, "memory.write")
             if automatic and (len(tags) != 1 or f"memory.read.{tags[0]}" not in granted):
                 raise ToolError(
                     "porter:insufficient_scope: automatic capture requires one explicit read tag"
