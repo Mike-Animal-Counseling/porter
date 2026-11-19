@@ -28,6 +28,15 @@ from .errors import InvalidInput
 
 DUPLICATE_THRESHOLD = settings.duplicate_threshold  # PRD §8 F1; single source of truth
 
+HANDOFF_WINDOW_SQL = """
+    CASE WHEN jsonb_typeof(source->'effective_from') = 'number'
+         THEN (source->>'effective_from')::numeric <= EXTRACT(EPOCH FROM statement_timestamp())
+         ELSE FALSE END
+    AND CASE WHEN jsonb_typeof(source->'effective_until') = 'number'
+              THEN (source->>'effective_until')::numeric > EXTRACT(EPOCH FROM statement_timestamp())
+              ELSE source->'effective_until' = 'null'::jsonb END
+"""
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -1165,6 +1174,10 @@ class PostgresMemoryRepository(MemoryRepository):
         )
         if active_only:
             clauses.append("status = 'active'")
+            clauses.append(
+                "(source->>'pipeline' IS DISTINCT FROM 'native_handoff' OR "
+                f"(superseded_by IS NULL AND {HANDOFF_WINDOW_SQL}))"
+            )
         if tags:
             clauses.append(f"scope_tags && ${len(args) + 1}")
             args.append(list(tags))
@@ -1198,6 +1211,8 @@ class PostgresMemoryRepository(MemoryRepository):
                     f"""
                     UPDATE memories SET status = 'active', updated_at = now()
                     WHERE id = $1
+                      AND (source->>'pipeline' IS DISTINCT FROM 'native_handoff'
+                           OR (status = 'pending' AND superseded_by IS NULL))
                     {_PG_RETURNING}
                     """,
                     memory_id,
@@ -1208,6 +1223,12 @@ class PostgresMemoryRepository(MemoryRepository):
                         " VALUES ($1, 'approve', $2)",
                         row["id"],
                         actor_client_id,
+                    )
+                else:
+                    row = await con.fetchrow(
+                        _PG_LIST_SQL
+                        + "WHERE id = $1 AND status = 'active' AND superseded_by IS NULL",
+                        memory_id,
                     )
         return _row_to_record(row) if row else None
 

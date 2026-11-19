@@ -1726,6 +1726,9 @@ def create_app(
             name="panel-static",
         )
     app.include_router(panel_router)
+    from .project_handoffs import router as project_handoff_router
+
+    app.include_router(project_handoff_router)
     from .panel_handoff import router as handoff_panel_router
 
     app.include_router(handoff_panel_router)

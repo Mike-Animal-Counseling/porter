@@ -17,8 +17,6 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx2
-from mcp import ClientSession
-from mcp.client.streamable_http import streamable_http_client
 
 from . import native_credentials
 from .triage import detect_sensitive_content
@@ -127,7 +125,7 @@ def _project(config_path: Path, cwd: str, client: str, *, managed: bool = False)
     )
 
 
-def _context(results: list, tag: str) -> str | None:
+def _context(results: list, tag: str, *, managed: bool = False) -> str | None:
     records = []
     for row in results[:3]:
         if not isinstance(row, dict) or row.get("untrusted_data") is not True:
@@ -135,11 +133,17 @@ def _context(results: list, tag: str) -> str | None:
         tags, content, score = row.get("scope_tags"), row.get("content"), row.get("score")
         if not isinstance(tags, list) or tag not in tags or not isinstance(content, str):
             continue
-        if not isinstance(score, (float, int)) or score < 0.35:
+        if not isinstance(score, (float, int)) or score < (0.25 if managed else 0.35):
             continue
         if not content.strip() or detect_sensitive_content(content):
             continue
-        records.append({"id": str(row.get("id", ""))[:36], "text": content[:400]})
+        result = {"id": str(row.get("id", ""))[:36], "text": content[: 1700 if managed else 400]}
+        if managed:
+            result["version"] = row["version"]
+            result["kind"] = row["kind"]
+            result["recorded_at"] = row["created_at"]
+            result["source_harness"] = row.get("harness")
+        records.append(result)
     if not records:
         return None
     # Keep retrieved text data-shaped even if a saved memory contains markup.
@@ -162,16 +166,21 @@ async def _recall(project: Project, prompt: str) -> str | None:
             timeout=httpx2.Timeout(RECALL_TIMEOUT, connect=0.45),
         ) as http,
     ):
+        managed = project.credential_key is not None
+        query = {"query": prompt[:MAX_QUERY_CHARS]}
+        if managed:
+            endpoint = f"/api/v1/project-handoffs/{project.tag}/search"
+        else:
+            endpoint = "/api/v1/memories/search"
+            query.update({"tags": [project.tag], "top_k": 3})
         response = await http.post(
-            project.base_url + "/api/v1/memories/search",
-            json={"query": prompt[:MAX_QUERY_CHARS], "tags": [project.tag], "top_k": 3},
-            headers=await project.authorization(http),
+            project.base_url + endpoint, json=query, headers=await project.authorization(http)
         )
         response.raise_for_status()
-        return _context(response.json()["results"], project.tag)
+        return _context(response.json()["results"], project.tag, managed=managed)
 
 
-async def _capture(project: Project, text: str) -> None:
+async def _capture(project: Project, text: str, client: str, event_key: str) -> None:
     async with (
         asyncio.timeout(CAPTURE_TIMEOUT),
         httpx2.AsyncClient(
@@ -181,6 +190,16 @@ async def _capture(project: Project, text: str) -> None:
         ) as http,
     ):
         http.headers.update(await project.authorization(http))
+        if project.credential_key is not None:
+            response = await http.post(
+                f"{project.base_url}/api/v1/project-handoffs/{project.tag}/captures",
+                json={"event_key": event_key, "harness": client, "text": text},
+            )
+            response.raise_for_status()
+            return
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamable_http_client
+
         async with (
             streamable_http_client(project.base_url + "/mcp", http_client=http) as (read, write),
             ClientSession(read, write) as session,
@@ -200,13 +219,16 @@ async def _capture(project: Project, text: str) -> None:
             )
 
 
-def _claim(project: Project, client: str, event: dict, text: str) -> bool:
+def _event_key(project: Project, client: str, event: dict, text: str) -> str | None:
     session_id = event.get("session_id")
     if not isinstance(session_id, str) or not session_id:
-        return False
+        return None
     turn = event.get("turn_id")
     identity = [project.base_url, project.tag, client, session_id, turn or text]
-    key = hashlib.sha256(json.dumps(identity).encode("utf-8")).hexdigest()
+    return hashlib.sha256(json.dumps(identity).encode("utf-8")).hexdigest()
+
+
+def _claim(project: Project, key: str) -> bool:
     with closing(sqlite3.connect(project.receipts, timeout=0.2)) as db, db:
         db.execute("CREATE TABLE IF NOT EXISTS captures (key TEXT PRIMARY KEY, seen INTEGER)")
         now = int(time.time())
@@ -230,13 +252,10 @@ async def handle(client: str, event: dict, config_path: Path, *, managed: bool =
                 return {"hookSpecificOutput": {"hookEventName": name, "additionalContext": context}}
     if name == "Stop" and project.capture and event.get("stop_hook_active") is not True:
         text = event.get("last_assistant_message")
-        if (
-            isinstance(text, str)
-            and text.strip()
-            and not detect_sensitive_content(text)
-            and _claim(project, client, event, text)
-        ):
-            await _capture(project, text.strip()[-MAX_CAPTURE_CHARS:])
+        if isinstance(text, str) and text.strip() and not detect_sensitive_content(text):
+            key = _event_key(project, client, event, text)
+            if key and (project.credential_key is not None or _claim(project, key)):
+                await _capture(project, text.strip()[-MAX_CAPTURE_CHARS:], client, key)
     return {}
 
 

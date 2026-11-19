@@ -1,7 +1,9 @@
 """Run against a dedicated *_test database; CI supplies Postgres + pgvector."""
 
 import asyncio
+import json
 import os
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
@@ -19,6 +21,77 @@ from porter.snapshots import (
 )
 from porter.sync import build_sync_delta
 from porter.triage import create_with_triage
+
+
+async def _verify_native_handoffs(repo, identity):
+    from porter.auth import AuthContext
+    from porter.errors import InsufficientScope
+    from porter.project_handoffs import (
+        Capture,
+        Recall,
+        process_capture,
+        queue_capture,
+        search_current,
+    )
+
+    tag = "synthetic_handoff"
+    writer = AuthContext(
+        identity.id, identity.client_id, [f"memory.read.{tag}", f"memory.capture.{tag}"]
+    )
+    reader = AuthContext(identity.id, identity.client_id, [f"memory.read.{tag}"])
+    query = Recall(query="atlas bridge")
+
+    def proposal(key, **fields):
+        body = {
+            "kind": "verified",
+            "conclusion": "atlas bridge currently uses maple",
+            "evidence": [{"kind": "file", "ref": "checks/atlas.py:8"}],
+            "next_step": "Run the atlas bridge check again",
+        } | fields
+        return Capture(
+            event_key=key * 64,
+            harness="codex",
+            text="```porter-handoff\n" + json.dumps(body) + "\n```",
+        )
+
+    submission = proposal("a")
+    with pytest.raises(InsufficientScope):
+        await queue_capture(repo, reader, tag, submission)
+    with pytest.raises(InsufficientScope):
+        await queue_capture(repo, writer, "different_project", submission)
+    await asyncio.gather(*[queue_capture(repo, writer, tag, submission) for _ in range(3)])
+    assert sum(await asyncio.gather(process_capture(repo), process_capture(repo))) == 1
+    queued = await repo.list(tags=[tag], status="pending")
+    assert len(queued) == 1
+    original = queued[0]
+    assert "checks/atlas.py:8" in original.content
+    assert await search_current(repo, reader, tag, query) == {"results": []}
+    _, before = await repo.get_changes(0, 10000)
+    await repo.approve(original.id)
+    changes, _ = await repo.get_changes(before, 10)
+    assert any(item["op"] == "approve" and item["memory_id"] == original.id for item in changes)
+    found = (await search_current(repo, reader, tag, query))["results"]
+    assert [row["id"] for row in found] == [original.id]
+    assert found[0]["version"] == 1 and found[0]["kind"] == "verified"
+    with pytest.raises(InsufficientScope):
+        await search_current(repo, reader, "different_project", query)
+    corrected = await repo.revise(original.id, content=original.content.replace("maple", "oak"))
+    found = (await search_current(repo, reader, tag, query))["results"]
+    assert [row["id"] for row in found] == [corrected.id]
+    assert found[0]["version"] == 2 and "maple" not in found[0]["content"]
+    await repo.delete(corrected.id)
+    await queue_capture(repo, writer, tag, submission)
+    assert not await process_capture(repo)
+
+    yesterday = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+    earlier = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+    await queue_capture(
+        repo, writer, tag, proposal("b", effective_from=earlier, effective_until=yesterday)
+    )
+    assert await process_capture(repo)
+    expired = (await repo.list(tags=[tag], status="pending"))[0]
+    await repo.approve(expired.id)
+    assert await search_current(repo, reader, tag, query) == {"results": []}
 
 
 def test_persistent_memory_snapshot_and_scoped_sync(tmp_path):
@@ -150,7 +223,7 @@ def test_persistent_memory_snapshot_and_scoped_sync(tmp_path):
                     "UPDATE schema_migrations SET name = $1 WHERE name = $2", legacy, canonical
                 )
             assert await run_migrations(isolated_url) == []
-            assert await pool.fetchval("SELECT count(*) FROM schema_migrations") == 14
+            assert await pool.fetchval("SELECT count(*) FROM schema_migrations") == 15
 
             from porter import conflicts, lifecycle, switch, teams
             from porter.e2ee_hub import (
@@ -167,6 +240,7 @@ def test_persistent_memory_snapshot_and_scoped_sync(tmp_path):
                 secret_hash="test-only-unused",
                 redirect_uris=[],
             )
+            await _verify_native_handoffs(repo, owner)
             team_store = teams.PostgresTeamStore(pool)
             workspace = await teams.create_workspace(
                 team_store, repo, name="Persistent team", owner_client_id=owner.id

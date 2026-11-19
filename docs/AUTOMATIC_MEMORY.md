@@ -44,6 +44,43 @@ the server is offline and complete revocation in the owner panel when it
 returns. `porter-connect uninstall codex` removes the installed handlers after
 disconnecting the harness's projects. Replace `codex` with `claude` as needed.
 
+## Connect DeepSeek Harness
+
+Register a separate Porter OAuth client for DeepSeek Harness. From the project
+directory, run `porter-connect install dsh`, `porter-connect connect dsh .`
+with the same connection options as above, then `porter-connect doctor dsh .`.
+Pass the generated `porter-managed.patch.yml` to DSH with `--patch`. It is
+under your DSH home directory unless you selected `--hooks-file`. Load it in
+a profile with an existing model connection. Start the profile from the
+enrolled project directory.
+
+The overlay adds Porter's `project_handoff_search` and
+`project_handoff_submit` MCP tools. The local stdio adapter reads the
+system-held Porter credential, renews it when needed, and checks the
+working directory and tag before contacting Porter. It leaves existing
+DSH profiles and model settings alone. Ask DSH to use `project_handoff_search`
+in the first prompt and `project_handoff_submit` when leaving a handoff.
+
+## Leave a verifiable handoff
+
+Managed connections use PostgreSQL. A Codex or Claude Code turn can end with
+a short block like this. DeepSeek Harness can send the same block as the
+`text` argument to `project_handoff_submit` with a stable `request_key`.
+
+````markdown
+```porter-handoff
+{"kind":"verified","conclusion":"The smoke check passed after the migration.","evidence":[{"kind":"file","ref":"tests/test_smoke.py:12"}],"next_step":"Run the same check against a fresh database."}
+```
+````
+
+Evidence may point to a repository-relative file, a commit, or a verification
+result. Use `hypothesis` for an unverified claim and `next_step` for proposed
+work. `effective_from` and `effective_until` accept timestamps with an offset.
+Approve the candidate in the owner inbox. The accepted turn is queued durably
+and the worker retries transient failures. An owner edit creates a new version.
+Deleting the current record withdraws it from future recall. A failed request
+before queue acceptance leaves the client turn usable.
+
 ## Manual preview setup
 
 1. Run the updated Porter server. In your local Python 3.12+ environment, run `python -m pip install .` from the same checkout to install `porter-auto-memory`.

@@ -25,12 +25,13 @@ import httpx2
 from . import native_credentials as vault
 from .auto_memory import _TAG, _base_url
 
-CLIENTS = ("codex", "claude")
+CLIENTS = ("codex", "claude", "dsh")
 EVENTS = {"UserPromptSubmit": 5, "Stop": 10}
 MARKER = "--porter-managed"
 CALLBACK = "/porter/callback"
 _PS = "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand "
 _CMD_SAFE = re.compile(r"[A-Za-z0-9:/.\-_]+")
+_CMD_QUOTED_SAFE = re.compile(r"[A-Za-z0-9:/.() \-_]+")
 
 
 def _absolute(path: str | Path) -> Path:
@@ -48,6 +49,10 @@ def _config_path() -> Path:
 def _hooks_path(client: str) -> Path:
     if client == "codex":
         return _absolute(Path(os.getenv("CODEX_HOME", Path.home() / ".codex")) / "hooks.json")
+    if client == "dsh":
+        return _absolute(
+            Path(os.getenv("DSH_HOME", Path.home() / ".dsh")) / "porter-managed.patch.yml"
+        )
     return _absolute(
         Path(os.getenv("CLAUDE_CONFIG_DIR", Path.home() / ".claude")) / "settings.json"
     )
@@ -64,7 +69,7 @@ def _read(path: Path) -> tuple[dict, bytes | None]:
     return value, raw
 
 
-def _save(path: Path, value: dict, original: bytes | None) -> None:
+def _save(path: Path, value: dict | list, original: bytes | None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(dir=path.parent, prefix=".porter-", suffix=".tmp")
     try:
@@ -109,6 +114,11 @@ def _hook(client: str, config: Path, timeout: int) -> dict:
         paths = [executable.as_posix(), config.as_posix()]
         if all(_CMD_SAFE.fullmatch(path) for path in paths):
             command = f"{paths[0]} -I -m porter.auto_memory {client} --config {paths[1]} {MARKER}"
+        elif all(_CMD_QUOTED_SAFE.fullmatch(path) for path in paths):
+            command = (
+                f'cmd.exe /d /s /c call "{paths[0]}" -I -m porter.auto_memory '
+                f'{client} --config "{paths[1]}" {MARKER}'
+            )
         else:
             # The shell may be cmd.exe or PowerShell. A command starting with
             # a quoted path has different execution semantics under each.
@@ -189,7 +199,57 @@ def _edit_hooks(path: Path, client: str, config: Path, *, install: bool) -> bool
     return changed
 
 
+def _dsh_overlay(config: Path) -> dict:
+    return {
+        "insert": [
+            {
+                "id": "mcp-porter-managed",
+                "name": "@deepseek-ai/dsh-mcp-client",
+                "config": {
+                    "serverName": "porter",
+                    "transport": "stdio",
+                    "command": sys.executable,
+                    "args": [
+                        "-I",
+                        "-m",
+                        "porter.native_client",
+                        "--config",
+                        str(config),
+                        "proxy",
+                        "dsh",
+                    ],
+                    "toolCallTimeoutMs": 10000,
+                },
+            }
+        ]
+    }
+
+
+def _edit_dsh(path: Path, config: Path, *, install: bool) -> bool:
+    expected = _dsh_overlay(config)
+    # DSH expects a YAML list of patch operations. JSON is valid YAML and
+    # keeps executable and argument paths literal on every platform.
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        raw = None
+    if raw is not None and json.loads(raw.decode("utf-8-sig")) != [expected]:
+        raise vault.ConnectionError("Use a separate overlay file for the managed DSH connection")
+    if install and raw is None:
+        _save(path, [expected], raw)
+        return True
+    if not install and raw is not None:
+        path.unlink()
+        return True
+    return False
+
+
 def _has_hooks(path: Path, client: str, config: Path) -> bool:
+    if client == "dsh":
+        try:
+            return json.loads(path.read_text(encoding="utf-8-sig")) == [_dsh_overlay(config)]
+        except FileNotFoundError:
+            return False
     settings, _ = _read(path)
     return all(
         any(
@@ -364,9 +424,11 @@ async def _doctor(args, config: Path, path: Path, item: dict, http) -> None:
     token = await vault.access_token(
         http, config, _bound_key(config, item, origin), origin, renew=args.renew
     )
-    response = await http.get(
-        origin + "/api/v1/memories",
-        params={"tag": item["tag"], "limit": 1},
+    if not _TAG.fullmatch(item["tag"]):
+        raise vault.ConnectionError("The project tag is invalid")
+    response = await http.post(
+        origin + f"/api/v1/project-handoffs/{item['tag']}/search",
+        json={"query": "Porter connectivity check"},
         headers={"Authorization": "Bearer " + token},
     )
     response.raise_for_status()
@@ -382,6 +444,11 @@ async def _doctor(args, config: Path, path: Path, item: dict, http) -> None:
 
 
 async def _run(args, config: Path, path: Path) -> None:
+    if args.action == "proxy":
+        from .native_proxy import run_proxy
+
+        await run_proxy(config)
+        return
     if args.action in {"install", "uninstall"}:
         _, projects, _ = _projects(config)
         if args.action == "uninstall" and any(
@@ -390,6 +457,14 @@ async def _run(args, config: Path, path: Path) -> None:
             raise vault.ConnectionError(
                 "Disconnect this harness's managed projects before uninstalling"
             )
+        if args.client == "dsh":
+            _edit_dsh(path, config, install=args.action == "install")
+            print(
+                "Porter DSH overlay installed."
+                if args.action == "install"
+                else "Porter DSH overlay removed."
+            )
+            return
         _edit_hooks(path, args.client, config, install=args.action == "install")
         print("Porter hooks installed." if args.action == "install" else "Porter hooks removed.")
         if args.action == "install" and args.client == "codex":
@@ -461,6 +536,8 @@ def main() -> int:
             action.add_argument("--renew", action="store_true")
         if name == "disconnect":
             action.add_argument("--local-only", action="store_true")
+    proxy = actions.add_parser("proxy", help=argparse.SUPPRESS)
+    proxy.add_argument("client", choices=("dsh",))
     args = parser.parse_args()
     try:
         asyncio.run(_run(args, args.config, args.hooks_file or _hooks_path(args.client)))
