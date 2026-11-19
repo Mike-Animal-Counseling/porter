@@ -161,6 +161,7 @@ async def _recall(project: Project, prompt: str) -> str | None:
     async with (
         asyncio.timeout(RECALL_TIMEOUT),
         httpx2.AsyncClient(
+            verify=urlsplit(project.base_url).scheme == "https",
             trust_env=False,
             follow_redirects=False,
             timeout=httpx2.Timeout(RECALL_TIMEOUT, connect=0.45),
@@ -184,6 +185,7 @@ async def _capture(project: Project, text: str, client: str, event_key: str) -> 
     async with (
         asyncio.timeout(CAPTURE_TIMEOUT),
         httpx2.AsyncClient(
+            verify=urlsplit(project.base_url).scheme == "https",
             trust_env=False,
             follow_redirects=False,
             timeout=httpx2.Timeout(CAPTURE_TIMEOUT, connect=1),

@@ -8,6 +8,8 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-19
+
 ### Native automatic memory connections
 
 - Add `porter-connect` to install, diagnose, pause and remove project connections
@@ -18,6 +20,8 @@ versioning follows [SemVer](https://semver.org/).
 - Store managed handoff capture durably in PostgreSQL. Reviewed handoffs
   carry evidence, a version and an optional effective window. DeepSeek
   Harness can use the project-scoped MCP adapter with the same credentials.
+- Keep Postgres on the read path after the Graphiti shadow evaluation.
+  See the [native acceptance and rollback record](docs/PROJECT_HANDOFF_ACCEPTANCE.md).
 
 ### Packaging dependency security
 

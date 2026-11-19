@@ -10,6 +10,9 @@ verified in every tool named by a template.
 
 ## Candidate and existing evidence
 
+The [November project handoff track](PROJECT_HANDOFF_ACCEPTANCE.md) records
+scoped native Codex and DeepSeek Harness results, performance, and rollback.
+
 Native-client checks completed on **2026-10-22**, starting from source baseline
 `0b9e83d`, with the subsequent embedding error-handling fix tested in the working
 tree. See the [sanitized native-client report](NATIVE_CLIENT_ACCEPTANCE.2026-10-22.md).
