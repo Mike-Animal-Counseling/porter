@@ -10,8 +10,9 @@ uvicorn's event loop binds the pool to a dead loop and breaks all queries.
 
 from __future__ import annotations
 
+import asyncio
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from .app import create_app
 from .config import repository_kind, settings
@@ -60,6 +61,7 @@ async def lifespan(app):
     if _use_postgres():
         from .db import create_pool, run_migrations
         from .e2ee_hub import PostgresEnvelopeStore
+        from .project_handoffs import run_worker
         from .teams import PostgresTeamStore
 
         await run_migrations(settings.database_url)
@@ -70,9 +72,13 @@ async def lifespan(app):
         app.state.wiki_service = build_wiki_from_settings(pool)
         app.state.envelope_store = PostgresEnvelopeStore(pool)
         app.state.team_store = PostgresTeamStore(pool)
+        capture_worker = asyncio.create_task(run_worker(app.state.repo))
         try:
             yield
         finally:
+            capture_worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await capture_worker
             await pool.close()
     else:
         yield

@@ -21,6 +21,24 @@ Porter 可以在 Codex 或 Claude Code 回复结束时提取候选记忆，在�
 
 `porter-connect pause codex .` 暂停当前连接，`resume` 恢复。`porter-connect disconnect codex .` 撤销该 OAuth 客户端的令牌，删除本地登记和系统凭据。离线时可用 `--local-only`，恢复后从管理面板完成撤销。先断开该客户端的全部项目，再用 `porter-connect uninstall codex` 移除安装项。Claude Code 使用对应的 `claude` 命令。
 
+## 连接 DeepSeek Harness
+
+为 DeepSeek Harness 单独注册 Porter OAuth 客户端。在项目目录运行 `porter-connect install dsh`，使用与上面相同的选项执行 `porter-connect connect dsh .`，再运行 `porter-connect doctor dsh .`。启动 DSH 时通过 `--patch` 加载生成的 `porter-managed.patch.yml`。默认文件位于 DSH 用户目录，也可用 `--hooks-file` 指定。选择已有模型连接的配置，从已登记的项目目录启动。
+
+DSH 通过本地 stdio 适配器使用 `project_handoff_search` 和 `project_handoff_submit`。适配器核对项目目录和标签，从系统凭据库读取 Porter 凭据并按需续期，保留已有 DSH 配置和模型设置。在新会话首轮请 Agent 调用 `project_handoff_search`，留下接力时请它调用 `project_handoff_submit`。
+
+## 留下可验证的交接
+
+托管连接使用 PostgreSQL。Codex 或 Claude Code 可在本轮结尾附上一段简短交接。DeepSeek Harness 可将同样的文本作为 `project_handoff_submit` 的 `text`，为重试提供固定的 `request_key`。
+
+````markdown
+```porter-handoff
+{"kind":"verified","conclusion":"迁移后烟雾测试已通过。","evidence":[{"kind":"file","ref":"tests/test_smoke.py:12"}],"next_step":"在新建数据库中再跑一次。"}
+```
+````
+
+出处支持仓库相对路径、提交或验证结果。待验证假设用 `hypothesis`，拟执行的事项用 `next_step`。`effective_from` 和 `effective_until` 接受带时区偏移的时间戳。候选在管理收件箱批准后进入检索。服务端收下事件后会持久化并重试临时失败。管理员编辑会生成新版本，删除当前版本后不再回填。请求在入队前失败时，客户端可继续对话。
+
 ## 手工预览配置
 
 按[配置示例](AUTOMATIC_MEMORY.md#manual-preview-setup)安装 `porter-auto-memory`、添加专用项目标签，并为各工具配置带 `memory.read.<标签>` 权限的 OAuth 凭据。开启提取的工具还需 `memory.write`。把配置和凭据放在仓库外，分别通过 `PORTER_AUTO_MEMORY_CONFIG` 和配置里指定的环境变量传给客户端。

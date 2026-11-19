@@ -80,6 +80,8 @@ async def verify_mcp(base, token, project, memory_id):
                 "memory_contradictions",
                 "memory_merge",
                 "memory_resolve",
+                "project_handoff_submit",
+                "project_handoff_search",
             } <= tools
             result = await session.call_tool(
                 "memory_search", {"query": "pytest", "tags": ["project:" + project]}

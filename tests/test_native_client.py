@@ -61,6 +61,25 @@ def test_managed_binding_rejects_other_clients_projects_and_origins(tmp_path):
         _project(config, str(tmp_path), "codex", managed=True)
 
 
+def test_dsh_overlay_is_separate_and_contains_no_credential(tmp_path):
+    profile = tmp_path / "profile.yml"
+    profile.write_text("- id: already-installed\n", encoding="utf-8")
+    overlay = tmp_path / "porter.patch.yml"
+    config = tmp_path / "projects.json"
+    assert native_client._edit_dsh(overlay, config, install=True)
+    assert native_client._has_hooks(overlay, "dsh", config)
+    assert not native_client._edit_dsh(overlay, config, install=True)
+    command = json.loads(overlay.read_text(encoding="utf-8"))[0]["insert"][0]["config"]
+    assert command["transport"] == "stdio"
+    assert command["args"][-2:] == ["proxy", "dsh"]
+    assert "headers" not in command and "env" not in command
+    assert native_client._edit_dsh(overlay, config, install=False)
+    assert not overlay.exists()
+    with pytest.raises(ValueError):
+        native_client._edit_dsh(profile, config, install=True)
+    assert profile.read_text(encoding="utf-8") == "- id: already-installed\n"
+
+
 def test_expired_credentials_rotate_and_survive_connect_failure(tmp_path, monkeypatch):
     config = tmp_path / "porter.json"
     pair = native_credentials.Credentials(

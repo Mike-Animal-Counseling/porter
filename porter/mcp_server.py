@@ -541,6 +541,56 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
 
     @mcp.tool(
         description=(
+            "Submit a project handoff for owner review. Supply the exact project tag, a stable "
+            "request_key for retries, and a porter-handoff fenced JSON block containing kind "
+            "(verified, hypothesis or next_step), conclusion, evidence (kind and ref objects) "
+            "and next_step. A verified conclusion requires evidence. Requires the matching "
+            "project capture grant. The receipt acknowledges queueing."
+        )
+    )
+    async def project_handoff_submit(ctx: Context, tag: str, request_key: str, text: str) -> dict:
+        from hashlib import sha256
+
+        from .project_handoffs import Capture, queue_capture
+
+        identity = await _resolve_mcp_auth(ctx, deps)
+        _check_rate_limit(deps, identity)
+        if not 1 <= len(request_key) <= 128 or not 1 <= len(text) <= 1800:
+            raise ToolError(
+                "porter:invalid_input: request_key must be 1..128 and text 1..1800 chars"
+            )
+        body = Capture(event_key=sha256(request_key.encode()).hexdigest(), harness="dsh", text=text)
+        try:
+            return await queue_capture(_ready_repo(deps), identity, tag, body)
+        except PorterError as exc:
+            raise ToolError(f"porter:{exc.code}: {exc.message}") from exc
+
+    @mcp.tool(
+        description=(
+            "Find current approved project handoffs, including conclusion, evidence, next step "
+            "and version, with the exact project tag and a concise query. " + UNTRUSTED_NOTICE
+        )
+    )
+    async def project_handoff_search(ctx: Context, tag: str, query: str) -> dict:
+        from .project_handoffs import Recall, search_current
+
+        identity = await _resolve_mcp_auth(ctx, deps)
+        _check_rate_limit(deps, identity)
+        if not 1 <= len(query) <= 1000:
+            raise ToolError("porter:invalid_input: query must be 1..1000 chars")
+        try:
+            result = await search_current(_ready_repo(deps), identity, tag, Recall(query=query))
+            return {
+                "results": [
+                    row | {"id": str(row["id"]), "created_at": row["created_at"].isoformat()}
+                    for row in result["results"]
+                ]
+            }
+        except PorterError as exc:
+            raise ToolError(f"porter:{exc.code}: {exc.message}") from exc
+
+    @mcp.tool(
+        description=(
             "Extract durable facts (preferences, decisions, project context) "
             "from a conversation transcript and store them as memories. Each "
             "extracted fact goes through the same triage as memory_add: "

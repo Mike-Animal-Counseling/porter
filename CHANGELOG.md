@@ -15,6 +15,9 @@ versioning follows [SemVer](https://semver.org/).
   store and renew short-lived tokens in place.
 - Managed capture uses a dedicated tag-scoped grant and keeps the existing
   manual hook setup compatible.
+- Store managed handoff capture durably in PostgreSQL. Reviewed handoffs
+  carry evidence, a version and an optional effective window. DeepSeek
+  Harness can use the project-scoped MCP adapter with the same credentials.
 
 ### Packaging dependency security
 
