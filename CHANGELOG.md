@@ -8,7 +8,7 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.2.0] — 2026-11-18
+## [0.2.0] — 2026-11-19
 
 ### Native automatic memory connections
 

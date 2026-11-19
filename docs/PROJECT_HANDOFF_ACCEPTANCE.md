@@ -53,6 +53,9 @@ Linux DSH and the Desktop GUI are outside the tested live compatibility range.
 - The upgrade rehearsal applied migration 015 over a backed-up 14-migration
   database. Restoring the backup into a new database preserved the original
   active memory ID and restored the 14-migration schema.
+- Fifty synthetic structured submissions checked types and provenance. All 40
+  valid cases preserved the expected fields and all 10 invalid cases were
+  rejected. This checks structured capture validation.
 - See the separate [Graphiti shadow evaluation](GRAPHITI_SHADOW.md) for the
   synthetic ranker comparison. Graphiti does not serve production reads.
 
