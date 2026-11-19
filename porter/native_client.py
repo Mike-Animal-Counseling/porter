@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import os
+import re
 import secrets
 import shlex
 import sqlite3
@@ -27,6 +29,8 @@ CLIENTS = ("codex", "claude")
 EVENTS = {"UserPromptSubmit": 5, "Stop": 10}
 MARKER = "--porter-managed"
 CALLBACK = "/porter/callback"
+_PS = "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand "
+_CMD_SAFE = re.compile(r"[A-Za-z0-9:/.\-_]+")
 
 
 def _absolute(path: str | Path) -> Path:
@@ -102,17 +106,25 @@ def _hook(client: str, config: Path, timeout: int) -> dict:
     if client == "claude":
         return {"type": "command", "command": str(executable), "args": args, "timeout": timeout}
     if sys.platform == "win32":
-        # Codex runs shell-form commands. Use forward slashes for paths so the
-        # same command survives Windows shell and Git Bash argument parsing.
         paths = [executable.as_posix(), config.as_posix()]
-        if any(any(char in path for char in '"%!?$`\r\n&|<>^') for path in paths):
-            raise vault.ConnectionError(
-                "Use a configuration and Python path without shell metacharacters"
-            )
-        command = f'"{paths[0]}" -I -m porter.auto_memory {client} --config "{paths[1]}" {MARKER}'
+        if all(_CMD_SAFE.fullmatch(path) for path in paths):
+            command = f"{paths[0]} -I -m porter.auto_memory {client} --config {paths[1]} {MARKER}"
+        else:
+            # The shell may be cmd.exe or PowerShell. A command starting with
+            # a quoted path has different execution semantics under each.
+            script = f"& {_ps_quote(paths[0])}{_ps_hook_tail(client, paths[1])}"
+            command = _PS + base64.b64encode(script.encode("utf-16-le")).decode("ascii")
     else:
         command = shlex.join([str(executable), *args])
     return {"type": "command", "command": command, "timeout": timeout}
+
+
+def _ps_quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _ps_hook_tail(client: str, path: str) -> str:
+    return f" -I -m porter.auto_memory {client} --config {_ps_quote(path)} {MARKER}\nexit $LASTEXITCODE"
 
 
 def _owned(hook: object, client: str, config: Path) -> bool:
@@ -123,12 +135,24 @@ def _owned(hook: object, client: str, config: Path) -> bool:
     if client == "claude":
         return args == target
     command = hook.get("command")
-    if not isinstance(command, str) or not command.endswith(" " + MARKER):
+    if not isinstance(command, str):
         return False
     if sys.platform == "win32":
-        return command.endswith(
-            f' -I -m porter.auto_memory {client} --config "{config.as_posix()}" {MARKER}'
+        path = config.as_posix()
+        if command.startswith(_PS):
+            try:
+                script = base64.b64decode(command.removeprefix(_PS), validate=True).decode(
+                    "utf-16-le"
+                )
+            except ValueError:
+                return False
+            return script.startswith("& '") and script.endswith(_ps_hook_tail(client, path))
+        prefix = f" -I -m porter.auto_memory {client} --config "
+        return command.endswith(prefix + path + " " + MARKER) or command.endswith(
+            prefix + '"' + path + '" ' + MARKER
         )
+    if not command.endswith(" " + MARKER):
+        return False
     return shlex.split(command)[1:] == target
 
 
