@@ -651,6 +651,53 @@ def test_automatic_hooks_share_only_approved_project_memory(tmp_path, monkeypatc
         thread.join(timeout=10)
 
 
+def test_capture_grant_does_not_enable_manual_or_other_project_writes():
+    import httpx2
+    from mcp import ClientSession
+    from mcp.client.streamable_http import streamable_http_client
+
+    repo = InMemoryMemoryRepository(HashEmbedder())
+    store = InMemoryOAuthStore()
+    asyncio.run(store.add_custom_tag(tag="project_a", label="Project A"))
+    server, thread, port = _start_uvicorn(create_app(repo, store, auth_enabled=True))
+    try:
+        base = f"http://127.0.0.1:{port}"
+        admin = _mint_via_http(base, "memory.admin")
+        token = _mint_via_http(base, "memory.read.project_a memory.capture.project_a", admin)
+        headers = {"Authorization": "Bearer " + token}
+        with httpx2.Client(headers=headers, trust_env=False) as http:
+            response = http.post(base + "/api/v1/memories", json={"content": "Outside the grant"})
+        assert response.status_code == 403
+
+        async def exercise():
+            async with (
+                httpx2.AsyncClient(headers=headers, trust_env=False) as http,
+                streamable_http_client(base + "/mcp", http_client=http) as (read, write),
+                ClientSession(read, write) as session,
+            ):
+                await session.initialize()
+                args = {"conversation_text": "The project decided to run pytest on every release."}
+                manual = await session.call_tool(
+                    "memory_capture", args | {"source_tags": ["project_a"]}
+                )
+                assert manual.is_error
+                cross_project = await session.call_tool(
+                    "memory_capture", args | {"source_tags": ["work"], "automatic": True}
+                )
+                assert cross_project.is_error
+                capture = await session.call_tool(
+                    "memory_capture", args | {"source_tags": ["project_a"], "automatic": True}
+                )
+                assert not capture.is_error
+                pending = await repo.list(status="pending")
+                assert len(pending) == 1 and pending[0].scope_tags == ["project_a"]
+
+        asyncio.run(exercise())
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+
+
 def test_streamable_http_with_real_sdk_client():
     """Real uvicorn + official SDK client: initialize/list/call over HTTP."""
 

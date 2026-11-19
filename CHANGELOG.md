@@ -8,6 +8,14 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Native automatic memory connections
+
+- Add `porter-connect` to install, diagnose, pause and remove project connections
+  for Codex and Claude Code. Keep OAuth credentials in the system credential
+  store and renew short-lived tokens in place.
+- Managed capture uses a dedicated tag-scoped grant and keeps the existing
+  manual hook setup compatible.
+
 ### Packaging dependency security
 
 - Require patched setuptools 84.1.0 for isolated builds and both tested constraint sets.
