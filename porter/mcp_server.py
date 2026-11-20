@@ -309,17 +309,9 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
                 )
             if (entity is None) == (memory_id is None):
                 raise ToolError("porter:invalid_input: pass exactly one of entity or memory_id")
-            # T1: tag filter from the token's scopes, never the client's.
-            allowed = oauth_logic.effective_tag_filter(granted)
 
             def _visible(rec) -> bool:
-                if rec is None or rec.status != "active":
-                    return False
-                if rec.encrypted:
-                    return False  # E2EE: graph never surfaces ciphertext
-                if allowed is not None and not (set(rec.scope_tags) & set(allowed)):
-                    return False
-                return True
+                return can_read_memory(rec, granted) and not rec.encrypted
 
             async def _mem_out(rec):
                 return {
@@ -930,7 +922,7 @@ def build_mcp_server(deps: MCPDeps) -> MCPServer:
             repo = _ready_repo(deps)
             records = [
                 r
-                for r in await repo.list(status="active", limit=200)
+                for r in await repo.list(current_only=True, limit=200)
                 if can_read_memory(r, granted)
             ]
             memories = [

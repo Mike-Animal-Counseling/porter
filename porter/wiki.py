@@ -32,6 +32,7 @@ from uuid import UUID, uuid4
 
 from .llm import BaseLLMExtractor
 from .repositories import MemoryRecord, ScoredMemory
+from .visibility import is_current_memory
 
 
 def _now() -> datetime:
@@ -361,7 +362,7 @@ class WikiService:
                 rec = await repo.get(mid)
                 if rec is None:
                     continue
-                if active_only and rec.status != "active":
+                if active_only and not is_current_memory(rec):
                     continue
                 if rec.encrypted:
                     continue  # E2EE: never surface via graph expansion

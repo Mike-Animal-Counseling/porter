@@ -305,7 +305,7 @@ async def build_handoff(
     # Project-domain working memory for THIS project. The tag filter does
     # the coarse pass; project_names() re-checks so case/format variants of
     # the tag still resolve to the same normalized project.
-    proj_recs = await repo.list(status="active", tags=[f"project:{want}"], limit=top_k)
+    proj_recs = await repo.list(current_only=True, tags=[f"project:{want}"], limit=top_k)
     proj_recs = [
         r
         for r in proj_recs
@@ -317,7 +317,7 @@ async def build_handoff(
     personal_recs: list[MemoryRecord] = []
     seen: set[UUID] = set()
     for ptype in ("personal", "preference"):
-        for r in await repo.list(status="active", type=ptype, limit=top_k):
+        for r in await repo.list(current_only=True, type=ptype, limit=top_k):
             if r.id not in seen and can_read_memory(r, granted_scopes):
                 seen.add(r.id)
                 personal_recs.append(r)

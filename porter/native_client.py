@@ -199,7 +199,7 @@ def _edit_hooks(path: Path, client: str, config: Path, *, install: bool) -> bool
     return changed
 
 
-def _dsh_overlay(config: Path) -> dict:
+def _dsh_overlay(config: Path, executable: str | None = None) -> dict:
     return {
         "insert": [
             {
@@ -208,7 +208,7 @@ def _dsh_overlay(config: Path) -> dict:
                 "config": {
                     "serverName": "porter",
                     "transport": "stdio",
-                    "command": sys.executable,
+                    "command": sys.executable if executable is None else executable,
                     "args": [
                         "-I",
                         "-m",
@@ -233,9 +233,17 @@ def _edit_dsh(path: Path, config: Path, *, install: bool) -> bool:
         raw = path.read_bytes()
     except FileNotFoundError:
         raw = None
-    if raw is not None and json.loads(raw.decode("utf-8-sig")) != [expected]:
-        raise vault.ConnectionError("Use a separate overlay file for the managed DSH connection")
-    if install and raw is None:
+    existing = json.loads(raw.decode("utf-8-sig")) if raw is not None else None
+    if raw is not None:
+        try:
+            command = existing[0]["insert"][0]["config"]["command"]
+        except (IndexError, KeyError, TypeError):
+            command = None
+        if not isinstance(command, str) or existing != [_dsh_overlay(config, command)]:
+            raise vault.ConnectionError(
+                "Use a separate overlay file for the managed DSH connection"
+            )
+    if install and existing != [expected]:
         _save(path, [expected], raw)
         return True
     if not install and raw is not None:

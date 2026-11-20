@@ -281,6 +281,19 @@ def test_encrypted_memory_never_rendered(tmp_path):
     assert any("e1" in s and "encrypted" in s for s in res.skipped)
 
 
+def test_managed_project_handoff_is_excluded_from_static_files(tmp_path):
+    writer = CodexWriter(home=tmp_path)
+    handoff = _mem(id="handoff", content="Verified atlas bridge result")
+    handoff["source"] = {"pipeline": "native_handoff"}
+    result = _run(writer, [_mem(), handoff])
+
+    target = tmp_path / ".codex" / "memories" / "porter.md"
+    text = target.read_text(encoding="utf-8")
+    assert "Prefer tabs for indentation." in text
+    assert "Verified atlas bridge result" not in text
+    assert result.skipped == ["handoff: managed project handoff (live recall only)"]
+
+
 # ---------------------------------------------------------------------------
 # Symlink guard
 # ---------------------------------------------------------------------------

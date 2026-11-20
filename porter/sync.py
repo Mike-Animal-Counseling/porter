@@ -9,11 +9,8 @@ the MCP `sync_delta` tool so both enforce identical visibility rules:
 - Requires `memory.read` (enforced by the callers via auth.require_scopes /
   MCP _need_scope) plus server-side tag-scope filtering (same
   effective_tag_filter/apply_tag_filter logic as search).
-- `memory` is null for `delete` tombstones, and for `create` of a
-  still-pending record when the caller lacks `memory.admin` (inbox rule:
-  unapproved content never leaks to adapters).
-- Non-admin callers only see changes for currently-active memories +
-  delete tombstones.
+- Non-admin callers only see current memories and archive or delete
+  tombstones. Tombstones for non-current memories carry no content.
 - `status` is the record's current status; null for `delete` tombstones
   (the row no longer exists).
 - Fetching a delta updates the adapter's last_seen (online status) but
@@ -29,6 +26,7 @@ from . import oauth as oauth_logic
 from .errors import InvalidInput
 from .repositories import MemoryRepository
 from .schemas import _validate_tags
+from .visibility import is_current_memory
 
 
 def _record_to_dict(rec) -> dict[str, Any]:
@@ -117,14 +115,15 @@ async def build_sync_delta(
                 # Untagged (global/personal) memories pass through.
                 if want not in project_names(rec.scope_tags or ()):
                     continue
+        current = is_current_memory(rec)
         if not is_admin and c["op"] != "delete":
             # Non-admin adapters see currently-active memories only. This
             # also enforces the inbox rule: a pending create change whose
             # record is still pending is invisible here entirely.
-            if rec is None or (rec.status != "active" and c["op"] != "archive"):
+            if not current and c["op"] != "archive":
                 continue
         memory = None
-        if c["op"] != "delete" and rec is not None and (is_admin or rec.status == "active"):
+        if rec is not None and (is_admin or current):
             memory = _record_to_dict(rec)
         changes.append(
             {

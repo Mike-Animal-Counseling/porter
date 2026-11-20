@@ -135,8 +135,8 @@ class _NarrowRepo:
     """Simulates an embedding recall that MISSED mem_b (the feature's
     raison d'etre): search only ever returns mem_a."""
 
-    def __init__(self, mem_a, mem_b):
-        self._mems = {mem_a.id: mem_a, mem_b.id: mem_b}
+    def __init__(self, mem_a, *missed):
+        self._mems = {memory.id: memory for memory in (mem_a, *missed)}
         self._a = mem_a
 
     async def search(self, *, query, top_k=5, tags=(), types=(), active_only=True):
@@ -196,7 +196,7 @@ def test_hybrid_search_respects_tag_filter_on_expansion():
     asyncio.run(_run())
 
 
-def test_hybrid_search_skips_pending_and_encrypted_on_expansion():
+def test_hybrid_search_skips_pending_and_expired_on_expansion():
     async def _run():
         repo = InMemoryMemoryRepository(HashEmbedder())
         svc = _svc()
@@ -210,7 +210,15 @@ def test_hybrid_search_skips_pending_and_encrypted_on_expansion():
             source={},
         )
         await svc.on_approved(pend)
-        narrow = _NarrowRepo(mem_a, pend)
+        expired = await _approved_mem(repo, "Tailwind supported by the original experiment")
+        expired.source = {
+            "pipeline": "native_handoff",
+            "effective_from": 1,
+            "effective_until": 2,
+        }
+        await svc.on_approved(expired)
+        assert expired.id in await svc.store.memory_ids_for_entity("tailwind")
+        narrow = _NarrowRepo(mem_a, expired, pend)
         out = await svc.hybrid_search(narrow, "tailwind", top_k=5)
         assert [s.record.id for s in out] == [mem_a.id]
 

@@ -392,13 +392,17 @@ def create_app(
         # Server-side scope enforcement (T1, PRD §13.3): non-admin tokens see
         # only active memories, restricted to their granted tags.
         allowed = oauth_logic.effective_tag_filter(granted)
-        if "memory.admin" not in granted:
-            status = "active"
+        is_admin = "memory.admin" in granted
         tags = oauth_logic.apply_tag_filter(tag, allowed)
         if allowed is not None and not tags:
             return []  # fail closed: asked only for tags outside the grant
         rows = await request_repo.list(
-            status=status, tags=tags, type=type, limit=limit, offset=offset
+            status=status if is_admin else None,
+            tags=tags,
+            type=type,
+            limit=limit,
+            offset=offset,
+            current_only=not is_admin,
         )
         return [_to_out(r) for r in rows]
 
@@ -1430,7 +1434,7 @@ def create_app(
         # into the harness's native format (porter-sync marked zones only).
         records = [
             r
-            for r in await request_repo.list(status="active", limit=200)
+            for r in await request_repo.list(current_only=True, limit=200)
             if can_read_memory(r, granted)
         ]
         memories = [

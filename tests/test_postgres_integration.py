@@ -90,8 +90,14 @@ async def _verify_native_handoffs(repo, identity):
     )
     assert await process_capture(repo)
     expired = (await repo.list(tags=[tag], status="pending"))[0]
+    _, before_expired = await repo.get_changes(0, 10000)
     await repo.approve(expired.id)
     assert await search_current(repo, reader, tag, query) == {"results": []}
+    assert await repo.list(tags=[tag], current_only=True) == []
+    assert (await repo.list(tags=[tag], status="active"))[0].id == expired.id
+    assert (await build_sync_delta(repo, since=before_expired, limit=10, granted=reader.scopes))[
+        "changes"
+    ] == []
 
 
 def test_persistent_memory_snapshot_and_scoped_sync(tmp_path):

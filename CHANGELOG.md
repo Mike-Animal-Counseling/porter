@@ -8,6 +8,12 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+- Apply native handoff validity windows to legacy Wiki recall, scoped memory
+  lists, sync results and switch briefings. Keep managed handoffs out of
+  static write-back files.
+- Allow a managed DeepSeek Harness overlay to update when Porter is installed
+  in a different Python environment.
+
 ## [0.2.0] — 2026-11-19
 
 ### Native automatic memory connections
