@@ -25,6 +25,7 @@ from .config import settings
 from .db import json_object
 from .embeddings import Embedder
 from .errors import InvalidInput
+from .visibility import is_current_memory
 
 DUPLICATE_THRESHOLD = settings.duplicate_threshold  # PRD §8 F1; single source of truth
 
@@ -36,6 +37,10 @@ HANDOFF_WINDOW_SQL = """
               THEN (source->>'effective_until')::numeric > EXTRACT(EPOCH FROM statement_timestamp())
               ELSE source->'effective_until' = 'null'::jsonb END
 """
+_CURRENT_HANDOFF_OR_LEGACY = (
+    "(source->>'pipeline' IS DISTINCT FROM 'native_handoff' OR "
+    f"(superseded_by IS NULL AND {HANDOFF_WINDOW_SQL}))"
+)
 
 
 def _now() -> datetime:
@@ -134,6 +139,7 @@ class MemoryRepository(ABC):
         offset: int = 0,
         query: str | None = None,
         source_client: str | None = None,
+        current_only: bool = False,
     ) -> list[MemoryRecord]: ...
 
     @abstractmethod
@@ -385,7 +391,7 @@ class InMemoryMemoryRepository(MemoryRepository):
     ) -> list[MemoryRecord]:
         out = []
         for m in memories:
-            if active_only and m.status != "active":
+            if active_only and not is_current_memory(m):
                 continue
             if tags and not set(tags).intersection(m.scope_tags):
                 continue
@@ -548,9 +554,20 @@ class InMemoryMemoryRepository(MemoryRepository):
         return alive[0] if alive else rec
 
     async def list(
-        self, *, status=None, tags=(), type=None, limit=50, offset=0, query=None, source_client=None
+        self,
+        *,
+        status=None,
+        tags=(),
+        type=None,
+        limit=50,
+        offset=0,
+        query=None,
+        source_client=None,
+        current_only=False,
     ):
         rows = list(self._memories.values())
+        if current_only:
+            rows = [m for m in rows if is_current_memory(m)]
         if status:
             rows = [m for m in rows if m.status == status]
         if tags:
@@ -1128,9 +1145,20 @@ class PostgresMemoryRepository(MemoryRepository):
         return alive[0]
 
     async def list(
-        self, *, status=None, tags=(), type=None, limit=50, offset=0, query=None, source_client=None
+        self,
+        *,
+        status=None,
+        tags=(),
+        type=None,
+        limit=50,
+        offset=0,
+        query=None,
+        source_client=None,
+        current_only=False,
     ):
         clauses, args = [], []
+        if current_only:
+            clauses.extend(["status = 'active'", _CURRENT_HANDOFF_OR_LEGACY])
         if status:
             clauses.append(f"status = ${len(args) + 1}")
             args.append(status)
@@ -1173,11 +1201,7 @@ class PostgresMemoryRepository(MemoryRepository):
             [self._vec_literal(vec)],
         )
         if active_only:
-            clauses.append("status = 'active'")
-            clauses.append(
-                "(source->>'pipeline' IS DISTINCT FROM 'native_handoff' OR "
-                f"(superseded_by IS NULL AND {HANDOFF_WINDOW_SQL}))"
-            )
+            clauses.extend(["status = 'active'", _CURRENT_HANDOFF_OR_LEGACY])
         if tags:
             clauses.append(f"scope_tags && ${len(args) + 1}")
             args.append(list(tags))

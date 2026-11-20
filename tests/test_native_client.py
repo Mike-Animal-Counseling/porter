@@ -61,7 +61,7 @@ def test_managed_binding_rejects_other_clients_projects_and_origins(tmp_path):
         _project(config, str(tmp_path), "codex", managed=True)
 
 
-def test_dsh_overlay_is_separate_and_contains_no_credential(tmp_path):
+def test_dsh_overlay_is_separate_and_contains_no_credential(tmp_path, monkeypatch):
     profile = tmp_path / "profile.yml"
     profile.write_text("- id: already-installed\n", encoding="utf-8")
     overlay = tmp_path / "porter.patch.yml"
@@ -73,6 +73,15 @@ def test_dsh_overlay_is_separate_and_contains_no_credential(tmp_path):
     assert command["transport"] == "stdio"
     assert command["args"][-2:] == ["proxy", "dsh"]
     assert "headers" not in command and "env" not in command
+    python = str(tmp_path / "new-env" / "python")
+    monkeypatch.setattr(native_client.sys, "executable", python)
+    assert not native_client._has_hooks(overlay, "dsh", config)
+    with pytest.raises(ValueError):
+        native_client._edit_dsh(overlay, tmp_path / "other.json", install=True)
+    assert native_client._edit_dsh(overlay, config, install=True)
+    assert native_client._has_hooks(overlay, "dsh", config)
+    updated = json.loads(overlay.read_text(encoding="utf-8"))[0]["insert"][0]["config"]
+    assert updated == command | {"command": python}
     assert native_client._edit_dsh(overlay, config, install=False)
     assert not overlay.exists()
     with pytest.raises(ValueError):

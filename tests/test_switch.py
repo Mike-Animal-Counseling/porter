@@ -180,16 +180,24 @@ def test_handoff_active_only():
         pend = await _add_pending(repo, "Pending memory", tags=[project_tag("demo")])
         arch = await _add(repo, "Will be archived", tags=[project_tag("demo")])
         await repo.archive(arch.id)
+        expired = await _add(repo, "Expired handoff", tags=[project_tag("demo")])
+        expired.source = {
+            "pipeline": "native_handoff",
+            "effective_from": 1,
+            "effective_until": 2,
+        }
         h = await switch.build_handoff(
             repo,
             project="demo",
             from_harness="a",
             to_harness="b",
+            top_k=1,
         )
         all_ids = {e["id"] for s in h["sections"].values() for e in s}
         assert str(ok.id) in all_ids
         assert str(pend.id) not in all_ids
         assert str(arch.id) not in all_ids
+        assert str(expired.id) not in all_ids
 
     asyncio.run(run())
 

@@ -18,6 +18,7 @@ Safety rules (non-negotiable):
 - dry_run=True performs zero disk writes (no backups either) and only
   reports what would change.
 - Eligibility: only ``status == "active"`` memories are written.
+  Managed native handoffs are recalled from Postgres at session time.
   Encrypted (E2EE) memories are never rendered in cleartext.
   Personal-domain memories flagged sensitive by triage
   (``sensitive_tag`` / ``sensitive_content`` / ``ml_sensitive:*``) are
@@ -149,6 +150,8 @@ def _eligible(mem: Mapping[str, Any], *, include_sensitive: bool) -> tuple[bool,
     """Eligibility gate for write-back. Returns (ok, reason)."""
     if mem.get("status") != "active":
         return False, f"status={mem.get('status')!r} (not active)"
+    if (mem.get("source") or {}).get("pipeline") == "native_handoff":
+        return False, "managed project handoff (live recall only)"
     if mem.get("encrypted"):
         return False, "encrypted (E2EE ciphertext is never rendered)"
     if not include_sensitive and mem.get("type") == "personal" and _triage_flagged_sensitive(mem):
